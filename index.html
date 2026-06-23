@@ -584,7 +584,7 @@ async function sendGmail(to, subj, body, isHtml=false) {
   const mime = [
     `From: ${user.name||user.email} <${user.email}>`,
     `To: ${to}`,
-    `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subj)))}?=`,
+    `Subject: ${subj}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     ``,
