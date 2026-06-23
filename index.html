@@ -446,7 +446,7 @@ Orca AI`;
 
 async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
-  const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' ('+v+')',draft);
+  const ok=await sendGmail(e,'Orca AI Installation Coordination - '+v,draft);
   if(!ok)return;
   vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Voyage schedule','All future ports','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
   sv();updateMetrics();renderTable();populateSel();
