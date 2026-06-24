@@ -394,7 +394,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <div id="view-admin" class="view">
       <div class="panel">
         <div class="panel-title"><i class="ti ti-settings"></i> Admin panel</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:1.5rem">Visible to Super Admin and Admin Level 2. Destructive system actions are Super Admin only.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:.5rem">Visible to Super Admin and Admin Level 2. Destructive system actions are Super Admin only.</p><div id="current-role-info" style="font-size:12px;color:var(--muted);margin-bottom:1.5rem"></div>
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">Team members</div>
         <div id="adm-u" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
@@ -467,7 +467,8 @@ const GOOGLE_CLIENT_IDS={
 const DEFAULT_CLIENT_ID='150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com';
 const CLIENT_ID=GOOGLE_CLIENT_IDS[window.location.hostname]||DEFAULT_CLIENT_ID;
 const SCOPES='https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly profile email';
-const SUPER_ADMIN='rami@orca-ai.io';
+const SUPER_ADMINS=['rami@orca-ai.io'];
+const SUPER_ADMIN='rami@orca-ai.io'; // backwards compatibility
 const ADMIN=SUPER_ADMIN; // backwards compatibility
 const ADMIN_L2=[
   'amir.m@orca-ai.io',
@@ -475,7 +476,8 @@ const ADMIN_L2=[
   'jacob@orca-ai.io',
   'yotam.keret@orca-ai.io',
   'yaron.y@orca-ai.io'
-];
+].map(e=>e.toLowerCase());
+
 const TEAM_USERS=[
   {email:'rami@orca-ai.io',name:'Rami Moscovich',role:'Super Admin'},
   {email:'amir.m@orca-ai.io',name:'Amir M',role:'Admin L2'},
@@ -484,10 +486,35 @@ const TEAM_USERS=[
   {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
   {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'}
 ];
+
 function normEmail(e){return String(e||'').trim().toLowerCase();}
-function isSuperAdmin(email){email=normEmail(email||(user&&user.email));return email===SUPER_ADMIN;}
-function isAdmin(email){email=normEmail(email||(user&&user.email));return isSuperAdmin(email)||ADMIN_L2.includes(email);}
-function roleLabel(email){email=normEmail(email);if(isSuperAdmin(email))return 'Super Admin';if(isAdmin(email))return 'Admin L2';return 'User';}
+function getUserRole(email){
+  const e=normEmail(email);
+  if(SUPER_ADMINS.map(normEmail).includes(e))return 'super-admin';
+  if(ADMIN_L2.includes(e))return 'admin-l2';
+  return 'user';
+}
+function isSuperAdmin(email){
+  email=normEmail(email||(user&&user.email));
+  return getUserRole(email)==='super-admin';
+}
+function isAdmin(email){
+  email=normEmail(email||(user&&user.email));
+  const role=getUserRole(email);
+  return role==='super-admin'||role==='admin-l2';
+}
+function roleLabel(email){
+  const role=getUserRole(email);
+  if(role==='super-admin')return 'Super Admin';
+  if(role==='admin-l2')return 'Admin L2';
+  return 'User';
+}
+function applyUserRole(){
+  if(!user||!user.email)return;
+  user.email=normEmail(user.email);
+  user.role=getUserRole(user.email);
+  user.roleLabel=roleLabel(user.email);
+}
 const VKEY='orca_v3',UKEY='orca_u2';
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
 
@@ -553,20 +580,21 @@ async function handleToken(r){
   try{localStorage.setItem('orca_google_consent_ok','1');}catch(e){}
   const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}});
   const p=await res.json();
-  user={email:p.email,name:p.name||p.email,pic:p.picture||''};
+  user={email:normEmail(p.email),name:p.name||p.email,pic:p.picture||''};
+  applyUserRole();
   su(user); lv();
   document.getElementById('auth-screen').style.display='none';
   document.getElementById('app').style.display='block';
-  document.getElementById('uname').textContent=user.name||user.email;
+  document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
   if(user.pic)document.getElementById('uav').src=user.pic;
-  if(typeof isAdmin==='function' && isAdmin(user.email))document.getElementById('tab-admin').style.display='inline-flex';
+  document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
   renderTable();updateMetrics();populateSel();
   fetchInbox();
 }
 function signOut(){if(token)google.accounts.oauth2.revoke(token,()=>{});token=null;user=null;vessels=[];document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
 
 function showTab(t){
-  if(t==='admin' && !isAdmin()){
+  if(t==='admin' && !isAdmin(user&&user.email)){
     alert('Admin access only.');
     t='dashboard';
   }
@@ -1583,7 +1611,8 @@ function openV(idx){
 
 // ADMIN
 function renderAdmin(){
-  if(!isAdmin())return;
+  const roleBox=document.getElementById('current-role-info');if(roleBox&&user)roleBox.textContent=`You are signed in as ${user.email} — ${roleLabel(user.email)}`;
+  if(!isAdmin(user&&user.email))return;
   const stored=Object.values(lu());
   const map=new Map();
   TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
@@ -1615,7 +1644,7 @@ function renderAdmin(){
     </div>`;
   }).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
   const superOnly=document.getElementById('super-admin-actions');
-  if(superOnly)superOnly.style.display=isSuperAdmin()?'flex':'none';
+  if(superOnly)superOnly.style.display=isSuperAdmin(user&&user.email)?'flex':'none';
 }
 function resetInboxUi(){
   ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
