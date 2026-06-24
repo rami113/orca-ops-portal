@@ -89,6 +89,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .ib-badge{background:var(--red);color:var(--red-t);border-radius:99px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px}
 .d-ok{color:var(--muted);font-size:12px;font-weight:500}.d-w{color:#BA7517;font-size:12px;font-weight:500}.d-d{color:#E24B4A;font-size:12px;font-weight:500}
 @media(max-width:768px){.metrics{grid-template-columns:repeat(2,1fr)}.fg{grid-template-columns:1fr}.dg{grid-template-columns:1fr}.nav-tabs{display:none}.hero{flex-direction:column;gap:1rem}}
+.tbl th,.tbl td{vertical-align:top}.tbl th{white-space:nowrap}.btn-d{color:var(--red-t);border-color:#f0a0a0;background:#fff}
 </style>
 </head>
 <body>
@@ -159,7 +160,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           </div>
         </div>
         <table class="tbl">
-          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Days w/o reply</th><th>Emails sent</th><th>Last email date</th><th>Emails received</th><th>Last received date</th><th>Assigned to</th><th>Next action</th><th></th></tr></thead>
+          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Reply age</th><th>Email activity</th><th>Assigned to</th><th>Next action</th><th>Actions</th></tr></thead>
           <tbody id="vtbody"></tbody>
         </table>
         <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
@@ -368,6 +369,27 @@ function rb(r){const m={low:['bgr','Low'],medium:['ba','Medium'],high:['br','Hig
 function ds(d){if(!d)return null;return Math.floor((Date.now()-new Date(d))/86400000);}
 function dc(d){if(d===null)return'<span style="color:#ccc">—</span>';const c=d>=7?'d-d':d>=3?'d-w':'d-ok';return`<span class="${c}">${d}d</span>`;}
 
+function userOptions(selected){
+  const users=Object.values(lu());
+  const opts=[];
+  if(selected && !users.some(u=>u.email===selected))opts.push(`<option value="${selected}" selected>${selected}</option>`);
+  users.forEach(u=>opts.push(`<option value="${u.email}" ${u.email===selected?'selected':''}>${u.name||u.email}</option>`));
+  if(!opts.length && user.email)opts.push(`<option value="${user.email}" selected>${user.name||user.email}</option>`);
+  return opts.join('');
+}
+function assignVessel(i,email){
+  if(!vessels[i])return;
+  vessels[i].assignedTo=email;
+  vessels[i].nextAction='Assigned to '+email;
+  sv();renderTable();renderAdmin();
+}
+function deleteVessel(i){
+  if(!user||user.email!==ADMIN){alert('Only admin can delete cases.');return;}
+  if(!vessels[i])return;
+  if(!confirm('Delete this case from the portal history?'))return;
+  vessels.splice(i,1);
+  sv();updateMetrics();renderTable();populateSel();renderAdmin();
+}
 function renderTable(){
   const tb=document.getElementById('vtbody'),em=document.getElementById('vempty');
   const f=document.getElementById('flt').value;
@@ -381,7 +403,27 @@ function renderTable(){
   if(!list.length){tb.innerHTML='';em.style.display='block';return;}
   em.style.display='none';
   tb.innerHTML=list.map(v=>{const idx=vessels.indexOf(v),d=ds(v.lastContact),al=v.status==='escalated'||v.risk==='high',p=v.progress||0;
-    return`<tr class="cl${al?' al':''}" onclick="openV(${idx})"><td><strong>${v.name}</strong><br><span style="font-size:11px;color:var(--faint)">${v.email}</span></td><td>${sb(v.status)}</td><td><div style="display:flex;align-items:center;gap:6px"><div class="prog"><div class="prog-f" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--muted)">${p}%</span></div></td><td>${rb(v.risk||'medium')}</td><td>${dc(d)}</td><td style="font-size:12px;color:var(--muted);text-align:center">${v.emailsSent||0}</td><td style="font-size:12px;color:var(--muted)">${(v.lastEmailDate||v.lastContact) ? new Date(v.lastEmailDate||v.lastContact).toLocaleDateString('en-GB') : '—'}</td><td style="font-size:12px;color:var(--muted)">${v.assignedTo||'—'}</td><td style="font-size:12px;color:var(--muted);max-width:130px">${v.nextAction||'—'}</td><td><button class="btn btn-s" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button></td></tr>`;
+    const lastSent=(v.lastEmailDate||v.lastContact)?new Date(v.lastEmailDate||v.lastContact).toLocaleDateString('en-GB'):'—';
+    const lastReceived=v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—';
+    const adminDelete=(user&&user.email===ADMIN)?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i></button>`:'';
+    return`<tr class="cl${al?' al':''}" onclick="openV(${idx})">
+      <td style="min-width:135px"><strong>${v.name}</strong><br><span style="font-size:11px;color:var(--faint)">${v.email}</span></td>
+      <td>${sb(v.status)}</td>
+      <td><div style="display:flex;align-items:center;gap:6px;min-width:105px"><div class="prog"><div class="prog-f" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--muted)">${p}%</span></div></td>
+      <td>${rb(v.risk||'medium')}</td>
+      <td>${dc(d)}</td>
+      <td style="font-size:12px;color:var(--muted);min-width:150px;line-height:1.45">
+        <div><b>Sent:</b> ${v.emailsSent||0} <span style="color:var(--faint)">(${lastSent})</span></div>
+        <div><b>Received:</b> ${v.emailsReceived||0} <span style="color:var(--faint)">(${lastReceived})</span></div>
+      </td>
+      <td style="min-width:150px">
+        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();assignVessel(${idx},this.value)" style="width:145px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+          ${userOptions(v.assignedTo)}
+        </select>
+      </td>
+      <td style="font-size:12px;color:var(--muted);max-width:125px">${v.nextAction||'—'}</td>
+      <td style="white-space:nowrap"><button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>${adminDelete}</td>
+    </tr>`;
   }).join('');
 }
 function updateMetrics(){document.getElementById('m-t').textContent=vessels.length;document.getElementById('m-r').textContent=vessels.filter(v=>v.status==='ready').length;document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting'||v.status==='new').length;document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='escalated'||v.risk==='high').length;}
@@ -784,7 +826,7 @@ function openV(idx){
 function renderAdmin(){
   const users=Object.values(lu());
   document.getElementById('adm-u').innerHTML=users.length?users.map(u=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/><span style="flex:1">${u.name||u.email}</span>${u.email===ADMIN?'<span class="badge bn">Admin</span>':''}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
-  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map(v=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<span style="font-size:11px;color:var(--faint)">${v.assignedTo||'—'}</span><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<select onchange="assignVessel(${i},this.value)" style="width:180px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span><button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
 }
 function clearAll(){try{localStorage.removeItem(VKEY);}catch(e){}vessels=[];updateMetrics();renderTable();populateSel();}
 function clearAllHistory(){
