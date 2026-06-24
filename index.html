@@ -125,6 +125,15 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 #view-dashboard .tbl tbody td:first-child{border-left:1px solid var(--border);border-radius:8px 0 0 8px}
 #view-dashboard .tbl tbody td:last-child{border-right:1px solid var(--border);border-radius:0 8px 8px 0}
 #view-dashboard .tbl tr.cl:hover td{background:#fafaf8}
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:18%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:15%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:9%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:7%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:9%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:6%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:15%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:14%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:7%}
 #view-dashboard .tbl select{height:34px;max-width:100%;font-size:12px;padding:5px 8px}
 #view-dashboard .vessel-actions{display:flex;gap:5px;margin-top:7px;flex-wrap:nowrap}
 #view-dashboard .vessel-actions .btn{height:28px}
@@ -143,6 +152,15 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
 
 /* v31 clean action layout */
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:17%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:14%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:8%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:7%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:9%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:6%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:15%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:12%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:12%}
 #view-dashboard .row-actions{display:flex;gap:6px;align-items:center;justify-content:flex-start;flex-wrap:wrap}
 #view-dashboard .row-actions .btn{height:30px;padding:5px 9px;white-space:nowrap}
 #view-dashboard .row-actions .btn-d{padding:5px 8px}
@@ -570,6 +588,14 @@ function sb(s){const m={
 };const[c,ic,l]=m[s]||['bg','ti-circle','Waiting for reply'];return`<span class="badge ${c}"><i class="ti ${ic}"></i> ${l}</span>`;}
 function rb(r){const m={low:['bgr','Low'],medium:['ba','Medium'],high:['br','High']};const[c,l]=m[r]||['bg','—'];return`<span class="badge ${c}">${l}</span>`;}
 
+function trafficLight(v){
+  const d=ds(v.lastContact);
+  let c='green',label='On track';
+  if(v.risk==='high'||d>=7){c='red';label='Attention';}
+  else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
+  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
+  return `<span class="traffic"><span class="tl-light tl-${c}"></span>${label}</span>`;
+}
 
 function ds(d){if(!d)return null;return Math.floor((Date.now()-new Date(d))/86400000);}
 function dc(d){if(d===null)return'<span style="color:#ccc">—</span>';const c=d>=7?'d-d':d>=3?'d-w':'d-ok';return`<span class="${c}">${d}d</span>`;}
@@ -628,15 +654,66 @@ function deleteVessel(i){
   sv();updateMetrics();renderTable();populateSel();renderAdmin();
 }
 
+
+async function fetchLatestReplyForVessel(vessel){
+  if(!token||!vessel||!vessel.email)return null;
+  const email=String(vessel.email||'').trim();
+  const q=`from:${email}`;
+  try{
+    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=10`,{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();
+    if(!d.messages||!d.messages.length)return null;
+    for(const msg of d.messages){
+      const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+      const dd=await dr.json();
+      const hdr=(dd.payload&&dd.payload.headers)||[];
+      const from=hdr.find(h=>h.name==='From')?.value||'';
+      const subj=hdr.find(h=>h.name==='Subject')?.value||'';
+      const date=hdr.find(h=>h.name==='Date')?.value||'';
+      const fe=(from.match(/<(.+)>/)?.[1]||from).trim().toLowerCase();
+      if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
+      if(fe!==email.toLowerCase() && !String(from).toLowerCase().includes(email.toLowerCase()))continue;
+      const decodeBody=(p)=>{
+        if(!p)return '';
+        if((p.mimeType==='text/plain'||p.mimeType==='text/html')&&p.body&&p.body.data){
+          try{
+            const raw=atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));
+            if(p.mimeType==='text/html')return stripHtmlForText(raw);
+            return raw;
+          }catch(e){return '';}
+        }
+        if(p.parts)for(const pp of p.parts){const rr=decodeBody(pp);if(rr)return rr;}
+        return '';
+      };
+      const body=decodeBody(dd.payload).trim();
+      if(!body)return null;
+      return {msgId:msg.id,from,fe:email,subj,date,body,vessel,vi:vessels.indexOf(vessel)};
+    }
+  }catch(e){
+    console.warn('fetchLatestReplyForVessel failed',e);
+  }
+  return null;
+}
+function openManualAnalyzeWithReply(i,replyText){
+  showTab('analyze');
+  setTimeout(()=>{
+    const sel=document.getElementById('ra-sel');
+    const txt=document.getElementById('ra-reply');
+    if(sel)sel.value=String(i);
+    if(txt){
+      txt.value=replyText||'';
+      txt.placeholder=replyText?'':'No captain reply was found automatically. Paste the captain reply here.';
+      txt.focus();
+    }
+  },50);
+}
+
 async function openCaseAnalyze(i){
   const vessel=vessels[i];
   if(!vessel){alert('Vessel not found.');return;}
   try{
-    if(!Array.isArray(ibItems)||!ibItems.length){
-      try{await fetchInbox();}catch(fetchErr){console.error('fetchInbox failed',fetchErr);}
-    }
     let itemIndex=-1;
-    if(Array.isArray(ibItems)){
+    if(Array.isArray(ibItems)&&ibItems.length){
       const vEmail=String(vessel.email||'').toLowerCase();
       const vName=String(vessel.name||'').toLowerCase();
       itemIndex=ibItems.findIndex(item=>{
@@ -654,10 +731,43 @@ async function openCaseAnalyze(i){
       openIbModal(itemIndex);
       return;
     }
-    alert('No captain reply found for this vessel yet. Click Check inbox first, or use Analyze Reply and paste the reply manually.');
+
+    try{
+      await fetchInbox();
+      if(Array.isArray(ibItems)&&ibItems.length){
+        const vEmail=String(vessel.email||'').toLowerCase();
+        const vName=String(vessel.name||'').toLowerCase();
+        itemIndex=ibItems.findIndex(item=>{
+          const fromEmail=String(item.fe||item.from||'').toLowerCase();
+          const subj=String(item.subj||item.subject||'').toLowerCase();
+          const body=String(item.body||item.snippet||'').toLowerCase();
+          return item.vi===i ||
+            item.vessel===vessel ||
+            (item.vessel&&item.vessel.email===vessel.email) ||
+            (vEmail&&fromEmail.includes(vEmail)) ||
+            (vName&&(subj.includes(vName)||body.includes(vName)));
+        });
+      }
+      if(itemIndex>=0){
+        openIbModal(itemIndex);
+        return;
+      }
+    }catch(fetchErr){
+      console.warn('Inbox fetch skipped/failed',fetchErr);
+    }
+
+    const latest=await fetchLatestReplyForVessel(vessel);
+    if(latest&&latest.body){
+      // Store it in ibItems so the normal Analyze & Update modal can still be used.
+      ibItems.push(latest);
+      openManualAnalyzeWithReply(i,latest.body);
+      return;
+    }
+
+    openManualAnalyzeWithReply(i,'');
   }catch(err){
     console.error('openCaseAnalyze failed',err);
-    alert('Analyze failed. Please click Check inbox and try again.');
+    openManualAnalyzeWithReply(i,'');
   }
 }
 
@@ -798,7 +908,7 @@ function readinessScore(v){
 function readinessBar(v){
   const s=readinessScore(v);
   return `<div class="readiness-cell">
-    <div class="prog"><div class="prog-f" style="width:${Math.min(100,s)}%"></div></div>
+    <div class="prog"><span style="width:${Math.min(100,s)}%"></span></div>
     <span>${s}%</span>
   </div>`;
 }
@@ -935,7 +1045,7 @@ function updateMetrics(){
   document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
   document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
 }
-function populateSel(){const s=document.getElementById('ra-sel');s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
+function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
 // START MODAL
 function val(id){const el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
@@ -957,7 +1067,7 @@ The Orca AI system is designed to enhance situational awareness on the bridge an
 Installation Process
 Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes 12–18 hours and includes system installation, technical validation, and crew training.
 
-To ensure a smooth installation, we kindly request your assistance with the items below.
+To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong>
 
 Information and Preparations Required
 
@@ -1093,7 +1203,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
   <tr><td style="padding:20px 36px 0 36px">
     <p style="margin:0 0 8px 0;font-size:14px;font-weight:bold;color:#1D2E6B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1D2E6B;padding-bottom:5px">Installation Process</p>
     <p style="margin:8px 0 0 0;font-size:14px;color:#333;line-height:1.75">Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes <strong>12–18 hours</strong> and includes system installation, technical validation, and crew training.</p>
-    <p style="margin:10px 0 0 0;font-size:14px;color:#333;line-height:1.75">To ensure a smooth installation, we kindly request your assistance with the items below.</p>
+    <p style="margin:10px 0 0 0;font-size:14px;color:#333;line-height:1.75">To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong></p>
   </td></tr>
 
   <!-- SECTION TITLE -->
@@ -1233,7 +1343,6 @@ async function sendGmail(to, subj, body, isHtml=false) {
 
 // INBOX
 
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function updateReceivedStatsFromInbox(){
   if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
   vessels.forEach(v=>{
@@ -1302,12 +1411,12 @@ async function fetchInbox(){
     for(const msg of d.messages.slice(0,15)){
       const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
       const dd=await dr.json();
-      const hdr=dd.payload.headers;
+      const hdr=(dd.payload&&dd.payload.headers)||[];
       const from=hdr.find(h=>h.name==='From')?.value||'';
       const subj=hdr.find(h=>h.name==='Subject')?.value||'';
       const date=hdr.find(h=>h.name==='Date')?.value||'';
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
-      const body=eb(dd.payload);
+      const body=dd.payload?eb(dd.payload):'';
       const fe=from.match(/<(.+)>/)?.[1]||from;
       if(user&&user.email&&fe.toLowerCase()===String(user.email).toLowerCase())continue;
       const vessel=vessels.find(row=>String(row.email||'').toLowerCase()===fe.toLowerCase());
@@ -1321,7 +1430,7 @@ function renderInbox(){
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
   empty.style.display='none';
-  list.innerHTML=ibItems.map((item,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:10px;background:var(--white)"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${esc(item.vessel.name)}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(item.from)} · ${esc(item.date)}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${esc(item.subj)}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.body.substring(0,120))}...</div></div><button class="btn btn-p btn-s" onclick="openIbModal(${i})" style="flex-shrink:0"><i class="ti ti-cpu"></i> Analyze & Update</button></div></div>`).join('');
+  list.innerHTML=ibItems.map((item,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:10px;background:var(--white)"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${item.vessel.name}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${item.from} · ${item.date}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${item.subj}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.body.substring(0,120)}...</div></div><button class="btn btn-p btn-s" onclick="openIbModal(${i})" style="flex-shrink:0"><i class="ti ti-cpu"></i> Analyze & Update</button></div></div>`).join('');
 }
 
 function openIbModal(i){
@@ -1330,7 +1439,6 @@ function openIbModal(i){
   document.getElementById('mib-v').textContent=curIb.vessel.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   document.getElementById('mib-b').textContent=curIb.body;
-  const v=curIb.vessel;
   ibAna=normalizeAnalysisResult(v,curIb.body,ibAna);
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
@@ -1460,7 +1568,7 @@ function renderAdmin(){
 function resetInboxUi(){
   ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
   const list=document.getElementById('ib-list');if(list)list.innerHTML='';
-  const empty=document.getElementById('ib-empty');if(empty)empty.style.display='block';
+  const empty=document.getElementById('ib-empty');if(empty)if(empty)empty.style.display='block';
   const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
 }
 function refreshAllViews(){
