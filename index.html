@@ -221,6 +221,10 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .tl-row span{color:var(--muted);font-size:12px}
 #v-search{background:#fff}
 
+
+.recv-item{display:flex;align-items:center;gap:8px;background:#EAF8F2;color:#116B52;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:13px}
+.recv-item i{color:#1D9E75}
+
 </style>
 </head>
 <body>
@@ -760,6 +764,8 @@ async function openCaseAnalyze(i){
 
 
 const REQUIRED_ITEMS=[
+  'Vessel GA',
+  'Bridge Console GA',
   'Next 2–3 upcoming port calls + corresponding agent details for each port',
   'Cable penetration',
   'VSAT routing',
@@ -783,6 +789,8 @@ function isThanksOnlyReply(txt){
 }
 function itemKey(item){
   const s=normTxt(item);
+  if((s.includes('vessel')&&s.includes('ga'))||s.includes('general arrangement'))return 'vessel_ga';
+  if((s.includes('bridge')&&s.includes('ga'))||s.includes('bridge console ga'))return 'bridge_ga';
   if(s.includes('port')||s.includes('agent')||s.includes('eta'))return 'ports';
   if(s.includes('cable')||s.includes('penetration'))return 'cable';
   if(s.includes('vsat'))return 'vsat';
@@ -817,11 +825,32 @@ Once the voyage schedule, upcoming ports, agent details and technical informatio
 Kind regards,
 ORCA AI OPS`;
 }
+
+function inferReceivedFromReply(reply){
+  const s=normTxt(reply);
+  const got=[];
+  if(/\bga\b/.test(s)||s.includes('general arrangement')){
+    if(s.includes('bridge')||s.includes('console'))got.push('Bridge Console GA');
+    else got.push('Vessel GA');
+  }
+  if(s.includes('vessel ga'))got.push('Vessel GA');
+  if(s.includes('bridge console ga'))got.push('Bridge Console GA');
+  if(s.includes('port')&&s.includes('agent'))got.push('Next 2–3 upcoming port calls + corresponding agent details for each port');
+  if(s.includes('cable')||s.includes('penetration'))got.push('Cable penetration');
+  if(s.includes('vsat'))got.push('VSAT routing');
+  if(s.includes('power'))got.push('Power connection');
+  if(s.includes('monitor')&&(s.includes('photo')||s.includes('location')||s.includes('picture')))got.push('Proposed monitor location photos');
+  if((s.includes('seapod')||s.includes('camera'))&&(s.includes('photo')||s.includes('location')||s.includes('picture')))got.push('Proposed Seapod location photos');
+  if(s.includes('acknowledg')||s.includes('document'))got.push('Docs acknowledgement');
+  return [...new Set(got)];
+}
+
 function normalizeAnalysisResult(v,reply,analysis){
   const oldMissing=derivedMissing(v);
   const thanksOnly=isThanksOnlyReply(reply);
   analysis=analysis||{};
   let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
+  received=[...new Set([...received,...inferReceivedFromReply(reply)])];
   let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
   if(thanksOnly){
     received=[];
@@ -879,8 +908,8 @@ function readinessScore(v){
   const missing=(v.missingItems||[]).map(x=>String(x).toLowerCase()).join(' | ');
   const got=(terms)=>terms.some(t=>received.includes(t)) && !terms.some(t=>missing.includes(t));
   let score=0;
-  if(got(['vessel ga','general arrangement']))score+=15;
-  if(got(['bridge console','console ga']))score+=15;
+  if(got(['vessel ga','general arrangement']))score+=12;
+  if(got(['bridge console ga','bridge console','console ga']))score+=12;
   if(got(['monitor','monitor location','proposed monitor']))score+=15;
   if(got(['seapod','camera location','proposed seapod']))score+=15;
   if(got(['port call','upcoming port','agent details','port agent']))score+=15;
@@ -1157,6 +1186,37 @@ async function sendAndSaveNew(){
 }
 
 // GMAIL
+
+function buildFollowupHtmlEmail(followupText, docsLink){
+  // Dedicated wrapper for follow-up emails. Never uses the initial installation template.
+  const bodyText=String(followupText||'').trim();
+  const htmlBody=bodyText
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f0f0ed;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0ed;padding:20px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #dddddd">
+<tr><td style="background:#1D2E6B;padding:24px 36px">
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:30px;font-weight:700;letter-spacing:2px;line-height:1">ORCA AI</div>
+</td></tr>
+<tr><td style="padding:34px 36px;color:#111111;font-size:14px;line-height:1.7">
+${htmlBody}
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
+function nextFollowupNumber(v){return Number(v.followupsSent||0)+1;}
+function saveFollowupMeta(v,body){
+  v.followupsSent=nextFollowupNumber(v);
+  v.lastFollowupPreview=String(body||'').slice(0,500);
+  addTimeline(v,'sent',`Follow-up #${v.followupsSent} sent`,String(body||'').split('\n').find(x=>x.trim().startsWith('•'))||'Missing items requested');
+}
+
 function buildHtmlEmail(plainText, senderName, docsLink) {
   const safeText = String(plainText||'');
   const contentHtml = /<\w+[^>]*>/.test(safeText) ? safeText : safeText.replace(/\n/g,'<br>');
@@ -1445,13 +1505,14 @@ async function runIbAnalysis(){
 }
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
-  const v=curIb.vessel,ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildHtmlEmail(ibAna.followup_email,'ORCA AI OPS',v.docs||''),true);
+  const v=curIb.vessel,followBody=(ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel));
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);
   if(!ok)return;
   const idx=curIb.vi;
-  vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...(vessels[idx].receivedItems||[]),...(ibAna.received||[])],lastContact:new Date().toISOString()};
+  vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...new Map([...(vessels[idx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
   cleanTimeline(vessels[idx]);
   addTimeline(vessels[idx],'reply','Reply received from captain',curIb.from||v.email);
-  addTimeline(vessels[idx],'sent','Follow-up sent via Gmail','ORCA AI OPS');
+  saveFollowupMeta(vessels[idx],followBody);
   vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   sv();updateMetrics();renderTable();
   document.getElementById('mod-ib').style.display='none';
@@ -1480,11 +1541,12 @@ async function analyzeReply(){
 }
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
-  const v=vessels[idx],ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildHtmlEmail(ana.followup_email,'ORCA AI OPS',v.docs||''),true);if(!ok)return;
-  vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:[...(v.receivedItems||[]),...(ana.received||[])],lastContact:new Date().toISOString()};
+  const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);if(!ok)return;
+  vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:[...new Map([...(v.receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
   cleanTimeline(vessels[idx]);
   addTimeline(vessels[idx],'ai','Reply analyzed by AI',v.email);
-  addTimeline(vessels[idx],'sent','Follow-up sent via Gmail','ORCA AI OPS');
+  saveFollowupMeta(vessels[idx],followBody);
   vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   sv();updateMetrics();renderTable();document.getElementById('ra-reply').value='';document.getElementById('a-out').style.display='none';showTab('dashboard');
 }
@@ -1508,8 +1570,12 @@ function openV(idx){
     const done=hasItem(recv,item),mis=hasItem(miss,item),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
     return`<li><i class="ti ${ic}"></i>${item}</li>`;
   }).join('');
+  const ri=document.getElementById('vd-ri');
+  if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
   const mi=document.getElementById('vd-mi');
   if(mi)mi.innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
+  const fup=document.getElementById('vd-fup');
+  if(fup)fup.innerHTML=v.lastFollowupPreview?`<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.55;margin:0;color:var(--text)">${v.lastFollowupPreview}</pre>`:'<span style="font-size:13px;color:var(--faint)">No follow-up sent yet.</span>';
   const tlEl=document.getElementById('vd-tl');
   if(tlEl)tlEl.innerHTML=renderTimeline(v);
   showTab('vessel-detail');
