@@ -97,6 +97,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .tbl .btn-s{padding:5px 8px}
 .panel{overflow-x:auto}
 
+
+.next-action-btn{white-space:nowrap}
+
 </style>
 </head>
 <body>
@@ -408,6 +411,24 @@ function deleteVessel(i){
   vessels.splice(i,1);
   sv();updateMetrics();renderTable();populateSel();renderAdmin();
 }
+
+async function openCaseAnalyze(i){
+  if(!vessels[i])return;
+  if(!ibItems||!ibItems.length){
+    await fetchInbox();
+    updateReceivedStatsFromInbox();
+  }
+  let itemIndex=-1;
+  if(Array.isArray(ibItems)){
+    itemIndex=ibItems.findIndex(x=>x.vi===i || x.vessel===vessels[i] || (x.vessel&&x.vessel.email===vessels[i].email));
+  }
+  if(itemIndex>=0){
+    analyzeInbox(itemIndex);
+    return;
+  }
+  alert('No inbox reply found for this vessel yet. Click Check inbox first, or open the Inbox tab.');
+}
+
 function renderTable(){
   const tb=document.getElementById('vtbody'),em=document.getElementById('vempty');
   const f=document.getElementById('flt').value;
@@ -450,7 +471,9 @@ function renderTable(){
           ${userOptions(v.assignedTo)}
         </select>
       </td>
-      <td style="font-size:12px;color:var(--muted);max-width:135px">${v.nextAction||'—'}</td>
+      <td style="font-size:12px;color:var(--muted);max-width:135px">
+        <button class="btn btn-p btn-s" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze</button>
+      </td>
     </tr>`;
   }).join('');
 }
