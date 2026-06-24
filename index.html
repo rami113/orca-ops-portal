@@ -911,11 +911,50 @@ Orca AI`;
 
 async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
-  const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,buildHtmlEmail(draft, user.name||user.email, d),true);
-  if(!ok)return;
-  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,emailsReceived:0,lastReceivedDate:'',assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Proposed monitor location photos','Proposed Seapod location photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
-  sv();updateMetrics();renderTable();populateSel();
-  show('mod-start','none');showTab('dashboard');
+  if(!v||!e){alert('Please enter vessel name and master email.');return;}
+  const btn=document.getElementById('btn-snd');
+  const oldHtml=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
+  try{
+    const ok=await sendGmail(e,'Orca AI Installation Coordination - '+v,draft);
+    if(!ok)return;
+    const now=new Date().toISOString();
+    const nv={
+      id:Date.now(),
+      name:v,
+      email:e,
+      owner:o,
+      docs:d,
+      status:'waiting',
+      progress:0,
+      risk:'medium',
+      lastContact:now,
+      lastEmailDate:now,
+      lastActivity:now,
+      emailsSent:1,
+      emailsReceived:0,
+      assignedTo:(user&&user.email)||'rami@orca-ai.io',
+      nextAction:'Wait for master reply',
+      receivedItems:[],
+      missingItems:[],
+      timeline:[]
+    };
+    if(typeof addTimeline==='function')addTimeline(nv,'sent','Initial email sent',`Sent to ${e}`);
+    vessels.push(nv);
+    sv();
+    updateMetrics();
+    renderTable();
+    populateSel();
+    if(typeof renderAdmin==='function')renderAdmin();
+    show('mod-start','none');
+    showTab('dashboard');
+    alert('Email sent and vessel saved successfully.');
+  }catch(err){
+    console.error(err);
+    alert('Email was sent, but saving/updating the dashboard failed: '+(err.message||err));
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML=oldHtml||'<i class="ti ti-send"></i> Send via Gmail + Save';}
+  }
 }
 
 // GMAIL
