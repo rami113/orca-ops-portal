@@ -394,7 +394,7 @@ The Orca AI system is designed to enhance situational awareness on the bridge an
 Installation Process
 Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes 12–18 hours and includes system installation, technical validation, and crew training.
 
-To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong>Also, could you kindly share the next 2–3 upcoming port calls, along with the corresponding agent details for each port?</strong>
+To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong>
 
 Information and Preparations Required
 
@@ -452,7 +452,7 @@ async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
   const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,buildHtmlEmail(draft, user.name||user.email, d),true);
   if(!ok)return;
-  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Voyage schedule','All future ports','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
+  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + agent details','Next 2–3 upcoming port calls + agent details','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
   sv();updateMetrics();renderTable();populateSel();
   show('mod-start','none');showTab('dashboard');
 }
@@ -486,7 +486,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
   <tr><td style="padding:20px 36px 0 36px">
     <p style="margin:0 0 8px 0;font-size:14px;font-weight:bold;color:#1D2E6B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1D2E6B;padding-bottom:5px">Installation Process</p>
     <p style="margin:8px 0 0 0;font-size:14px;color:#333;line-height:1.75">Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes <strong>12–18 hours</strong> and includes system installation, technical validation, and crew training.</p>
-    <p style="margin:10px 0 0 0;font-size:14px;color:#333;line-height:1.75">To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong>Also, could you kindly share the next 2–3 upcoming port calls, along with the corresponding agent details for each port?</strong></p>
+    <p style="margin:10px 0 0 0;font-size:14px;color:#333;line-height:1.75">To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong></p>
   </td></tr>
 
   <!-- SECTION TITLE -->
