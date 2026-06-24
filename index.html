@@ -150,6 +150,24 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
   #view-dashboard .tbl th{font-size:9px}
 }
 
+
+/* v31 clean action layout */
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:17%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:14%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:8%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:7%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:9%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:6%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:15%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:12%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:12%}
+#view-dashboard .row-actions{display:flex;gap:6px;align-items:center;justify-content:flex-start;flex-wrap:wrap}
+#view-dashboard .row-actions .btn{height:30px;padding:5px 9px;white-space:nowrap}
+#view-dashboard .row-actions .btn-d{padding:5px 8px}
+#view-dashboard .vessel-actions{display:none!important}
+#view-dashboard .next-action-mini{width:auto}
+#view-dashboard .tbl tbody td:last-child{min-width:130px}
+
 </style>
 </head>
 <body>
@@ -226,7 +244,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           </div>
         </div>
         <table class="tbl">
-          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Traffic light</th><th>Reply age</th><th>Email activity</th><th>Assigned to</th><th>Next action</th></tr></thead>
+          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Traffic light</th><th>Reply age</th><th>Email activity</th><th>Owner</th><th>Actions</th></tr></thead>
           <tbody id="vtbody"></tbody>
         </table>
         <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
@@ -604,11 +622,6 @@ function renderTable(){
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email}</span>
         </div>
-        <div class="vessel-actions">
-          <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>
-          <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i></button>
-          ${adminDelete}
-        </div>
       </td>
       <td>
         <select onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" class="status-select" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
@@ -628,8 +641,12 @@ function renderTable(){
           ${userOptions(v.assignedTo)}
         </select>
       </td>
-      <td style="font-size:12px;color:var(--muted);max-width:135px">
-        <button class="btn btn-p btn-s next-action-mini" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> AI</button>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i> View</button>
+          <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze</button>
+          ${adminDelete}
+        </div>
       </td>
     </tr>`;
   }).join('');
