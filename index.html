@@ -186,6 +186,28 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
   width:88px;
 }
 
+
+/* v34 Operations Upgrade */
+.kpi-card{cursor:pointer;transition:all .15s ease}
+.kpi-card:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.08)}
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:14%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:13%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:10%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:7%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:8%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:6%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:13%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:12%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:10%}
+#view-dashboard .tbl th:nth-child(10),#view-dashboard .tbl td:nth-child(10){width:10%}
+.traffic-only{gap:6px}
+.timeline-box{border:1px solid var(--border);border-radius:var(--rs);padding:12px;margin-bottom:14px;background:#fafaf8}
+.timeline-box h4{margin:0 0 10px 0;color:var(--navy)}
+.tl-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.tl-row:last-child{border-bottom:0}
+.tl-dot{width:10px;height:10px;border-radius:50%;background:var(--navy);margin-top:4px;flex:0 0 auto}
+.tl-row span{color:var(--muted);font-size:12px}
+
 </style>
 </head>
 <body>
@@ -262,7 +284,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           </div>
         </div>
         <table class="tbl">
-          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Traffic light</th><th>Reply age</th><th>Email activity</th><th>Owner</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Vessel</th><th>Status</th><th>Readiness</th><th>Risk</th><th>Light</th><th>Reply age</th><th>Email activity</th><th>Last activity</th><th>Owner</th><th>Actions</th></tr></thead>
           <tbody id="vtbody"></tbody>
         </table>
         <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
@@ -515,6 +537,7 @@ function showTab(t){
   if(t==='inbox')renderInbox();
 }
 
+function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
 function sb(s){const m={
   waiting:['bg','ti-clock','Waiting for reply'],
   followup:['ba','ti-send','Follow-up required'],
@@ -554,12 +577,14 @@ function userOptions(selected){
 
 function setVesselStatus(i,status){
   if(!vessels[i])return;
+  const old=vessels[i].status;
   vessels[i].status=status;
   if(status==='waiting'){vessels[i].nextAction='Wait for master reply';}
   if(status==='followup'){vessels[i].nextAction='Send follow-up';}
   if(status==='ready'){vessels[i].nextAction='Coordinate installation window';vessels[i].progress=Math.max(vessels[i].progress||0,75);}
   if(status==='scheduled'){vessels[i].nextAction='Installation scheduled';vessels[i].progress=Math.max(vessels[i].progress||0,90);}
   if(status==='completed'){vessels[i].nextAction='Installation completed';vessels[i].progress=100;vessels[i].risk='low';}
+  if(old!==status)addTimeline(vessels[i],'status','Status changed',`${sbText(old)} → ${sbText(status)}`);
   sv();updateMetrics();renderTable();renderAdmin();populateSel();
 }
 function statusOptions(selected){
@@ -575,8 +600,9 @@ function statusOptions(selected){
 
 function assignVessel(i,email){
   if(!vessels[i])return;
+  const old=vessels[i].assignedTo||'Unassigned';
   vessels[i].assignedTo=email;
-  vessels[i].nextAction='Assigned to '+email;
+  addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
   sv();renderTable();renderAdmin();
 }
 function deleteVessel(i){
@@ -617,47 +643,114 @@ async function openCaseAnalyze(i){
   }
 }
 
+
+function addTimeline(v,type,title,detail){
+  if(!v)return;
+  v.timeline=v.timeline||[];
+  v.timeline.unshift({ts:new Date().toISOString(),type,title,detail});
+  v.lastActivity=new Date().toISOString();
+}
+function fmtDT(d){
+  if(!d)return '—';
+  const dt=new Date(d);
+  if(!Number.isFinite(dt.getTime()))return '—';
+  return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+function readinessScore(v){
+  if(!v)return 0;
+  if(v.status==='completed')return 100;
+  if(v.status==='scheduled')return Math.max(v.progress||0,90);
+  if(v.status==='ready')return Math.max(v.progress||0,85);
+  const received=(v.receivedItems||[]).map(x=>String(x).toLowerCase());
+  const has=t=>received.some(x=>x.includes(t));
+  let score=0;
+  if(has('vessel ga'))score+=15;
+  if(has('bridge console'))score+=15;
+  if(has('monitor'))score+=15;
+  if(has('seapod'))score+=15;
+  if(has('port')||has('agent')||has('upcoming port'))score+=15;
+  if(has('cable'))score+=10;
+  if(has('power')||has('vsat'))score+=10;
+  if(has('docs')||has('acknowledgement'))score+=5;
+  return Math.max(score, v.progress||0);
+}
+function readinessBar(v){
+  const s=readinessScore(v);
+  return `<div style="display:flex;align-items:center;gap:7px;min-width:86px">
+    <div class="prog"><span style="width:${Math.min(100,s)}%"></span></div>
+    <span style="font-size:12px;color:var(--muted)">${s}%</span>
+  </div>`;
+}
+function trafficLight(v){
+  const d=ds(v.lastContact);
+  let c='green',label='On track';
+  if(v.risk==='high'||d>=7){c='red';label='Attention';}
+  else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
+  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
+  return `<span class="traffic traffic-only" title="${label}"><span class="tl-light tl-${c}"></span><span>${label}</span></span>`;
+}
+function filteredVessels(){
+  let arr=vessels.map((v,i)=>({...v,__i:i}));
+  const q=String(dashSearch||'').trim().toLowerCase();
+  if(q)arr=arr.filter(v=>[v.name,v.email,v.owner,v.assignedTo,v.docs,v.company,v.imo].some(x=>String(x||'').toLowerCase().includes(q)));
+  if(dashStatus)arr=arr.filter(v=>v.status===dashStatus);
+  if(dashKpiFilter==='ready')arr=arr.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
+  if(dashKpiFilter==='waiting')arr=arr.filter(v=>v.status==='waiting');
+  if(dashKpiFilter==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  if(sortMode==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
+  else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
+  return arr;
+}
+function setKpiFilter(f){
+  dashKpiFilter=(dashKpiFilter===f?'':f);
+  renderTable();
+}
+function seedTimeline(v){
+  if(!v.timeline||!v.timeline.length){
+    v.timeline=[];
+    if(v.lastEmailDate)addTimeline(v,'sent','Initial email sent',`Sent to ${v.email||'master'}`);
+    if((v.emailsReceived||0)>0)addTimeline(v,'reply','Captain replied',`${v.emailsReceived} replies received`);
+    if(v.status==='followup')addTimeline(v,'ai','AI analysis completed','Follow-up required');
+  }
+}
+
 function renderTable(){
-  const tb=document.getElementById('vtbody'),em=document.getElementById('vempty');
-  const f=document.getElementById('flt').value;
-  const sortEl=document.getElementById('sort-vessels');
-  const sortOrder=sortEl?sortEl.value:'newest';
-  const list=(f?vessels.filter(v=>v.status===f):vessels.slice()).sort((a,b)=>{
-    const ad=new Date(a.lastEmailDate||a.lastContact||0).getTime();
-    const bd=new Date(b.lastEmailDate||b.lastContact||0).getTime();
-    return sortOrder==='oldest'?ad-bd:bd-ad;
-  });
-  if(!list.length){tb.innerHTML='';em.style.display='block';return;}
-  em.style.display='none';
-  tb.innerHTML=list.map(v=>{
-    const idx=vessels.indexOf(v),d=ds(v.lastContact),al=v.risk==='high',p=v.progress||0;
-    const lastSent=(v.lastEmailDate||v.lastContact)?new Date(v.lastEmailDate||v.lastContact).toLocaleDateString('en-GB'):'—';
-    const lastReceived=v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—';
-    const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i></button>`:'';
-    return`<tr class="cl${al?' al':''}">
+  const tb=document.getElementById('vtb'),empty=document.getElementById('vempty');
+  const arr=filteredVessels();
+  if(!vessels.length){
+    tb.innerHTML='';
+    empty.style.display='block';
+    return;
+  }
+  empty.style.display=arr.length?'none':'block';
+  tb.innerHTML=arr.map(v=>{
+    const idx=v.__i;
+    seedTimeline(vessels[idx]);
+    const d=ds(v.lastContact);
+    const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
+    return `<tr class="cl">
       <td>
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
-          <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email}</span>
+          <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
         </div>
       </td>
       <td>
-        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" class="status-select" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+        <select class="status-select" onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
           ${statusOptions(v.status)}
         </select>
       </td>
-      <td><div style="display:flex;align-items:center;gap:6px;min-width:90px"><div class="prog"><div class="prog-f" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--muted)">${p}%</span></div></td>
+      <td>${readinessBar(v)}</td>
       <td>${rb(v.risk||'medium')}</td>
       <td>${trafficLight(v)}</td>
       <td>${dc(d)}</td>
       <td class="email-activity" style="color:var(--muted)">
-        <div><b>Sent</b> ${v.emailsSent||0} · ${lastSent}</div>
-        <div><b>Received</b> ${v.emailsReceived||0} · ${lastReceived}</div>
+        <strong>Sent</strong> ${v.emailsSent||0} · ${v.lastEmailDate?new Date(v.lastEmailDate).toLocaleDateString('en-GB'):'—'}<br>
+        <strong>Received</strong> ${v.emailsReceived||0} · ${v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—'}
       </td>
+      <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
       <td>
-        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();assignVessel(${idx},this.value)" class="owner-select" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
-          ${userOptions(v.assignedTo)}
-        </select>
+        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
       </td>
       <td>
         <div class="row-actions">
@@ -1081,7 +1174,10 @@ async function saveAndSend(){
 function openV(idx){
   const v=vessels[idx];if(!v)return;
   document.getElementById('vd-t').innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
-  document.getElementById('vd-s').innerHTML=sb(v.status);document.getElementById('vd-p').textContent=(v.progress||0)+'%';document.getElementById('vd-r').innerHTML=rb(v.risk||'medium');
+  document.getElementById('vd-s').innerHTML=sb(v.status);
+  seedTimeline(v);
+  const timelineEl=document.getElementById('vd-timeline');
+  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${(v.timeline||[]).slice(0,12).map(e=>`<div class="tl-row"><div class="tl-dot"></div><div><strong>${e.title}</strong><br><span>${fmtDT(e.ts)}${e.detail?' · '+e.detail:''}</span></div></div>`).join('')||'<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>'}`;document.getElementById('vd-p').textContent=(v.progress||0)+'%';document.getElementById('vd-r').innerHTML=rb(v.risk||'medium');
   const ALL=['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Proposed monitor location photos','Proposed Seapod location photos','Docs acknowledgement'];
   const recv=v.receivedItems||[],miss=v.missingItems||[];
   document.getElementById('vd-cl').innerHTML=ALL.map(item=>{const done=recv.some(r=>r.toLowerCase().includes(item.toLowerCase().split(' ')[0])),mis=miss.some(m=>m.toLowerCase().includes(item.toLowerCase().split(' ')[0])),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';return`<li><i class="ti ${ic}"></i>${item}</li>`;}).join('');
