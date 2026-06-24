@@ -685,6 +685,100 @@ async function openCaseAnalyze(i){
 }
 
 
+
+const REQUIRED_ITEMS=[
+  'Next 2–3 upcoming port calls + corresponding agent details for each port',
+  'Cable penetration',
+  'VSAT routing',
+  'Power connection',
+  'Proposed monitor location photos',
+  'Proposed Seapod location photos',
+  'Docs acknowledgement'
+];
+function normTxt(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function isThanksOnlyReply(txt){
+  const s=normTxt(txt).replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+  if(!s)return true;
+  const generic=[
+    'thanks','thank you','thank you very much','many thanks','noted','ok','okay','yes','received','roger',
+    'will check','will look into this','i will look into this','we will check','noted with thanks',
+    'thank you for your email','thanks for your email'
+  ];
+  if(generic.includes(s))return true;
+  const technical=['port','agent','eta','vessel ga','bridge','console','cable','penetration','vsat','power','monitor','photo','picture','seapod','camera','deck','docs','document','acknowledg'];
+  return !technical.some(k=>s.includes(k));
+}
+function itemKey(item){
+  const s=normTxt(item);
+  if(s.includes('port')||s.includes('agent')||s.includes('eta'))return 'ports';
+  if(s.includes('cable')||s.includes('penetration'))return 'cable';
+  if(s.includes('vsat'))return 'vsat';
+  if(s.includes('power'))return 'power';
+  if(s.includes('monitor'))return 'monitor';
+  if(s.includes('seapod')||s.includes('camera')||s.includes('compass'))return 'seapod';
+  if(s.includes('doc')||s.includes('acknowledg'))return 'docs';
+  return s.split(' ')[0]||s;
+}
+function hasItem(list,item){
+  const k=itemKey(item);
+  return (list||[]).some(x=>itemKey(x)===k || normTxt(x).includes(k) || normTxt(item).includes(itemKey(x)));
+}
+function derivedMissing(v){
+  const recv=v&&Array.isArray(v.receivedItems)?v.receivedItems:[];
+  const current=v&&Array.isArray(v.missingItems)&&v.missingItems.length?v.missingItems:REQUIRED_ITEMS;
+  const base=current.length?current:REQUIRED_ITEMS;
+  return REQUIRED_ITEMS.filter(item=>!hasItem(recv,item) && hasItem(base,item));
+}
+function buildFollowupEmail(v,missing){
+  const m=(missing&&missing.length?missing:REQUIRED_ITEMS);
+  return `Dear Master,
+
+Thank you for your reply regarding ${v.name}.
+
+To complete the installation coordination, we still require the following information:
+
+${m.map(x=>'• '+x).join('\n')}
+
+Once the voyage schedule, upcoming ports, agent details and technical information are reviewed, Orca AI will identify the most suitable installation opportunity.
+
+Kind regards,
+ORCA AI OPS`;
+}
+function normalizeAnalysisResult(v,reply,analysis){
+  const oldMissing=derivedMissing(v);
+  const thanksOnly=isThanksOnlyReply(reply);
+  analysis=analysis||{};
+  let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
+  let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
+  if(thanksOnly){
+    received=[];
+    missing=oldMissing;
+  }else{
+    missing=REQUIRED_ITEMS.filter(item=>!hasItem(received,item) && (hasItem(oldMissing,item)||!oldMissing.length));
+  }
+  const complete=missing.length===0;
+  analysis.received=received;
+  analysis.missing=missing;
+  analysis.status=complete?'ready':'followup';
+  analysis.risk=complete?'low':(analysis.risk||'medium');
+  analysis.progress=complete?85:Math.max(Number(analysis.progress||0), received.length?25:0);
+  analysis.nextAction=complete?'Coordinate installation window':'Send follow-up';
+  analysis.followup_email=complete
+    ? `Dear Master,\n\nThank you for providing the required information. We will review the details and coordinate the next steps for the Orca AI installation.\n\nKind regards,\nORCA AI OPS`
+    : buildFollowupEmail(v,missing);
+  return analysis;
+}
+function cleanTimeline(v){
+  if(!v)return;
+  v.timeline=(v.timeline||[]).filter(e=>e&&(e.title||e.text)).map(e=>{
+    if(!e.title&&e.text)e.title=e.text;
+    if(!e.ts&&e.date)e.ts=new Date(e.date).toISOString();
+    if(!e.ts)e.ts=new Date().toISOString();
+    if(!e.type)e.type=e.text&&e.text.toLowerCase().includes('reply')?'reply':'note';
+    return e;
+  });
+}
+
 function addTimeline(v,type,title,detail){
   if(!v)return;
   v.timeline=v.timeline||[];
@@ -764,7 +858,7 @@ function renderTimeline(v){
     const icon={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'}[e.type]||'ti-circle';
     return `<div class="tl-row">
       <div class="tl-dot"><i class="ti ${icon}"></i></div>
-      <div><strong>${e.title||'Activity'}</strong><br><span>${fmtDT(e.ts)}${e.detail?' · '+e.detail:''}</span></div>
+      <div><strong>${e.title||e.text||'Activity'}</strong><br><span>${fmtDT(e.ts||e.date)}${e.detail?' · '+e.detail:(e.by?' · '+e.by:'')}</span></div>
     </div>`;
   }).join('');
 }
@@ -968,7 +1062,7 @@ async function sendAndSaveNew(){
       assignedTo:(user&&user.email)||'rami@orca-ai.io',
       nextAction:'Wait for master reply',
       receivedItems:[],
-      missingItems:[],
+      missingItems:[...REQUIRED_ITEMS],
       timeline:[]
     };
     if(typeof addTimeline==='function')addTimeline(nv,'sent','Initial email sent',`Sent to ${e}`);
@@ -1256,6 +1350,7 @@ function openIbModal(i){
   document.getElementById('mib-v').textContent=curIb.vessel.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   document.getElementById('mib-b').textContent=curIb.body;
+  ibAna=normalizeAnalysisResult(v,curIb.body,ibAna);
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
   document.getElementById('mod-ib').style.display='flex';
@@ -1264,9 +1359,9 @@ async function runIbAnalysis(){
   if(!curIb)return;
   const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
   document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. Photos=pending review.`;
+  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items. Photos=pending review. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
-  catch(e){ibAna={received:['Partial info'],missing:v.missingItems||[],status:'followup',risk:'medium',progress:25,nextAction:'Send follow-up',flags:[],followup_email:`Dear Master,\n\nThank you for your reply regarding ${v.name}.\n\nWe still require:\n\n${(v.missingItems||[]).map(m=>'• '+m).join('\n')}\n\nOnce the voyage schedule, future ports, port agent details and technical information are reviewed, Orca AI will identify the most suitable installation opportunity.\n\nKind regards,\nOrca AI`};}
+  catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
@@ -1275,13 +1370,14 @@ async function runIbAnalysis(){
 }
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
-  const v=curIb.vessel,ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,ibAna.followup_email,false);
+  const v=curIb.vessel,ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildHtmlEmail(ibAna.followup_email,'ORCA AI OPS',v.docs||''),true);
   if(!ok)return;
   const idx=curIb.vi;
   vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...(vessels[idx].receivedItems||[]),...(ibAna.received||[])],lastContact:new Date().toISOString()};
-  vessels[idx].timeline=vessels[idx].timeline||[];
-  vessels[idx].timeline.push({type:'in',text:'Reply received from captain',msgId:curIb.msgId,by:v.email,date:new Date().toLocaleDateString('en-GB')});
-  vessels[idx].timeline.push({type:'out',text:'Follow-up sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')});vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'reply','Reply received from captain',curIb.from||v.email);
+  addTimeline(vessels[idx],'sent','Follow-up sent via Gmail','ORCA AI OPS');
+  vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   sv();updateMetrics();renderTable();
   document.getElementById('mod-ib').style.display='none';
   ibItems.splice(ibItems.indexOf(curIb),1);
@@ -1296,9 +1392,10 @@ async function analyzeReply(){
   if(!reply){alert("Please paste the captain's reply.");return;}
   const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100.`;
+  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
-  catch(e){ana={received:['Partial info'],missing:['Next 2–3 upcoming port calls + corresponding agent details for each port'],status:'followup',risk:'medium',progress:25,nextAction:'Send follow-up',flags:[],followup_email:'Dear Master,\n\nThank you.\n\nKind regards,\nOrca AI',vi:idx!==''?parseInt(idx):null};}
+  catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
+  if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
   document.getElementById('a-load').style.display='none';
   document.getElementById('a-recv').innerHTML=(ana.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
@@ -1308,28 +1405,38 @@ async function analyzeReply(){
 }
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
-  const v=vessels[idx],ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,ana.followup_email,false);if(!ok)return;
+  const v=vessels[idx],ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildHtmlEmail(ana.followup_email,'ORCA AI OPS',v.docs||''),true);if(!ok)return;
   vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:[...(v.receivedItems||[]),...(ana.received||[])],lastContact:new Date().toISOString()};
-  vessels[idx].timeline=v.timeline||[];
-  vessels[idx].timeline.push({type:'in',text:'Reply received — analyzed by AI',by:v.email,date:new Date().toLocaleDateString('en-GB')});
-  vessels[idx].timeline.push({type:'out',text:'Follow-up sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')});vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'ai','Reply analyzed by AI',v.email);
+  addTimeline(vessels[idx],'sent','Follow-up sent via Gmail','ORCA AI OPS');
+  vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   sv();updateMetrics();renderTable();document.getElementById('ra-reply').value='';document.getElementById('a-out').style.display='none';showTab('dashboard');
 }
 
 // VESSEL DETAIL
 function openV(idx){
   const v=vessels[idx];if(!v)return;
-  document.getElementById('vd-t').innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
-  document.getElementById('vd-s').innerHTML=sb(v.status);
+  cleanTimeline(v);
+  v.missingItems=derivedMissing(v);
+  const title=document.getElementById('vd-t');
+  if(title)title.innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
+  const st=document.getElementById('vd-s');if(st)st.innerHTML=sb(v.status);
   seedTimeline(v);
   const timelineEl=document.getElementById('vd-timeline');
-  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${renderTimeline(v)}`;document.getElementById('vd-p').textContent=(v.progress||0)+'%';document.getElementById('vd-r').innerHTML=rb(v.risk||'medium');
-  const ALL=['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Proposed monitor location photos','Proposed Seapod location photos','Docs acknowledgement'];
+  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${renderTimeline(v)}`;
+  const p=document.getElementById('vd-p');if(p)p.textContent=(readinessScore(v)||v.progress||0)+'%';
+  const r=document.getElementById('vd-r');if(r)r.innerHTML=rb(v.risk||'medium');
   const recv=v.receivedItems||[],miss=v.missingItems||[];
-  document.getElementById('vd-cl').innerHTML=ALL.map(item=>{const done=recv.some(r=>r.toLowerCase().includes(item.toLowerCase().split(' ')[0])),mis=miss.some(m=>m.toLowerCase().includes(item.toLowerCase().split(' ')[0])),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';return`<li><i class="ti ${ic}"></i>${item}</li>`;}).join('');
-  document.getElementById('vd-mi').innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
-  const tl=v.timeline||[];
-  document.getElementById('vd-tl').innerHTML=tl.length?tl.map(t=>{const dot=t.type==='out'?'d-out':t.type==='in'?'d-in':'d-warn',ic=t.type==='out'?'ti-mail':t.type==='in'?'ti-message':'ti-alert-triangle';return`<div class="tl-item"><div class="tl-dot ${dot}"><i class="ti ${ic}"></i></div><div><div class="tl-t">${t.text}</div><div class="tl-m">${t.date}${t.by?' · '+t.by:''}</div></div></div>`;}).join(''):'<div style="font-size:13px;color:var(--faint);padding:8px 0">No history yet.</div>';
+  const cl=document.getElementById('vd-cl');
+  if(cl)cl.innerHTML=REQUIRED_ITEMS.map(item=>{
+    const done=hasItem(recv,item),mis=hasItem(miss,item),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
+    return`<li><i class="ti ${ic}"></i>${item}</li>`;
+  }).join('');
+  const mi=document.getElementById('vd-mi');
+  if(mi)mi.innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
+  const tlEl=document.getElementById('vd-tl');
+  if(tlEl)tlEl.innerHTML=renderTimeline(v);
   showTab('vessel-detail');
 }
 
