@@ -655,45 +655,57 @@ function deleteVessel(i){
 }
 
 
-async function fetchLatestReplyForVessel(vessel){
-  if(!token||!vessel||!vessel.email)return null;
-  const email=String(vessel.email||'').trim();
-  const q=`from:${email}`;
-  try{
-    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=10`,{headers:{Authorization:'Bearer '+token}});
-    const d=await r.json();
-    if(!d.messages||!d.messages.length)return null;
-    for(const msg of d.messages){
-      const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
-      const dd=await dr.json();
-      const hdr=(dd.payload&&dd.payload.headers)||[];
-      const from=hdr.find(h=>h.name==='From')?.value||'';
-      const subj=hdr.find(h=>h.name==='Subject')?.value||'';
-      const date=hdr.find(h=>h.name==='Date')?.value||'';
-      const fe=(from.match(/<(.+)>/)?.[1]||from).trim().toLowerCase();
-      if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
-      if(fe!==email.toLowerCase() && !String(from).toLowerCase().includes(email.toLowerCase()))continue;
-      const decodeBody=(p)=>{
-        if(!p)return '';
-        if((p.mimeType==='text/plain'||p.mimeType==='text/html')&&p.body&&p.body.data){
-          try{
-            const raw=atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));
-            if(p.mimeType==='text/html')return stripHtmlForText(raw);
-            return raw;
-          }catch(e){return '';}
-        }
-        if(p.parts)for(const pp of p.parts){const rr=decodeBody(pp);if(rr)return rr;}
-        return '';
-      };
-      const body=decodeBody(dd.payload).trim();
-      if(!body)return null;
-      return {msgId:msg.id,from,fe:email,subj,date,body,vessel,vi:vessels.indexOf(vessel)};
-    }
-  }catch(e){
-    console.warn('fetchLatestReplyForVessel failed',e);
-  }
-  return null;
+
+function cleanCaptainReplyText(txt){
+  let s=String(txt||'').replace(/\r/g,'').trim();
+  // Remove Gmail quoted history.
+  s=s.split(/\nOn .+ wrote:\n/i)[0];
+  s=s.split(/\n> /)[0];
+  s=s.replace(/\[image:[^\]]+\]/gi,'').trim();
+  return s;
 }
+function decodeGmailBody(payload){
+  const decode=(data)=>{
+    try{
+      const bin=atob(String(data||'').replace(/-/g,'+').replace(/_/g,'/'));
+      try{return decodeURIComponent(escape(bin));}catch(e){return bin;}
+    }catch(e){return '';}
+  };
+  const walk=(p)=>{
+    if(!p)return '';
+    if(p.mimeType==='text/plain'&&p.body&&p.body.data)return decode(p.body.data);
+    if(p.mimeType==='text/html'&&p.body&&p.body.data)return stripHtmlForText(decode(p.body.data));
+    if(p.parts)for(const part of p.parts){const got=walk(part);if(got)return got;}
+    return '';
+  };
+  return walk(payload);
+}
+function isOutboundFromCurrentUser(from){
+  const f=String(from||'').toLowerCase();
+  const me=String((user&&user.email)||'').toLowerCase();
+  return (me&&f.includes(me)) || f.includes('orca ai ops') || f.includes('operations specialist');
+}
+async function gmailSearchMessages(q,max=10){
+  if(!token)return [];
+  const url=`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${max}`;
+  const r=await fetch(url,{headers:{Authorization:'Bearer '+token}});
+  const d=await r.json();
+  return d.messages||[];
+}
+async function readGmailMessage(id){
+  const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+  const dd=await dr.json();
+  const hdr=(dd.payload&&dd.payload.headers)||[];
+  const get=n=>hdr.find(h=>String(h.name||'').toLowerCase()===n.toLowerCase())?.value||'';
+  return {
+    msgId:id,
+    from:get('From'),
+    subj:get('Subject'),
+    date:get('Date'),
+    body:cleanCaptainReplyText(decodeGmailBody(dd.payload)||dd.snippet||'')
+  };
+}
+
 function openManualAnalyzeWithReply(i,replyText){
   showTab('analyze');
   setTimeout(()=>{
@@ -712,58 +724,32 @@ async function openCaseAnalyze(i){
   const vessel=vessels[i];
   if(!vessel){alert('Vessel not found.');return;}
   try{
-    let itemIndex=-1;
+    // Use existing inbox result first.
+    let existing=null;
     if(Array.isArray(ibItems)&&ibItems.length){
-      const vEmail=String(vessel.email||'').toLowerCase();
-      const vName=String(vessel.name||'').toLowerCase();
-      itemIndex=ibItems.findIndex(item=>{
-        const fromEmail=String(item.fe||item.from||'').toLowerCase();
+      const email=String(vessel.email||'').toLowerCase();
+      const name=String(vessel.name||'').toLowerCase();
+      existing=ibItems.find(item=>{
+        const from=String(item.fe||item.from||'').toLowerCase();
         const subj=String(item.subj||item.subject||'').toLowerCase();
         const body=String(item.body||item.snippet||'').toLowerCase();
-        return item.vi===i ||
-          item.vessel===vessel ||
-          (item.vessel&&item.vessel.email===vessel.email) ||
-          (vEmail&&fromEmail.includes(vEmail)) ||
-          (vName&&(subj.includes(vName)||body.includes(vName)));
+        return item.vi===i || item.vessel===vessel || (email&&from.includes(email)) || (name&&(subj.includes(name)||body.includes(name)));
       });
     }
-    if(itemIndex>=0){
-      openIbModal(itemIndex);
+    if(existing&&existing.body){
+      openManualAnalyzeWithReply(i,cleanCaptainReplyText(existing.body));
       return;
     }
 
-    try{
-      await fetchInbox();
-      if(Array.isArray(ibItems)&&ibItems.length){
-        const vEmail=String(vessel.email||'').toLowerCase();
-        const vName=String(vessel.name||'').toLowerCase();
-        itemIndex=ibItems.findIndex(item=>{
-          const fromEmail=String(item.fe||item.from||'').toLowerCase();
-          const subj=String(item.subj||item.subject||'').toLowerCase();
-          const body=String(item.body||item.snippet||'').toLowerCase();
-          return item.vi===i ||
-            item.vessel===vessel ||
-            (item.vessel&&item.vessel.email===vessel.email) ||
-            (vEmail&&fromEmail.includes(vEmail)) ||
-            (vName&&(subj.includes(vName)||body.includes(vName)));
-        });
-      }
-      if(itemIndex>=0){
-        openIbModal(itemIndex);
-        return;
-      }
-    }catch(fetchErr){
-      console.warn('Inbox fetch skipped/failed',fetchErr);
-    }
-
+    // Search Gmail directly and paste latest reply.
     const latest=await fetchLatestReplyForVessel(vessel);
     if(latest&&latest.body){
-      // Store it in ibItems so the normal Analyze & Update modal can still be used.
       ibItems.push(latest);
       openManualAnalyzeWithReply(i,latest.body);
       return;
     }
 
+    // Last resort: open manual screen, but with clear instruction.
     openManualAnalyzeWithReply(i,'');
   }catch(err){
     console.error('openCaseAnalyze failed',err);
