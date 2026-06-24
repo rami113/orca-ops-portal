@@ -225,27 +225,6 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .recv-item{display:flex;align-items:center;gap:8px;background:#EAF8F2;color:#116B52;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:13px}
 .recv-item i{color:#1D9E75}
 
-
-.toast-msg{
-  position:fixed;
-  right:20px;
-  bottom:20px;
-  background:#1D2E6B;
-  color:#fff;
-  padding:12px 16px;
-  border-radius:8px;
-  box-shadow:0 8px 24px rgba(0,0,0,.18);
-  z-index:99999;
-  font-size:13px;
-  font-weight:600;
-  opacity:0;
-  transform:translateY(8px);
-  transition:all .18s ease;
-}
-.toast-msg.show{opacity:1;transform:translateY(0)}
-.toast-msg.err{background:#A32D2D}
-.toast-msg.ok{background:#1D9E75}
-
 </style>
 </head>
 <body>
@@ -425,7 +404,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
           <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
-          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
+          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button><button class="btn" onclick="cleanupSharedDb()"><i class="ti ti-broom"></i> Clean shared DB</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
         </div>
       </div>
     </div>
@@ -554,21 +533,61 @@ let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=n
 
 
 
-function showToast(message,type='ok'){
-  try{
-    const old=document.querySelector('.toast-msg');
-    if(old)old.remove();
-    const t=document.createElement('div');
-    t.className='toast-msg '+(type==='err'?'err':'ok');
-    t.textContent=message;
-    document.body.appendChild(t);
-    requestAnimationFrame(()=>t.classList.add('show'));
-    setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),220);},2600);
-  }catch(e){console.log(message);}
+function isValidVesselRecord(v){
+  return !!(v && typeof v==='object' && String(v.name||'').trim() && String(v.email||'').trim());
 }
-function setSyncLabel(text){
-  const el=document.getElementById('last-refresh-label');
-  if(el)el.textContent=text||'';
+function cleanVesselArray(arr){
+  return (Array.isArray(arr)?arr:[])
+    .map(normalizeVessel)
+    .filter(isValidVesselRecord);
+}
+function vesselStableKey(v){
+  return String((v && (v.id || (String(v.name||'').toLowerCase().trim()+'|'+String(v.email||'').toLowerCase().trim()))) || '');
+}
+function vesselUpdatedAt(v){
+  const d = new Date(v && (v.updatedAt || v.lastActivity || v.lastContact || v.createdAt || 0)).getTime();
+  return Number.isFinite(d) ? d : 0;
+}
+function mergeVessels(existing, incoming){
+  const map = new Map();
+  cleanVesselArray(existing).forEach(v=>{
+    const k=vesselStableKey(v);
+    if(k)map.set(k,v);
+  });
+  cleanVesselArray(incoming).forEach(v=>{
+    if(!v.id)v.id=Date.now()+Math.floor(Math.random()*100000);
+    v.updatedAt=v.updatedAt||new Date().toISOString();
+    const k=vesselStableKey(v);
+    if(!k)return;
+    const old=map.get(k);
+    if(!old || vesselUpdatedAt(v) >= vesselUpdatedAt(old)){
+      map.set(k, {...old, ...v});
+    }
+  });
+  return Array.from(map.values()).sort((a,b)=>vesselUpdatedAt(b)-vesselUpdatedAt(a));
+}
+async function saveVesselsMerged(){
+  if(!hasSharedDb()||!token){sv();return false;}
+  const latest = await loadSharedVessels();
+  const merged = mergeVessels(latest || [], vessels || []);
+  vessels = merged;
+  const ok = await saveSharedVessels(merged);
+  if(!ok){sv();return false;}
+  return true;
+}
+async function cleanupSharedDb(){
+  if(!isSuperAdmin(user&&user.email)){alert('Super Admin only.');return;}
+  const latest = await loadSharedVessels();
+  const cleaned = cleanVesselArray(latest || []);
+  vessels = cleaned;
+  const ok = await saveSharedVessels(cleaned);
+  if(ok){
+    updateMetrics();renderTable();populateSel();
+    if(typeof renderAdmin==='function')renderAdmin();
+    showToast('Shared database cleaned','ok');
+  }else{
+    showToast('Cleanup failed','err');
+  }
 }
 
 function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
@@ -607,8 +626,8 @@ async function loadSharedVessels(){
     const val=d.values&&d.values[0]&&d.values[0][0];
     if(!val)return [];
     const parsed=JSON.parse(val);
-    if(Array.isArray(parsed))return parsed;
-    if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
+    if(Array.isArray(parsed))return cleanVesselArray(parsed);
+    if(parsed&&Array.isArray(parsed.vessels))return cleanVesselArray(parsed.vessels);
     return [];
   }catch(e){
     console.error('Shared DB load failed',e);
@@ -643,44 +662,31 @@ async function loadVessels(){
     if(ok){
       const shared=await loadSharedVessels();
       if(Array.isArray(shared)){
-        vessels=shared.map(normalizeVessel);
+        vessels=cleanVesselArray(shared);
         return;
       }
     }
-    showToast('Shared database could not be loaded. Check Sheet permissions.','err');
+    alert('Shared database could not be loaded. Check the Google Sheet ID and sharing permissions.');
   }
   lv();
 }
 async function saveVessels(){
   if(hasSharedDb()){
-    const ok=await saveSharedVessels(vessels);
+    const ok=await saveVesselsMerged();
     if(ok)return;
     showToast('Shared database save failed. Changes were saved locally only.','err');
   }
   sv();
 }
-async function refreshSharedData(options={}){
-  const quiet=!!options.quiet;
-  try{
-    if(!quiet)setSyncLabel('Syncing...');
-    await loadVessels();
-    updateMetrics();
-    renderTable();
-    populateSel();
-    if(typeof renderAdmin==='function')renderAdmin();
-    const tm=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    setSyncLabel('Last sync: '+tm);
-    if(!quiet)showToast('Synced successfully','ok');
-    return true;
-  }catch(e){
-    console.error('Sync failed',e);
-    setSyncLabel('Sync failed');
-    if(!quiet)showToast('Sync failed. Open Console for details.','err');
-    return false;
-  }
+async function refreshSharedData(){
+  await loadVessels();
+  updateMetrics();
+  renderTable();
+  populateSel();
+  if(typeof renderAdmin==='function')renderAdmin();
 }
 
-function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
+function lv(){try{vessels=cleanVesselArray(loadVesselsCompat());}catch(e){console.error('load failed',e);vessels=[];}}
 
 function loadVesselsCompat(){
   const keys=['orca_v3','orca_v2','orca_v1','vessels'];
@@ -750,7 +756,7 @@ async function handleToken(r){
   document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
   if(user.pic)document.getElementById('uav').src=user.pic;
   document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
-  renderTable();updateMetrics();populateSel();setSyncLabel('Last sync: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
+  renderTable();updateMetrics();populateSel();
   fetchInbox();
 }
 function signOut(){if(token)google.accounts.oauth2.revoke(token,()=>{});token=null;user=null;vessels=[];document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
@@ -1360,7 +1366,6 @@ async function sendAndSaveNew(){
     if(typeof addTimeline==='function')addTimeline(nv,'sent','Initial email sent',`Sent to ${e}`);
     vessels.push(nv);
     await saveVessels();
-    setSyncLabel('Last sync: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
     try{updateMetrics();}catch(e){console.warn(e);}
     try{renderTable();}catch(e){console.error('renderTable failed',e);}
     try{populateSel();}catch(e){console.warn(e);}
@@ -1824,8 +1829,9 @@ async function migrateLocalToShared(){
   if(!hasSharedDb()){alert('Add SHARED_SHEET_ID in the HTML file first.');return;}
   const local=loadVesselsCompat().map(normalizeVessel);
   if(!local.length){alert('No local vessels found on this browser.');return;}
-  if(!confirm(`Upload ${local.length} local vessels into the shared database? This will replace the current shared data.`))return;
-  vessels=local;
+  if(!confirm(`Upload ${local.length} local vessels into the shared database? This will merge with existing shared data.`))return;
+  const latest=await loadSharedVessels();
+  vessels=mergeVessels(latest||[],local);
   const ok=await saveSharedVessels(vessels);
   if(ok){alert('Migration completed. Everyone should click Sync or refresh.');refreshSharedData();}
   else alert('Migration failed. Check Sheet permissions.');
@@ -1864,13 +1870,6 @@ window.onload=()=>{
     }catch(e){console.warn('Silent sign-in skipped',e);}
   }
 };
-
-setInterval(async () => {
-  if(token && hasSharedDb()) {
-    await refreshSharedData({quiet:true});
-  }
-}, 30 * 1000);
-
 setInterval(async () => {
   if(token) {
     await fetchInbox();
