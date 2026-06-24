@@ -95,7 +95,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .tbl th{font-size:11px;letter-spacing:.02em;white-space:nowrap}
 .tbl td{font-size:12px;vertical-align:top}
 .tbl .btn-s{padding:5px 8px}
-.panel{overflow-x:auto}
+.panel{overflow-x:hidden}
 
 
 .next-action-btn{white-space:nowrap}
@@ -109,6 +109,34 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
 
 .analyze-inline-btn{white-space:nowrap}
+
+/* Compact dashboard table - no horizontal scroll */
+#view-dashboard .panel{overflow-x:hidden}
+#view-dashboard .tbl{width:100%;table-layout:fixed}
+#view-dashboard .tbl th,#view-dashboard .tbl td{padding:8px 7px;font-size:12px;vertical-align:middle}
+#view-dashboard .tbl th{font-size:10px;letter-spacing:.01em}
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:18%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:16%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:10%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:8%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:10%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:7%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:13%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:12%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:6%}
+#view-dashboard .tbl select{max-width:100%;font-size:12px;padding:5px 6px}
+#view-dashboard .tbl .btn-s{padding:5px 7px}
+#view-dashboard .vessel-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+#view-dashboard .analyze-text{display:none}
+#view-dashboard .email-activity{font-size:11px;line-height:1.35;word-break:normal}
+#view-dashboard .owner-select{width:100%!important}
+#view-dashboard .status-select{width:100%!important}
+@media(max-width:900px){
+  #view-dashboard .tbl th,#view-dashboard .tbl td{padding:7px 5px;font-size:11px}
+  #view-dashboard .traffic{font-size:11px}
+  #view-dashboard .badge{padding:3px 6px}
+}
+
 </style>
 </head>
 <body>
@@ -554,21 +582,19 @@ function renderTable(){
     const lastReceived=v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—';
     const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i></button>`:'';
     return`<tr class="cl${al?' al':''}">
-      <td style="min-width:160px">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-          <div onclick="openV(${idx})" style="cursor:pointer">
-            <strong>${v.name}</strong><br>
-            <span style="font-size:11px;color:var(--faint)">${v.email}</span>
-          </div>
-          <div style="display:flex;gap:4px;flex-shrink:0">
-            <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>
-            <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze AI</button>
-            ${adminDelete}
-          </div>
+      <td>
+        <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
+          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
+          <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email}</span>
+        </div>
+        <div class="vessel-actions">
+          <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>
+          <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i><span class="analyze-text"> Analyze AI</span></button>
+          ${adminDelete}
         </div>
       </td>
-      <td style="min-width:150px">
-        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" style="width:148px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+      <td>
+        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" class="status-select" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
           ${statusOptions(v.status)}
         </select>
       </td>
@@ -576,12 +602,12 @@ function renderTable(){
       <td>${rb(v.risk||'medium')}</td>
       <td>${trafficLight(v)}</td>
       <td>${dc(d)}</td>
-      <td style="font-size:12px;color:var(--muted);min-width:135px;line-height:1.45">
+      <td class="email-activity" style="color:var(--muted)">
         <div><b>Sent</b> ${v.emailsSent||0} · ${lastSent}</div>
         <div><b>Received</b> ${v.emailsReceived||0} · ${lastReceived}</div>
       </td>
-      <td style="min-width:145px">
-        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();assignVessel(${idx},this.value)" style="width:140px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+      <td>
+        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();assignVessel(${idx},this.value)" class="owner-select" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
           ${userOptions(v.assignedTo)}
         </select>
       </td>
