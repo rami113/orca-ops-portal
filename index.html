@@ -741,18 +741,18 @@ function trafficLight(v){
 }
 function filteredVessels(){
   let arr=vessels.map((v,i)=>({...v,__i:i}));
-  const q=String(dashSearch||'').trim().toLowerCase();
+  const q=String(window.dashSearch||'').trim().toLowerCase();
   if(q)arr=arr.filter(v=>[v.name,v.email,v.owner,v.assignedTo,v.docs,v.company,v.imo].some(x=>String(x||'').toLowerCase().includes(q)));
-  if(dashStatus)arr=arr.filter(v=>v.status===dashStatus);
-  if(dashKpiFilter==='ready')arr=arr.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
-  if(dashKpiFilter==='waiting')arr=arr.filter(v=>v.status==='waiting');
-  if(dashKpiFilter==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  if(window.dashStatus)arr=arr.filter(v=>v.status===window.dashStatus);
+  if(window.dashKpiFilter==='ready')arr=arr.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
+  if(window.dashKpiFilter==='waiting')arr=arr.filter(v=>v.status==='waiting');
+  if(window.dashKpiFilter==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
   if(sortMode==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
   else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
   return arr;
 }
 function setKpiFilter(f){
-  dashKpiFilter=(dashKpiFilter===f?'':f);
+  window.dashKpiFilter=(window.dashKpiFilter===f?'':f);
   renderTable();
 }
 
@@ -780,7 +780,7 @@ function seedTimeline(v){
 
 function renderTable(){
   const tb=document.getElementById('vtb'),empty=document.getElementById('vempty');
-  const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==dashSearch)searchEl.value=dashSearch||'';
+  const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==window.dashSearch)searchEl.value=window.dashSearch||'';
   const arr=filteredVessels();
   if(!vessels.length){
     tb.innerHTML='';
@@ -1151,8 +1151,8 @@ function renderInlineInbox(){
   const box=document.getElementById('dash-inbox-inline');
   const list=document.getElementById('dash-inbox-list');
   if(!box||!list)return;
-  box.style.display=showInlineInboxPanel?'block':'none';
-  if(!showInlineInboxPanel)return;
+  box.style.display=window.showInlineInboxPanel?'block':'none';
+  if(!window.showInlineInboxPanel)return;
   if(!ibItems||!ibItems.length){
     list.innerHTML='<div class="empty" style="padding:1rem">No new inbox replies found for the current vessels.</div>';
     return;
@@ -1172,7 +1172,7 @@ async function checkInbox(){
   const buttons=[document.getElementById('btn-chk'),document.getElementById('btn-chk-inbox-page')].filter(Boolean);
   buttons.forEach(b=>{b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';});
   await fetchInbox();
-  showInlineInboxPanel=true;
+  window.showInlineInboxPanel=true;
   updateReceivedStatsFromInbox();
   buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
   renderInlineInbox();renderInbox();renderTable();updateMetrics();sv();
