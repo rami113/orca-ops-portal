@@ -452,7 +452,7 @@ async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
   const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,buildHtmlEmail(draft, user.name||user.email, d),true);
   if(!ok)return;
-  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + agent details','Next 2–3 upcoming port calls + agent details','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
+  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','Next 2–3 upcoming port calls + corresponding agent details for each port','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
   sv();updateMetrics();renderTable();populateSel();
   show('mod-start','none');showTab('dashboard');
 }
@@ -494,9 +494,15 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
     <p style="margin:0;font-size:14px;font-weight:bold;color:#1D2E6B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1D2E6B;padding-bottom:5px">Information and Preparations Required</p>
   </td></tr>
 
-  <!-- 1. CABLE ROUTING -->
+  <!-- 1. UPCOMING PORT CALLS -->
   <tr><td style="padding:0 36px 16px 36px">
-    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">1. Cable Routing</p>
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">1. Upcoming Port Calls</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Could you kindly share the next 2–3 upcoming port calls, along with the corresponding agent details for each port?</p>
+  </td></tr>
+
+  <!-- 2. CABLE ROUTING -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">2. Cable Routing</p>
     <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please confirm that suitable cable penetrations can be prepared for:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Two outdoor cables from the compass deck to the bridge console</td></tr>
@@ -506,7 +512,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
 
   <!-- 2. MONITOR LOCATION -->
   <tr><td style="padding:0 36px 16px 36px">
-    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">2. Monitor Location</p>
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">3. Monitor Location</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A photograph of the preferred installation location for the Orca AI 24" monitor</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Ideally located close to ECDIS or radar — preferably on the center console</td></tr>
@@ -515,7 +521,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
 
   <!-- 3. BRIDGE CONSOLE -->
   <tr><td style="padding:0 36px 16px 36px">
-    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">3. Bridge Console Compartments</p>
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">4. Bridge Console Compartments</p>
     <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of the following compartments with the doors open:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Center console compartment</td></tr>
@@ -526,7 +532,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
 
   <!-- 4. SEAPOD -->
   <tr><td style="padding:0 36px 16px 36px">
-    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">4. Seapod Camera Installation Proposal Proposal</p>
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">5. Seapod Camera Installation Proposal</p>
     <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The forward compass deck rail</td></tr>
@@ -547,6 +553,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
     <p style="margin:0 0 10px 0;font-size:13px;font-weight:bold;color:#1D2E6B">Requested Response</p>
     <p style="margin:0 0 8px 0;font-size:13px;color:#444">To help us finalize the installation plan, we would appreciate receiving:</p>
     <table cellpadding="0" cellspacing="0">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Next 2–3 upcoming port calls + corresponding agent details for each port</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Vessel GA</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Bridge Console GA</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Monitor location photos</td></tr>
@@ -700,7 +707,7 @@ async function analyzeReply(){
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
   const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|escalated|ready","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nEscalated=7+days or blocker. Ready=ALL received. Progress 0/25/50/75/100.`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
-  catch(e){ana={received:['Partial info'],missing:['Full voyage schedule','All future ports','Port agent details'],status:'followup',risk:'medium',progress:25,nextAction:'Send follow-up',flags:[],followup_email:'Dear Master,\n\nThank you.\n\nKind regards,\nOrca AI',vi:idx!==''?parseInt(idx):null};}
+  catch(e){ana={received:['Partial info'],missing:['Next 2–3 upcoming port calls + corresponding agent details for each port'],status:'followup',risk:'medium',progress:25,nextAction:'Send follow-up',flags:[],followup_email:'Dear Master,\n\nThank you.\n\nKind regards,\nOrca AI',vi:idx!==''?parseInt(idx):null};}
   document.getElementById('a-load').style.display='none';
   document.getElementById('a-recv').innerHTML=(ana.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
@@ -723,7 +730,7 @@ function openV(idx){
   const v=vessels[idx];if(!v)return;
   document.getElementById('vd-t').innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
   document.getElementById('vd-s').innerHTML=sb(v.status);document.getElementById('vd-p').textContent=(v.progress||0)+'%';document.getElementById('vd-r').innerHTML=rb(v.risk||'medium');
-  const ALL=['Voyage schedule','All future ports','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'];
+  const ALL=['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'];
   const recv=v.receivedItems||[],miss=v.missingItems||[];
   document.getElementById('vd-cl').innerHTML=ALL.map(item=>{const done=recv.some(r=>r.toLowerCase().includes(item.toLowerCase().split(' ')[0])),mis=miss.some(m=>m.toLowerCase().includes(item.toLowerCase().split(' ')[0])),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';return`<li><i class="ti ${ic}"></i>${item}</li>`;}).join('');
   document.getElementById('vd-mi').innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
