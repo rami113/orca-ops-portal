@@ -107,6 +107,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .tl-yellow{background:#F4B740}
 .tl-red{background:#E24B4A}
 
+
+.analyze-inline-btn{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -559,7 +561,9 @@ function renderTable(){
             <span style="font-size:11px;color:var(--faint)">${v.email}</span>
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0">
-            <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>${adminDelete}
+            <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>
+            <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze AI</button>
+            ${adminDelete}
           </div>
         </div>
       </td>
