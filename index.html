@@ -475,7 +475,7 @@ Please confirm that suitable cable penetrations can be prepared for:
 • Two outdoor cables from the compass deck to the bridge console.
 • One cable from the bridge console to the VSAT rack or business switch.
 
-2. Proposed Monitor Locations
+2. Proposed monitor location photos
 Please provide:
 • Photographs of the proposed monitor location(s) for the Orca AI 24-inch monitor.
 • Ideally, the monitor should be located close to the ECDIS or radar.
@@ -524,7 +524,7 @@ async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
   const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,buildHtmlEmail(draft, user.name||user.email, d),true);
   if(!ok)return;
-  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,emailsReceived:0,lastReceivedDate:'',assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
+  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,emailsReceived:0,lastReceivedDate:'',assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Proposed monitor location photos','Proposed Seapod location photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
   sv();updateMetrics();renderTable();populateSel();
   show('mod-start','none');showTab('dashboard');
 }
@@ -605,7 +605,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
 
   <!-- 4. SEAPOD -->
   <tr><td style="padding:0 36px 16px 36px">
-    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">5. Seapod Camera Installation Proposal</p>
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">5. Proposed Seapod Location</p>
     <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The forward compass deck rail</td></tr>
@@ -831,7 +831,7 @@ function openV(idx){
   const v=vessels[idx];if(!v)return;
   document.getElementById('vd-t').innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
   document.getElementById('vd-s').innerHTML=sb(v.status);document.getElementById('vd-p').textContent=(v.progress||0)+'%';document.getElementById('vd-r').innerHTML=rb(v.risk||'medium');
-  const ALL=['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'];
+  const ALL=['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Proposed monitor location photos','Proposed Seapod location photos','Docs acknowledgement'];
   const recv=v.receivedItems||[],miss=v.missingItems||[];
   document.getElementById('vd-cl').innerHTML=ALL.map(item=>{const done=recv.some(r=>r.toLowerCase().includes(item.toLowerCase().split(' ')[0])),mis=miss.some(m=>m.toLowerCase().includes(item.toLowerCase().split(' ')[0])),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';return`<li><i class="ti ${ic}"></i>${item}</li>`;}).join('');
   document.getElementById('vd-mi').innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
