@@ -388,7 +388,16 @@ function initG(){
     }
   });
 }
-function signIn(){if(!tc){alert('Please wait, Google API loading...');return;}tc.requestAccessToken({prompt:'consent'});}
+function signIn(){
+  try{
+    if(!tc && typeof google!=='undefined' && google.accounts) initG();
+    if(!tc){alert('Please wait, Google API loading...');return;}
+    tc.requestAccessToken({prompt:'consent'});
+  }catch(e){
+    console.error(e);
+    alert('Sign-in failed: '+(e.message||e));
+  }
+}
 async function handleToken(r){
   if(r.error){console.error(r);alert('Google sign-in failed: '+(r.error_description||r.error));return;}
   token=r.access_token;
@@ -400,20 +409,26 @@ async function handleToken(r){
   document.getElementById('app').style.display='block';
   document.getElementById('uname').textContent=user.name||user.email;
   if(user.pic)document.getElementById('uav').src=user.pic;
-  if(isAdmin(user.email))document.getElementById('tab-admin').style.display='inline-flex';
+  if(typeof isAdmin==='function' && isAdmin(user.email))document.getElementById('tab-admin').style.display='inline-flex';
   renderTable();updateMetrics();populateSel();
   fetchInbox();
 }
 function signOut(){if(token)google.accounts.oauth2.revoke(token,()=>{});token=null;user=null;vessels=[];document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
 
 function showTab(t){
-  if(t==='admin' && !isAdmin()){alert('Admin access only.');t='dashboard';}
+  if(t==='admin' && !isAdmin()){
+    alert('Admin access only.');
+    t='dashboard';
+  }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   document.getElementById('view-'+t).classList.add('active');
   const m={dashboard:0,inbox:1,analyze:2};
   if(m[t]!==undefined)document.querySelectorAll('.tab')[m[t]].classList.add('active');
-  if(t==='admin'){document.getElementById('tab-admin').classList.add('active');renderAdmin();}
+  if(t==='admin'){
+    document.getElementById('tab-admin').classList.add('active');
+    renderAdmin();
+  }
   if(t==='inbox')renderInbox();
 }
 
@@ -1045,22 +1060,21 @@ function clearAll(){
   try{localStorage.removeItem(VKEY);}catch(e){}
   vessels=[];ibItems=[];
   updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
-}catch(e){}
-  vessels=[];
-  refreshAllViews();
-  alert('All vessel data and inbox view were cleared.');
 }
 function clearAllHistory(){
-  if(!confirm('This will permanently delete ALL local portal history on this browser: vessels, replies, AI analysis and saved data. Continue?')) return;
-  if(!confirm('Final confirmation: reset the portal completely on this browser?')) return;
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
+  if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
   try{
-    localStorage.clear();
+    localStorage.removeItem(VKEY);
+    localStorage.removeItem(UKEY);
     sessionStorage.clear();
   }catch(e){}
-  vessels=[];user=user;token=token;tc=tc;
-  refreshAllViews();
-  alert('All local portal history was cleared. The page will now reload.');
-  setTimeout(()=>location.reload(),300);
+  vessels=[];ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+  alert('All local portal history was cleared.');
 }
 
 window.onload=()=>{if(typeof google!=='undefined'&&google.accounts)initG();};
