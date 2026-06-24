@@ -655,32 +655,35 @@ function deleteVessel(i){
 }
 
 async function openCaseAnalyze(i){
-  if(!vessels[i])return;
+  const vessel=vessels[i];
+  if(!vessel){alert('Vessel not found.');return;}
   try{
-    if(!ibItems||!ibItems.length){
-      await fetchInbox();
-      updateReceivedStatsFromInbox();
-      if(typeof renderInlineInbox==='function')renderInlineInbox();
+    if(!Array.isArray(ibItems)||!ibItems.length){
+      try{await fetchInbox();}catch(fetchErr){console.error('fetchInbox failed',fetchErr);}
     }
     let itemIndex=-1;
     if(Array.isArray(ibItems)){
-      itemIndex=ibItems.findIndex(x=>
-        x.vi===i ||
-        x.vessel===vessels[i] ||
-        (x.vessel&&x.vessel.email===vessels[i].email) ||
-        (x.fe&&x.fe.toLowerCase()===String(vessels[i].email||'').toLowerCase()) ||
-        (x.from&&String(x.from).toLowerCase().includes(String(vessels[i].email||'').toLowerCase())) ||
-        (x.subj&&String(x.subj).toLowerCase().includes(String(vessels[i].name||'').toLowerCase()))
-      );
+      const vEmail=String(vessel.email||'').toLowerCase();
+      const vName=String(vessel.name||'').toLowerCase();
+      itemIndex=ibItems.findIndex(item=>{
+        const fromEmail=String(item.fe||item.from||'').toLowerCase();
+        const subj=String(item.subj||item.subject||'').toLowerCase();
+        const body=String(item.body||item.snippet||'').toLowerCase();
+        return item.vi===i ||
+          item.vessel===vessel ||
+          (item.vessel&&item.vessel.email===vessel.email) ||
+          (vEmail&&fromEmail.includes(vEmail)) ||
+          (vName&&(subj.includes(vName)||body.includes(vName)));
+      });
     }
     if(itemIndex>=0){
       openIbModal(itemIndex);
       return;
     }
-    alert('No inbox reply found for this vessel yet. Click Check inbox first.');
-  }catch(e){
-    console.error(e);
-    alert('Analyze failed: '+(e.message||e));
+    alert('No captain reply found for this vessel yet. Click Check inbox first, or use Analyze Reply and paste the reply manually.');
+  }catch(err){
+    console.error('openCaseAnalyze failed',err);
+    alert('Analyze failed. Please click Check inbox and try again.');
   }
 }
 
@@ -1331,7 +1334,8 @@ async function fetchInbox(){
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
       const body=eb(dd.payload);
       const fe=from.match(/<(.+)>/)?.[1]||from;
-      const vessel=vessels.find(v=>v.email.toLowerCase()===fe.toLowerCase());
+      if(user&&user.email&&fe.toLowerCase()===String(user.email).toLowerCase())continue;
+      const vessel=vessels.find(row=>String(row.email||'').toLowerCase()===fe.toLowerCase());
       if(vessel){const logged=vessel.timeline?.some(t=>t.msgId===msg.id);if(!logged)ibItems.push({msgId:msg.id,vessel,vi:vessels.indexOf(vessel),from,fe,subj,date,body:body.substring(0,2000)});}
     }
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
@@ -1347,6 +1351,7 @@ function renderInbox(){
 
 function openIbModal(i){
   curIb=ibItems[i];ibAna=null;
+  if(!curIb||!curIb.vessel){alert('Reply item not found. Please click Check inbox again.');return;}
   document.getElementById('mib-v').textContent=curIb.vessel.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   document.getElementById('mib-b').textContent=curIb.body;
