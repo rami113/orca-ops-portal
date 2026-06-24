@@ -100,6 +100,13 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
 .next-action-btn{white-space:nowrap}
 
+
+.traffic{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap}
+.tl-light{width:11px;height:11px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.08)}
+.tl-green{background:#1D9E75}
+.tl-yellow{background:#F4B740}
+.tl-red{background:#E24B4A}
+
 </style>
 </head>
 <body>
@@ -163,8 +170,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
               <option value="">All statuses</option>
               <option value="waiting">Waiting for reply</option>
               <option value="followup">Follow-up required</option>
-              <option value="escalated">Escalated</option>
               <option value="ready">Ready for installation</option>
+              <option value="scheduled">Installation scheduled</option>
+              <option value="completed">Installation completed</option>
             </select>
             <select id="sort-vessels" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
               <option value="newest">Newest email first</option>
@@ -173,7 +181,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           </div>
         </div>
         <table class="tbl">
-          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Reply age</th><th>Email activity</th><th>Assigned to</th><th>Next action</th></tr></thead>
+          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Traffic light</th><th>Reply age</th><th>Email activity</th><th>Assigned to</th><th>Next action</th></tr></thead>
           <tbody id="vtbody"></tbody>
         </table>
         <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
@@ -266,12 +274,12 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <div id="view-admin" class="view">
       <div class="panel">
         <div class="panel-title"><i class="ti ti-settings"></i> Admin panel</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:1.5rem">Visible to rami@orca-ai.io only.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1.5rem">Visible to Super Admin and Admin Level 2. Destructive system actions are Super Admin only.</p>
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">Team members</div>
         <div id="adm-u" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
           <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
           <button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
         </div>
@@ -339,7 +347,27 @@ const GOOGLE_CLIENT_IDS={
 const DEFAULT_CLIENT_ID='150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com';
 const CLIENT_ID=GOOGLE_CLIENT_IDS[window.location.hostname]||DEFAULT_CLIENT_ID;
 const SCOPES='https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly profile email';
-const ADMIN='rami@orca-ai.io';
+const SUPER_ADMIN='rami@orca-ai.io';
+const ADMIN=SUPER_ADMIN; // backwards compatibility
+const ADMIN_L2=[
+  'amir.m@orca-ai.io',
+  'israel@orca-ai.io',
+  'jacob@orca-ai.io',
+  'yotam.keret@orca-ai.io',
+  'yaron.y@orca-ai.io'
+];
+const TEAM_USERS=[
+  {email:'rami@orca-ai.io',name:'Rami Moscovich',role:'Super Admin'},
+  {email:'amir.m@orca-ai.io',name:'Amir M',role:'Admin L2'},
+  {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
+  {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
+  {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'}
+];
+function normEmail(e){return String(e||'').trim().toLowerCase();}
+function isSuperAdmin(email){email=normEmail(email||(user&&user.email));return email===SUPER_ADMIN;}
+function isAdmin(email){email=normEmail(email||(user&&user.email));return isSuperAdmin(email)||ADMIN_L2.includes(email);}
+function roleLabel(email){email=normEmail(email);if(isSuperAdmin(email))return 'Super Admin';if(isAdmin(email))return 'Admin L2';return 'User';}
 const VKEY='orca_v3',UKEY='orca_u2';
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
 
@@ -372,13 +400,14 @@ async function handleToken(r){
   document.getElementById('app').style.display='block';
   document.getElementById('uname').textContent=user.name||user.email;
   if(user.pic)document.getElementById('uav').src=user.pic;
-  if(user.email===ADMIN)document.getElementById('tab-admin').style.display='inline-flex';
+  if(isAdmin(user.email))document.getElementById('tab-admin').style.display='inline-flex';
   renderTable();updateMetrics();populateSel();
   fetchInbox();
 }
 function signOut(){if(token)google.accounts.oauth2.revoke(token,()=>{});token=null;user=null;vessels=[];document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
 
 function showTab(t){
+  if(t==='admin' && !isAdmin()){alert('Admin access only.');t='dashboard';}
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   document.getElementById('view-'+t).classList.add('active');
@@ -388,19 +417,64 @@ function showTab(t){
   if(t==='inbox')renderInbox();
 }
 
-function sb(s){const m={waiting:['bg','ti-clock','Waiting for reply'],followup:['ba','ti-send','Follow-up required'],escalated:['br','ti-alert-triangle','Escalated'],ready:['bn','ti-circle-check','Ready for installation'],new:['bb','ti-plus','New']};const[c,ic,l]=m[s]||['bg','ti-circle','Unknown'];return`<span class="badge ${c}"><i class="ti ${ic}"></i> ${l}</span>`;}
+function sb(s){const m={
+  waiting:['bg','ti-clock','Waiting for reply'],
+  followup:['ba','ti-send','Follow-up required'],
+  ready:['bn','ti-circle-check','Ready for installation'],
+  scheduled:['bb','ti-calendar-check','Installation scheduled'],
+  completed:['bgr','ti-check','Installation completed']
+};const[c,ic,l]=m[s]||['bg','ti-circle','Waiting for reply'];return`<span class="badge ${c}"><i class="ti ${ic}"></i> ${l}</span>`;}
 function rb(r){const m={low:['bgr','Low'],medium:['ba','Medium'],high:['br','High']};const[c,l]=m[r]||['bg','—'];return`<span class="badge ${c}">${l}</span>`;}
+
+function trafficLight(v){
+  const d=ds(v.lastContact);
+  let c='green',label='On track';
+  if(v.risk==='high'||d>=7){c='red';label='Attention';}
+  else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
+  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
+  return `<span class="traffic"><span class="tl-light tl-${c}"></span>${label}</span>`;
+}
+
 function ds(d){if(!d)return null;return Math.floor((Date.now()-new Date(d))/86400000);}
 function dc(d){if(d===null)return'<span style="color:#ccc">—</span>';const c=d>=7?'d-d':d>=3?'d-w':'d-ok';return`<span class="${c}">${d}d</span>`;}
 
 function userOptions(selected){
-  const users=Object.values(lu());
-  const opts=[];
-  if(selected && !users.some(u=>u.email===selected))opts.push(`<option value="${selected}" selected>${selected}</option>`);
-  users.forEach(u=>opts.push(`<option value="${u.email}" ${u.email===selected?'selected':''}>${u.name||u.email}</option>`));
-  if(!opts.length && user.email)opts.push(`<option value="${user.email}" selected>${user.name||user.email}</option>`);
-  return opts.join('');
+  const stored=Object.values(lu());
+  const map=new Map();
+  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
+  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
+  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
+  if(selected&&!map.has(normEmail(selected)))map.set(normEmail(selected),{email:selected,name:selected,role:'User'});
+  const users=Array.from(map.values()).sort((a,b)=>{
+    const rank={SUPER:0,ADMIN:1,USER:2};
+    const ar=isSuperAdmin(a.email)?rank.SUPER:isAdmin(a.email)?rank.ADMIN:rank.USER;
+    const br=isSuperAdmin(b.email)?rank.SUPER:isAdmin(b.email)?rank.ADMIN:rank.USER;
+    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
+  });
+  return users.map(u=>`<option value="${u.email}" ${normEmail(u.email)===normEmail(selected)?'selected':''}>${u.name||u.email}</option>`).join('');
 }
+
+function setVesselStatus(i,status){
+  if(!vessels[i])return;
+  vessels[i].status=status;
+  if(status==='waiting'){vessels[i].nextAction='Wait for master reply';}
+  if(status==='followup'){vessels[i].nextAction='Send follow-up';}
+  if(status==='ready'){vessels[i].nextAction='Coordinate installation window';vessels[i].progress=Math.max(vessels[i].progress||0,75);}
+  if(status==='scheduled'){vessels[i].nextAction='Installation scheduled';vessels[i].progress=Math.max(vessels[i].progress||0,90);}
+  if(status==='completed'){vessels[i].nextAction='Installation completed';vessels[i].progress=100;vessels[i].risk='low';}
+  sv();updateMetrics();renderTable();renderAdmin();populateSel();
+}
+function statusOptions(selected){
+  const statuses=[
+    ['waiting','Waiting for reply'],
+    ['followup','Follow-up required'],
+    ['ready','Ready for installation'],
+    ['scheduled','Installation scheduled'],
+    ['completed','Installation completed']
+  ];
+  return statuses.map(([v,l])=>`<option value="${v}" ${v===selected?'selected':''}>${l}</option>`).join('');
+}
+
 function assignVessel(i,email){
   if(!vessels[i])return;
   vessels[i].assignedTo=email;
@@ -408,7 +482,7 @@ function assignVessel(i,email){
   sv();renderTable();renderAdmin();
 }
 function deleteVessel(i){
-  if(!user||user.email!==ADMIN){alert('Only admin can delete cases.');return;}
+  if(!isAdmin()){alert('Only admins can delete cases.');return;}
   if(!vessels[i])return;
   if(!confirm('Delete this case from the portal history?'))return;
   vessels.splice(i,1);
@@ -458,10 +532,10 @@ function renderTable(){
   if(!list.length){tb.innerHTML='';em.style.display='block';return;}
   em.style.display='none';
   tb.innerHTML=list.map(v=>{
-    const idx=vessels.indexOf(v),d=ds(v.lastContact),al=v.status==='escalated'||v.risk==='high',p=v.progress||0;
+    const idx=vessels.indexOf(v),d=ds(v.lastContact),al=v.risk==='high',p=v.progress||0;
     const lastSent=(v.lastEmailDate||v.lastContact)?new Date(v.lastEmailDate||v.lastContact).toLocaleDateString('en-GB'):'—';
     const lastReceived=v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—';
-    const adminDelete=(user&&user.email===ADMIN)?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i></button>`:'';
+    const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i></button>`:'';
     return`<tr class="cl${al?' al':''}">
       <td style="min-width:160px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
@@ -474,9 +548,14 @@ function renderTable(){
           </div>
         </div>
       </td>
-      <td>${sb(v.status)}</td>
+      <td style="min-width:150px">
+        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" style="width:148px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+          ${statusOptions(v.status)}
+        </select>
+      </td>
       <td><div style="display:flex;align-items:center;gap:6px;min-width:90px"><div class="prog"><div class="prog-f" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--muted)">${p}%</span></div></td>
       <td>${rb(v.risk||'medium')}</td>
+      <td>${trafficLight(v)}</td>
       <td>${dc(d)}</td>
       <td style="font-size:12px;color:var(--muted);min-width:135px;line-height:1.45">
         <div><b>Sent</b> ${v.emailsSent||0} · ${lastSent}</div>
@@ -493,7 +572,12 @@ function renderTable(){
     </tr>`;
   }).join('');
 }
-function updateMetrics(){document.getElementById('m-t').textContent=vessels.length;document.getElementById('m-r').textContent=vessels.filter(v=>v.status==='ready').length;document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting'||v.status==='new').length;document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='escalated'||v.risk==='high').length;}
+function updateMetrics(){
+  document.getElementById('m-t').textContent=vessels.length;
+  document.getElementById('m-r').textContent=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
+  document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+}
 function populateSel(){const s=document.getElementById('ra-sel');s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
 // START MODAL
@@ -592,9 +676,9 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0ed;padding:20px 0">
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #ddddd9">
-
   <!-- HEADER -->
-  p" style="display:block"/>
+  <tr><td style="background:#1D2E6B;padding:22px 36px">
+    <img src="data:image/png;base64,${logo}" alt="Orca AI" height="44" style="display:block;filter:brightness(0) invert(1);"/>
   </td></tr>
 
   <!-- GREETING -->
@@ -757,7 +841,7 @@ function updateReceivedStatsFromInbox(){
     });
     if(matches.length){
       v.emailsReceived=matches.length;
-      const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(Boolean).sort((a,b)=>b-a)[0];
+      const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(t=>Number.isFinite(t)).sort((a,b)=>b-a)[0];
       v.lastReceivedDate=new Date(latest||Date.now()).toISOString();
       if(v.status==='waiting')v.status='followup';
       v.nextAction='Analyze reply and send follow-up';
@@ -785,7 +869,7 @@ function renderInlineInbox(){
       <div style="font-size:12px;color:var(--navy);font-style:italic;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${it.subj||''}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${(it.body||'').replace(/\s+/g,' ').slice(0,180)}</div>
     </div>
-    <button class="btn btn-p btn-s" onclick="analyzeInbox(${i})"><i class="ti ti-robot"></i> Analyze & Update</button>
+    <button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-robot"></i> Analyze & Update</button>
   </div>`).join('');
 }
 
@@ -844,7 +928,7 @@ async function runIbAnalysis(){
   if(!curIb)return;
   const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
   document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|escalated|ready","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nEscalated=7+days or critical blocker. Ready=ALL received. Progress 0/25/50/75/100. Photos=pending review.`;
+  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. Photos=pending review.`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
   catch(e){ibAna={received:['Partial info'],missing:v.missingItems||[],status:'followup',risk:'medium',progress:25,nextAction:'Send follow-up',flags:[],followup_email:`Dear Master,\n\nThank you for your reply regarding ${v.name}.\n\nWe still require:\n\n${(v.missingItems||[]).map(m=>'• '+m).join('\n')}\n\nOnce the voyage schedule, future ports, port agent details and technical information are reviewed, Orca AI will identify the most suitable installation opportunity.\n\nKind regards,\nOrca AI`};}
   document.getElementById('mib-al').style.display='none';
@@ -876,7 +960,7 @@ async function analyzeReply(){
   if(!reply){alert("Please paste the captain's reply.");return;}
   const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|escalated|ready","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nEscalated=7+days or blocker. Ready=ALL received. Progress 0/25/50/75/100.`;
+  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100.`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
   catch(e){ana={received:['Partial info'],missing:['Next 2–3 upcoming port calls + corresponding agent details for each port'],status:'followup',risk:'medium',progress:25,nextAction:'Send follow-up',flags:[],followup_email:'Dear Master,\n\nThank you.\n\nKind regards,\nOrca AI',vi:idx!==''?parseInt(idx):null};}
   document.getElementById('a-load').style.display='none';
@@ -912,9 +996,39 @@ function openV(idx){
 
 // ADMIN
 function renderAdmin(){
-  const users=Object.values(lu());
-  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/><span style="flex:1">${u.name||u.email}</span>${u.email===ADMIN?'<span class="badge bn">Admin</span>':''}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
-  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<select onchange="assignVessel(${i},this.value)" style="width:180px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span><button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+  if(!isAdmin())return;
+  const stored=Object.values(lu());
+  const map=new Map();
+  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
+  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
+  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
+  const users=Array.from(map.values()).sort((a,b)=>{
+    const ar=isSuperAdmin(a.email)?0:isAdmin(a.email)?1:2;
+    const br=isSuperAdmin(b.email)?0:isAdmin(b.email)?1:2;
+    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
+  });
+  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{
+    const role=roleLabel(u.email);
+    const cls=role==='Super Admin'?'bn':role==='Admin L2'?'bb':'bg';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/>
+      <span style="flex:1">${u.name||u.email}<br><span style="font-size:11px;color:var(--faint)">${u.email}</span></span>
+      <span class="badge ${cls}">${role}</span>
+    </div>`;
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
+  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>{
+    const del=isAdmin()?`<button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button>`:'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="flex:1;font-weight:600">${v.name}<br><span style="font-size:11px;color:var(--faint)">${v.email||''}</span></span>
+      ${sb(v.status)}
+      <select onchange="setVesselStatus(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${statusOptions(v.status)}</select>
+      <select onchange="assignVessel(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
+      <span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span>
+      ${del}
+    </div>`;
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+  const superOnly=document.getElementById('super-admin-actions');
+  if(superOnly)superOnly.style.display=isSuperAdmin()?'flex':'none';
 }
 function resetInboxUi(){
   ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
@@ -926,8 +1040,12 @@ function refreshAllViews(){
   updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
 }
 function clearAll(){
-  if(!confirm('Delete all vessel cases from this browser?'))return;
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all data.');return;}
+  if(!confirm('Clear all portal data? This cannot be undone.'))return;
   try{localStorage.removeItem(VKEY);}catch(e){}
+  vessels=[];ibItems=[];
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+}catch(e){}
   vessels=[];
   refreshAllViews();
   alert('All vessel data and inbox view were cleared.');
