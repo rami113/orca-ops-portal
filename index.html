@@ -90,6 +90,13 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .d-ok{color:var(--muted);font-size:12px;font-weight:500}.d-w{color:#BA7517;font-size:12px;font-weight:500}.d-d{color:#E24B4A;font-size:12px;font-weight:500}
 @media(max-width:768px){.metrics{grid-template-columns:repeat(2,1fr)}.fg{grid-template-columns:1fr}.dg{grid-template-columns:1fr}.nav-tabs{display:none}.hero{flex-direction:column;gap:1rem}}
 .tbl th,.tbl td{vertical-align:top}.tbl th{white-space:nowrap}.btn-d{color:var(--red-t);border-color:#f0a0a0;background:#fff}
+
+.tbl{table-layout:auto}
+.tbl th{font-size:11px;letter-spacing:.02em;white-space:nowrap}
+.tbl td{font-size:12px;vertical-align:top}
+.tbl .btn-s{padding:5px 8px}
+.panel{overflow-x:auto}
+
 </style>
 </head>
 <body>
@@ -160,7 +167,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           </div>
         </div>
         <table class="tbl">
-          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Reply age</th><th>Email activity</th><th>Assigned to</th><th>Next action</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Reply age</th><th>Email activity</th><th>Assigned to</th><th>Next action</th></tr></thead>
           <tbody id="vtbody"></tbody>
         </table>
         <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
@@ -248,7 +255,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-d" onclick="if(confirm('Delete ALL vessel data?'))clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
+          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
           <button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
         </div>
       </div>
@@ -402,27 +409,37 @@ function renderTable(){
   });
   if(!list.length){tb.innerHTML='';em.style.display='block';return;}
   em.style.display='none';
-  tb.innerHTML=list.map(v=>{const idx=vessels.indexOf(v),d=ds(v.lastContact),al=v.status==='escalated'||v.risk==='high',p=v.progress||0;
+  tb.innerHTML=list.map(v=>{
+    const idx=vessels.indexOf(v),d=ds(v.lastContact),al=v.status==='escalated'||v.risk==='high',p=v.progress||0;
     const lastSent=(v.lastEmailDate||v.lastContact)?new Date(v.lastEmailDate||v.lastContact).toLocaleDateString('en-GB'):'—';
     const lastReceived=v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—';
     const adminDelete=(user&&user.email===ADMIN)?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i></button>`:'';
-    return`<tr class="cl${al?' al':''}" onclick="openV(${idx})">
-      <td style="min-width:135px"><strong>${v.name}</strong><br><span style="font-size:11px;color:var(--faint)">${v.email}</span></td>
+    return`<tr class="cl${al?' al':''}">
+      <td style="min-width:160px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div onclick="openV(${idx})" style="cursor:pointer">
+            <strong>${v.name}</strong><br>
+            <span style="font-size:11px;color:var(--faint)">${v.email}</span>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>${adminDelete}
+          </div>
+        </div>
+      </td>
       <td>${sb(v.status)}</td>
-      <td><div style="display:flex;align-items:center;gap:6px;min-width:105px"><div class="prog"><div class="prog-f" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--muted)">${p}%</span></div></td>
+      <td><div style="display:flex;align-items:center;gap:6px;min-width:90px"><div class="prog"><div class="prog-f" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--muted)">${p}%</span></div></td>
       <td>${rb(v.risk||'medium')}</td>
       <td>${dc(d)}</td>
-      <td style="font-size:12px;color:var(--muted);min-width:150px;line-height:1.45">
-        <div><b>Sent:</b> ${v.emailsSent||0} <span style="color:var(--faint)">(${lastSent})</span></div>
-        <div><b>Received:</b> ${v.emailsReceived||0} <span style="color:var(--faint)">(${lastReceived})</span></div>
+      <td style="font-size:12px;color:var(--muted);min-width:135px;line-height:1.45">
+        <div><b>Sent</b> ${v.emailsSent||0} · ${lastSent}</div>
+        <div><b>Received</b> ${v.emailsReceived||0} · ${lastReceived}</div>
       </td>
-      <td style="min-width:150px">
-        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();assignVessel(${idx},this.value)" style="width:145px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+      <td style="min-width:145px">
+        <select onclick="event.stopPropagation()" onchange="event.stopPropagation();assignVessel(${idx},this.value)" style="width:140px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
           ${userOptions(v.assignedTo)}
         </select>
       </td>
-      <td style="font-size:12px;color:var(--muted);max-width:125px">${v.nextAction||'—'}</td>
-      <td style="white-space:nowrap"><button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i></button>${adminDelete}</td>
+      <td style="font-size:12px;color:var(--muted);max-width:135px">${v.nextAction||'—'}</td>
     </tr>`;
   }).join('');
 }
@@ -828,13 +845,26 @@ function renderAdmin(){
   document.getElementById('adm-u').innerHTML=users.length?users.map(u=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/><span style="flex:1">${u.name||u.email}</span>${u.email===ADMIN?'<span class="badge bn">Admin</span>':''}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
   document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<select onchange="assignVessel(${i},this.value)" style="width:180px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span><button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
 }
-function clearAll(){try{localStorage.removeItem(VKEY);}catch(e){}vessels=[];updateMetrics();renderTable();populateSel();}
-function clearAllHistory(){
-  if(!confirm('This will permanently delete ALL portal history, vessels, replies, AI analysis and saved local data. Continue?')) return;
-  if(!confirm('Final confirmation: clear everything and reset the portal?')) return;
-  try{localStorage.clear();}catch(e){}
+function clearAll(){
+  if(!confirm('Delete all vessel cases from this browser?'))return;
+  try{localStorage.removeItem(VKEY);}catch(e){}
   vessels=[];ana=null;ibAna=null;curIb=null;ibItems=[];draft='';
-  location.reload();
+  updateMetrics();renderTable();populateSel();renderAdmin();
+  alert('All vessel data was cleared.');
+}
+function clearAllHistory(){
+  if(!confirm('This will permanently delete ALL local portal history: vessels, replies, AI analysis and saved browser data. Continue?')) return;
+  if(!confirm('Final confirmation: reset the portal completely on this browser?')) return;
+  try{
+    Object.keys(localStorage).forEach(k=>{
+      if(k.toLowerCase().includes('orca') || k===VKEY || k==='users' || k.includes('vessel') || k.includes('inbox') || k.includes('analysis')) localStorage.removeItem(k);
+    });
+    localStorage.removeItem(VKEY);
+  }catch(e){}
+  vessels=[];ana=null;ibAna=null;curIb=null;ibItems=[];draft='';
+  updateMetrics();renderTable();populateSel();renderAdmin();
+  alert('All local portal history was cleared. The page will now reload.');
+  setTimeout(()=>location.reload(),300);
 }
 
 window.onload=()=>{if(typeof google!=='undefined'&&google.accounts)initG();};
