@@ -658,11 +658,9 @@ async function openCaseAnalyze(i){
   const vessel=vessels[i];
   if(!vessel){alert('Vessel not found.');return;}
   try{
-    if(!Array.isArray(ibItems)||!ibItems.length){
-      try{await fetchInbox();}catch(fetchErr){console.error('fetchInbox failed',fetchErr);}
-    }
+    // First try to use already fetched inbox replies.
     let itemIndex=-1;
-    if(Array.isArray(ibItems)){
+    if(Array.isArray(ibItems)&&ibItems.length){
       const vEmail=String(vessel.email||'').toLowerCase();
       const vName=String(vessel.name||'').toLowerCase();
       itemIndex=ibItems.findIndex(item=>{
@@ -680,10 +678,50 @@ async function openCaseAnalyze(i){
       openIbModal(itemIndex);
       return;
     }
-    alert('No captain reply found for this vessel yet. Click Check inbox first, or use Analyze Reply and paste the reply manually.');
+
+    // Try fetching inbox once, but never fail the UI because of Gmail/query issues.
+    try{
+      await fetchInbox();
+      if(Array.isArray(ibItems)&&ibItems.length){
+        const vEmail=String(vessel.email||'').toLowerCase();
+        const vName=String(vessel.name||'').toLowerCase();
+        itemIndex=ibItems.findIndex(item=>{
+          const fromEmail=String(item.fe||item.from||'').toLowerCase();
+          const subj=String(item.subj||item.subject||'').toLowerCase();
+          const body=String(item.body||item.snippet||'').toLowerCase();
+          return item.vi===i ||
+            item.vessel===vessel ||
+            (item.vessel&&item.vessel.email===vessel.email) ||
+            (vEmail&&fromEmail.includes(vEmail)) ||
+            (vName&&(subj.includes(vName)||body.includes(vName)));
+        });
+      }
+      if(itemIndex>=0){
+        openIbModal(itemIndex);
+        return;
+      }
+    }catch(fetchErr){
+      console.warn('Inbox fetch skipped/failed',fetchErr);
+    }
+
+    // Fallback: open manual Analyze Reply with this vessel selected.
+    showTab('analyze');
+    setTimeout(()=>{
+      const sel=document.getElementById('ra-sel');
+      const txt=document.getElementById('ra-reply');
+      if(sel)sel.value=String(i);
+      if(txt){
+        txt.focus();
+        txt.placeholder='Paste the captain reply here, then click Analyze AI';
+      }
+    },50);
   }catch(err){
     console.error('openCaseAnalyze failed',err);
-    alert('Analyze failed. Please click Check inbox and try again.');
+    showTab('analyze');
+    setTimeout(()=>{
+      const sel=document.getElementById('ra-sel');
+      if(sel)sel.value=String(i);
+    },50);
   }
 }
 
@@ -961,7 +999,7 @@ function updateMetrics(){
   document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
   document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
 }
-function populateSel(){const s=document.getElementById('ra-sel');s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
+function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
 // START MODAL
 function val(id){const el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
@@ -1327,12 +1365,12 @@ async function fetchInbox(){
     for(const msg of d.messages.slice(0,15)){
       const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
       const dd=await dr.json();
-      const hdr=dd.payload.headers;
+      const hdr=(dd.payload&&dd.payload.headers)||[];
       const from=hdr.find(h=>h.name==='From')?.value||'';
       const subj=hdr.find(h=>h.name==='Subject')?.value||'';
       const date=hdr.find(h=>h.name==='Date')?.value||'';
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
-      const body=eb(dd.payload);
+      const body=dd.payload?eb(dd.payload):'';
       const fe=from.match(/<(.+)>/)?.[1]||from;
       if(user&&user.email&&fe.toLowerCase()===String(user.email).toLowerCase())continue;
       const vessel=vessels.find(row=>String(row.email||'').toLowerCase()===fe.toLowerCase());
