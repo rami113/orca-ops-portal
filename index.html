@@ -422,7 +422,8 @@ function signIn(){
   try{
     if(!tc && typeof google!=='undefined' && google.accounts) initG();
     if(!tc){alert('Please wait, Google API loading...');return;}
-    tc.requestAccessToken({prompt:'consent'});
+    const alreadyApproved=localStorage.getItem('orca_google_consent_ok')==='1';
+    tc.requestAccessToken({prompt: alreadyApproved ? '' : 'consent'});
   }catch(e){
     console.error(e);
     alert('Sign-in failed: '+(e.message||e));
@@ -431,6 +432,7 @@ function signIn(){
 async function handleToken(r){
   if(r.error){console.error(r);alert('Google sign-in failed: '+(r.error_description||r.error));return;}
   token=r.access_token;
+  try{localStorage.setItem('orca_google_consent_ok','1');}catch(e){}
   const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}});
   const p=await res.json();
   user={email:p.email,name:p.name||p.email,pic:p.picture||''};
@@ -1107,7 +1109,16 @@ function clearAllHistory(){
   alert('All local portal history was cleared.');
 }
 
-window.onload=()=>{if(typeof google!=='undefined'&&google.accounts)initG();};
+window.onload=()=>{
+  if(typeof google!=='undefined'&&google.accounts){
+    initG();
+    try{
+      if(localStorage.getItem('orca_google_consent_ok')==='1'){
+        setTimeout(()=>tc && tc.requestAccessToken({prompt:''}),250);
+      }
+    }catch(e){console.warn('Silent sign-in skipped',e);}
+  }
+};
 setInterval(async () => {
   if(token) {
     await fetchInbox();
