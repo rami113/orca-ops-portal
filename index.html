@@ -168,7 +168,10 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <!-- INBOX -->
     <div id="view-inbox" class="view">
       <div class="panel">
-        <div class="panel-title"><i class="ti ti-inbox"></i> Inbox — vessel replies</div>
+        <div class="sh">
+          <div class="panel-title" style="margin-bottom:0"><i class="ti ti-inbox"></i> Inbox — vessel replies</div>
+          <button class="btn btn-s" id="btn-chk-inbox-page" onclick="checkInbox()"><i class="ti ti-refresh"></i> Check inbox</button>
+        </div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:1rem">Replies detected from vessel masters. Click "Analyze & Update" to process with AI.</p>
         <div id="ib-list"></div>
         <div id="ib-empty" style="text-align:center;padding:2rem;color:var(--muted);font-size:13px;display:none">
@@ -412,12 +415,13 @@ Please provide photographs of the following bridge console compartments with the
 • Port console compartment
 • Starboard console compartment
 
-4. Seapod Camera Installation
+4. Seapod Camera Installation Proposal
 Please provide photographs of:
 • The forward compass deck rail
 • The planned camera installation area
 
-Please note that the camera requires:
+Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:
+• A clear 225-degree view at the designated location
 • An unobstructed forward field of view
 • Installation below and clear of all radars
 • A minimum distance of 4 meters from the magnetic compass
@@ -522,14 +526,15 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
 
   <!-- 4. SEAPOD -->
   <tr><td style="padding:0 36px 16px 36px">
-    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">4. Seapod Camera Installation</p>
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">4. Seapod Camera Installation Proposal Proposal</p>
     <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The forward compass deck rail</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The planned camera installation area</td></tr>
     </table>
-    <p style="margin:0 0 4px 0;font-size:13px;color:#444;line-height:1.6">Please note that the camera requires:</p>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#444;line-height:1.6">Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A clear 225-degree view at the designated location</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; An unobstructed forward field of view</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Installation below and clear of all radars</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A minimum distance of 4 meters from the magnetic compass</td></tr>
@@ -610,8 +615,11 @@ async function sendGmail(to, subj, body, isHtml=false) {
 
 // INBOX
 async function checkInbox(){
-  const b=document.getElementById('btn-chk');b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';
-  await fetchInbox();b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';renderInbox();showTab('inbox');
+  const buttons=[document.getElementById('btn-chk'),document.getElementById('btn-chk-inbox-page')].filter(Boolean);
+  buttons.forEach(b=>{b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';});
+  await fetchInbox();
+  buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
+  renderInbox();showTab('inbox');
 }
 async function fetchInbox(){
   if(!token||!vessels.length)return;
