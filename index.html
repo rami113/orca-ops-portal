@@ -475,9 +475,9 @@ Please confirm that suitable cable penetrations can be prepared for:
 • Two outdoor cables from the compass deck to the bridge console.
 • One cable from the bridge console to the VSAT rack or business switch.
 
-2. Monitor Location
+2. Proposed Monitor Locations
 Please provide:
-• A photograph of the preferred installation location for the Orca AI 24-inch monitor.
+• Photographs of the proposed monitor location(s) for the Orca AI 24-inch monitor.
 • Ideally, the monitor should be located close to the ECDIS or radar.
 • If available, we recommend a location on the center console.
 
@@ -487,10 +487,10 @@ Please provide photographs of the following bridge console compartments with the
 • Port console compartment
 • Starboard console compartment
 
-4. Seapod Camera Installation Proposal
+4. Proposed Seapod Location
 Please provide photographs of:
 • The forward compass deck rail
-• The planned camera installation area
+• The proposed Seapod installation location
 
 Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:
 • A clear 225-degree view at the designated location
@@ -502,11 +502,11 @@ If any structure or mounting bracket is required, we kindly ask that it be prepa
 
 Requested Response
 To help us finalize the installation plan, we would appreciate receiving:
-☐ Monitor location photos
+☐ Proposed monitor location photos
 ☐ Center console photo
 ☐ Port console photo
 ☐ Starboard console photo
-☐ Compass deck / camera location photos
+☐ Proposed Seapod location photos
 ☐ Confirmation regarding cable penetrations
 
 Relevant installation documents can be found here: ${d||'[ORCA AI Installation Documents Link]'}
@@ -524,7 +524,7 @@ async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
   const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,buildHtmlEmail(draft, user.name||user.email, d),true);
   if(!ok)return;
-  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,emailsReceived:0,lastReceivedDate:'',assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','Next 2–3 upcoming port calls + corresponding agent details for each port','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
+  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,emailsReceived:0,lastReceivedDate:'',assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
   sv();updateMetrics();renderTable();populateSel();
   show('mod-start','none');showTab('dashboard');
 }
@@ -609,7 +609,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
     <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
       <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The forward compass deck rail</td></tr>
-      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The planned camera installation area</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The proposed Seapod installation location</td></tr>
     </table>
     <p style="margin:0 0 4px 0;font-size:13px;color:#444;line-height:1.6">Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
@@ -629,11 +629,11 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Next 2–3 upcoming port calls + corresponding agent details for each port</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Vessel GA</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Bridge Console GA</td></tr>
-      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Monitor location photos</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Proposed monitor location photos</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Center console photo</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Port console photo</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Starboard console photo</td></tr>
-      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Compass deck / camera location photos</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Proposed Seapod location photos</td></tr>
       <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Confirmation regarding cable penetrations</td></tr>
     </table>
     <p style="margin:10px 0 0 0;font-size:13px;color:#444">We would appreciate receiving the above information by <strong>${dateStr}</strong>.</p>
@@ -728,8 +728,10 @@ async function checkInbox(){
   renderInbox();renderTable();updateMetrics();sv();showTab('inbox');
 }
 async function fetchInbox(){
-  if(!token||!vessels.length)return;
   ibItems=[];
+  const badge=document.getElementById('ib-count');
+  if(badge){badge.textContent='0';badge.style.display='none';}
+  if(!token||!vessels.length)return;
   const emails=vessels.map(v=>v.email.toLowerCase());
   const q=emails.map(e=>`from:${e}`).join(' OR ');
   try{
@@ -748,8 +750,7 @@ async function fetchInbox(){
       const vessel=vessels.find(v=>v.email.toLowerCase()===fe.toLowerCase());
       if(vessel){const logged=vessel.timeline?.some(t=>t.msgId===msg.id);if(!logged)ibItems.push({msgId:msg.id,vessel,vi:vessels.indexOf(vessel),from,fe,subj,date,body:body.substring(0,2000)});}
     }
-    const badge=document.getElementById('ib-count');
-    if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else badge.style.display='none';
+    if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
 }
 function renderInbox(){
@@ -845,31 +846,38 @@ function renderAdmin(){
   document.getElementById('adm-u').innerHTML=users.length?users.map(u=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/><span style="flex:1">${u.name||u.email}</span>${u.email===ADMIN?'<span class="badge bn">Admin</span>':''}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
   document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<select onchange="assignVessel(${i},this.value)" style="width:180px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span><button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
 }
+function resetInboxUi(){
+  ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const empty=document.getElementById('ib-empty');if(empty)empty.style.display='block';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+}
+function refreshAllViews(){
+  updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
+}
 function clearAll(){
   if(!confirm('Delete all vessel cases from this browser?'))return;
   try{localStorage.removeItem(VKEY);}catch(e){}
-  vessels=[];ana=null;ibAna=null;curIb=null;ibItems=[];draft='';
-  updateMetrics();renderTable();populateSel();renderAdmin();
-  alert('All vessel data was cleared.');
+  vessels=[];
+  refreshAllViews();
+  alert('All vessel data and inbox view were cleared.');
 }
 function clearAllHistory(){
-  if(!confirm('This will permanently delete ALL local portal history: vessels, replies, AI analysis and saved browser data. Continue?')) return;
+  if(!confirm('This will permanently delete ALL local portal history on this browser: vessels, replies, AI analysis and saved data. Continue?')) return;
   if(!confirm('Final confirmation: reset the portal completely on this browser?')) return;
   try{
-    Object.keys(localStorage).forEach(k=>{
-      if(k.toLowerCase().includes('orca') || k===VKEY || k==='users' || k.includes('vessel') || k.includes('inbox') || k.includes('analysis')) localStorage.removeItem(k);
-    });
-    localStorage.removeItem(VKEY);
+    localStorage.clear();
+    sessionStorage.clear();
   }catch(e){}
-  vessels=[];ana=null;ibAna=null;curIb=null;ibItems=[];draft='';
-  updateMetrics();renderTable();populateSel();renderAdmin();
+  vessels=[];user=user;token=token;tc=tc;
+  refreshAllViews();
   alert('All local portal history was cleared. The page will now reload.');
   setTimeout(()=>location.reload(),300);
 }
 
 window.onload=()=>{if(typeof google!=='undefined'&&google.accounts)initG();};
 setInterval(async () => {
-  if(token && vessels.length) {
+  if(token) {
     await fetchInbox();
     renderTable();
     updateMetrics();
