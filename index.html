@@ -152,6 +152,10 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
               <option value="escalated">Escalated</option>
               <option value="ready">Ready for installation</option>
             </select>
+            <select id="sort-vessels" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+              <option value="newest">Newest email first</option>
+              <option value="oldest">Oldest email first</option>
+            </select>
           </div>
         </div>
         <table class="tbl">
@@ -242,7 +246,10 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div id="adm-u" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
-        <button class="btn btn-d" onclick="if(confirm('Delete ALL data?'))clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-d" onclick="if(confirm('Delete ALL vessel data?'))clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
+          <button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
+        </div>
       </div>
     </div>
 
@@ -364,7 +371,13 @@ function dc(d){if(d===null)return'<span style="color:#ccc">—</span>';const c=d
 function renderTable(){
   const tb=document.getElementById('vtbody'),em=document.getElementById('vempty');
   const f=document.getElementById('flt').value;
-  const list=f?vessels.filter(v=>v.status===f):vessels;
+  const sortEl=document.getElementById('sort-vessels');
+  const sortOrder=sortEl?sortEl.value:'newest';
+  const list=(f?vessels.filter(v=>v.status===f):vessels.slice()).sort((a,b)=>{
+    const ad=new Date(a.lastEmailDate||a.lastContact||0).getTime();
+    const bd=new Date(b.lastEmailDate||b.lastContact||0).getTime();
+    return sortOrder==='oldest'?ad-bd:bd-ad;
+  });
   if(!list.length){tb.innerHTML='';em.style.display='block';return;}
   em.style.display='none';
   tb.innerHTML=list.map(v=>{const idx=vessels.indexOf(v),d=ds(v.lastContact),al=v.status==='escalated'||v.risk==='high',p=v.progress||0;
@@ -747,6 +760,13 @@ function renderAdmin(){
   document.getElementById('adm-v').innerHTML=vessels.length?vessels.map(v=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<span style="font-size:11px;color:var(--faint)">${v.assignedTo||'—'}</span><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
 }
 function clearAll(){try{localStorage.removeItem(VKEY);}catch(e){}vessels=[];updateMetrics();renderTable();populateSel();}
+function clearAllHistory(){
+  if(!confirm('This will permanently delete ALL portal history, vessels, replies, AI analysis and saved local data. Continue?')) return;
+  if(!confirm('Final confirmation: clear everything and reset the portal?')) return;
+  try{localStorage.clear();}catch(e){}
+  vessels=[];ana=null;ibAna=null;curIb=null;ibItems=[];draft='';
+  location.reload();
+}
 
 window.onload=()=>{if(typeof google!=='undefined'&&google.accounts)initG();};
 setInterval(async () => {
