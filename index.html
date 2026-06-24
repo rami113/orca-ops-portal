@@ -446,7 +446,7 @@ Orca AI`;
 
 async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
-  const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,draft);
+  const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,buildHtmlEmail(draft, user.name||user.email, d),true);
   if(!ok)return;
   vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Voyage schedule','All future ports','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
   sv();updateMetrics();renderTable();populateSel();
@@ -579,7 +579,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
 
 async function sendGmail(to, subj, body, isHtml=false) {
   if(!token){alert('Not authenticated.');return false;}
-  const html = buildHtmlEmail(body, user.name||user.email, document.getElementById('md')?.value||'');
+  const html = isHtml ? body : body.replace(/\n/g,'<br>');
   const boundary = 'orca_boundary_' + Date.now();
   const mime = [
     `From: ${user.name||user.email} <${user.email}>`,
@@ -669,7 +669,7 @@ async function runIbAnalysis(){
 }
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
-  const v=curIb.vessel,ok=await sendGmail(v.email,'Re: Orca AI Installation - '+v.name,ibAna.followup_email);
+  const v=curIb.vessel,ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,ibAna.followup_email,false);
   if(!ok)return;
   const idx=curIb.vi;
   vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...(vessels[idx].receivedItems||[]),...(ibAna.received||[])],lastContact:new Date().toISOString()};
@@ -702,7 +702,7 @@ async function analyzeReply(){
 }
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
-  const v=vessels[idx],ok=await sendGmail(v.email,'Re: Orca AI Installation - '+v.name,ana.followup_email);if(!ok)return;
+  const v=vessels[idx],ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,ana.followup_email,false);if(!ok)return;
   vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:[...(v.receivedItems||[]),...(ana.received||[])],lastContact:new Date().toISOString()};
   vessels[idx].timeline=v.timeline||[];
   vessels[idx].timeline.push({type:'in',text:'Reply received — analyzed by AI',by:v.email,date:new Date().toLocaleDateString('en-GB')});
