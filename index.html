@@ -159,7 +159,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           </div>
         </div>
         <table class="tbl">
-          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Days w/o reply</th><th>Emails sent</th><th>Last email date</th><th>Assigned to</th><th>Next action</th><th></th></tr></thead>
+          <thead><tr><th>Vessel</th><th>Status</th><th>Progress</th><th>Risk</th><th>Days w/o reply</th><th>Emails sent</th><th>Last email date</th><th>Emails received</th><th>Last received date</th><th>Assigned to</th><th>Next action</th><th></th></tr></thead>
           <tbody id="vtbody"></tbody>
         </table>
         <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
@@ -465,7 +465,7 @@ async function sendAndSaveNew(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
   const ok=await sendGmail(e,'Orca AI Installation Coordination - '+o+' '+v,buildHtmlEmail(draft, user.name||user.email, d),true);
   if(!ok)return;
-  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','Next 2–3 upcoming port calls + corresponding agent details for each port','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
+  vessels.push({id:Date.now(),name:v,email:e,owner:o,docs:d,status:'waiting',progress:0,risk:'medium',lastContact:new Date().toISOString(),lastEmailDate:new Date().toISOString(),emailsSent:1,emailsReceived:0,lastReceivedDate:'',assignedTo:user.email,nextAction:'Wait for master reply',missingItems:['Next 2–3 upcoming port calls + corresponding agent details for each port','Next 2–3 upcoming port calls + corresponding agent details for each port','ETA per port','Port agent details','Cable penetration','VSAT routing','Power connection','Monitor photos','Seapod photos','Docs acknowledgement'],receivedItems:[],timeline:[{type:'out',text:'Initial email sent via Gmail',by:user.email,date:new Date().toLocaleDateString('en-GB')}]});
   sv();updateMetrics();renderTable();populateSel();
   show('mod-start','none');showTab('dashboard');
 }
@@ -635,12 +635,38 @@ async function sendGmail(to, subj, body, isHtml=false) {
 }
 
 // INBOX
+
+function updateReceivedStatsFromInbox(){
+  if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
+  vessels.forEach(v=>{
+    const name=(v.name||'').toLowerCase();
+    const email=(v.email||'').toLowerCase();
+    const matches=ibItems.filter(m=>{
+      const from=((m.from&&m.from.email)||m.from||'').toLowerCase();
+      const subj=(m.subject||'').toLowerCase();
+      const snip=(m.snippet||m.body||'').toLowerCase();
+      return (email&&from.includes(email)) || (name&&(subj.includes(name)||snip.includes(name)));
+    });
+    if(matches.length){
+      v.emailsReceived=matches.length;
+      const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(Boolean).sort((a,b)=>b-a)[0];
+      v.lastReceivedDate=new Date(latest||Date.now()).toISOString();
+      if(v.status==='waiting')v.status='followup';
+      v.nextAction='Analyze reply and send follow-up';
+    }else{
+      v.emailsReceived=v.emailsReceived||0;
+      v.lastReceivedDate=v.lastReceivedDate||'';
+    }
+  });
+}
+
 async function checkInbox(){
   const buttons=[document.getElementById('btn-chk'),document.getElementById('btn-chk-inbox-page')].filter(Boolean);
   buttons.forEach(b=>{b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';});
   await fetchInbox();
+  updateReceivedStatsFromInbox();
   buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
-  renderInbox();showTab('inbox');
+  renderInbox();renderTable();updateMetrics();sv();showTab('inbox');
 }
 async function fetchInbox(){
   if(!token||!vessels.length)return;
@@ -668,6 +694,7 @@ async function fetchInbox(){
   }catch(e){console.error(e);}
 }
 function renderInbox(){
+  updateReceivedStatsFromInbox();
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
