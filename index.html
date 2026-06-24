@@ -404,7 +404,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
           <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
-          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button><button class="btn" onclick="cleanupSharedDb()"><i class="ti ti-broom"></i> Clean shared DB</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
+          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
         </div>
       </div>
     </div>
@@ -532,64 +532,6 @@ let sharedDbLastSync=null;
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
 
 
-
-function isValidVesselRecord(v){
-  return !!(v && typeof v==='object' && String(v.name||'').trim() && String(v.email||'').trim());
-}
-function cleanVesselArray(arr){
-  return (Array.isArray(arr)?arr:[])
-    .map(normalizeVessel)
-    .filter(isValidVesselRecord);
-}
-function vesselStableKey(v){
-  return String((v && (v.id || (String(v.name||'').toLowerCase().trim()+'|'+String(v.email||'').toLowerCase().trim()))) || '');
-}
-function vesselUpdatedAt(v){
-  const d = new Date(v && (v.updatedAt || v.lastActivity || v.lastContact || v.createdAt || 0)).getTime();
-  return Number.isFinite(d) ? d : 0;
-}
-function mergeVessels(existing, incoming){
-  const map = new Map();
-  cleanVesselArray(existing).forEach(v=>{
-    const k=vesselStableKey(v);
-    if(k)map.set(k,v);
-  });
-  cleanVesselArray(incoming).forEach(v=>{
-    if(!v.id)v.id=Date.now()+Math.floor(Math.random()*100000);
-    v.updatedAt=v.updatedAt||new Date().toISOString();
-    const k=vesselStableKey(v);
-    if(!k)return;
-    const old=map.get(k);
-    if(!old || vesselUpdatedAt(v) >= vesselUpdatedAt(old)){
-      map.set(k, {...old, ...v});
-    }
-  });
-  return Array.from(map.values()).sort((a,b)=>vesselUpdatedAt(b)-vesselUpdatedAt(a));
-}
-async function saveVesselsMerged(){
-  if(!hasSharedDb()||!token){sv();return false;}
-  const latest = await loadSharedVessels();
-  const merged = mergeVessels(latest || [], vessels || []);
-  vessels = merged;
-  const ok = await saveSharedVessels(merged);
-  if(!ok){sv();return false;}
-  return true;
-}
-async function cleanupSharedDb(){
-  if(!isSuperAdmin(user&&user.email)){alert('Super Admin only.');return;}
-  const latest = await loadSharedVessels();
-  const cleaned = cleanVesselArray(latest || []);
-  vessels = cleaned;
-  const ok = await saveSharedVessels(cleaned);
-  if(ok){
-    updateMetrics();renderTable();populateSel();
-    if(typeof renderAdmin==='function')renderAdmin();
-    showToast('Shared database cleaned','ok');
-  }else{
-    showToast('Cleanup failed','err');
-  }
-}
-
 function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
 function sharedDbUrl(range){
   return `https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}!${range}`;
@@ -626,8 +568,8 @@ async function loadSharedVessels(){
     const val=d.values&&d.values[0]&&d.values[0][0];
     if(!val)return [];
     const parsed=JSON.parse(val);
-    if(Array.isArray(parsed))return cleanVesselArray(parsed);
-    if(parsed&&Array.isArray(parsed.vessels))return cleanVesselArray(parsed.vessels);
+    if(Array.isArray(parsed))return parsed;
+    if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
     return [];
   }catch(e){
     console.error('Shared DB load failed',e);
@@ -662,7 +604,7 @@ async function loadVessels(){
     if(ok){
       const shared=await loadSharedVessels();
       if(Array.isArray(shared)){
-        vessels=cleanVesselArray(shared);
+        vessels=shared.map(normalizeVessel);
         return;
       }
     }
@@ -672,9 +614,9 @@ async function loadVessels(){
 }
 async function saveVessels(){
   if(hasSharedDb()){
-    const ok=await saveVesselsMerged();
+    const ok=await saveSharedVessels(vessels);
     if(ok)return;
-    showToast('Shared database save failed. Changes were saved locally only.','err');
+    alert('Shared database save failed. Changes were saved locally only.');
   }
   sv();
 }
@@ -686,7 +628,7 @@ async function refreshSharedData(){
   if(typeof renderAdmin==='function')renderAdmin();
 }
 
-function lv(){try{vessels=cleanVesselArray(loadVesselsCompat());}catch(e){console.error('load failed',e);vessels=[];}}
+function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
 
 function loadVesselsCompat(){
   const keys=['orca_v3','orca_v2','orca_v1','vessels'];
@@ -1234,7 +1176,7 @@ function renderTable(){
       <td>${dc(d)}</td>
       <td class="email-activity" style="color:var(--muted)">
         <strong>Sent</strong> ${v.emailsSent||0} · ${v.lastEmailDate?new Date(v.lastEmailDate).toLocaleDateString('en-GB'):'—'}<br>
-        <strong>Received</strong> ${v.emailsReceived||0} · ${v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—'}
+        <strong>Received</strong> ${Math.max(v.emailsReceived||0, latestRelevantReplyCount(v)||0)} · ${v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—'}
       </td>
       <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
       <td>
@@ -1257,6 +1199,62 @@ function updateMetrics(){
   document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
 }
 function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
+
+
+
+
+function isValidVesselRecord(v){return !!(v&&typeof v==='object'&&String(v.name||'').trim()&&String(v.email||'').trim());}
+function cleanVesselArray(arr){return (Array.isArray(arr)?arr:[]).map(normalizeVessel).filter(isValidVesselRecord);}
+
+function gmailRelevantQuery(){
+  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean).slice(0,20);
+  const emails=(vessels||[]).map(v=>String(v.email||'').trim()).filter(Boolean).slice(0,20);
+  const parts=[...names,...emails].map(x=>`"${x.replace(/"/g,'')}"`);
+  if(!parts.length)return 'newer_than:30d (orca OR installation)';
+  return 'newer_than:30d ('+parts.join(' OR ')+')';
+}
+
+function normMail(s){return String(s||'').toLowerCase().trim();}
+function normText(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function vesselTerms(v){
+  const out=[];
+  if(v&&v.name)out.push(normText(v.name));
+  if(v&&v.email)out.push(normMail(v.email));
+  if(v&&v.owner)out.push(normText(v.owner));
+  return out.filter(Boolean);
+}
+function messageText(m){
+  return normText([m.subject,m.snippet,m.body,m.from,m.sender,m.to,m.date].filter(Boolean).join(' '));
+}
+function isRelevantMessageForVessel(m,v){
+  if(!m||!v)return false;
+  const txt=messageText(m);
+  const from=normMail(m.from||m.sender||'');
+  const subj=normText(m.subject||'');
+  const email=normMail(v.email||'');
+  const name=normText(v.name||'');
+  if(email && (from.includes(email)||txt.includes(email)))return true;
+  if(name && subj.includes(name))return true;
+  if(name && txt.includes(name) && txt.includes('orca'))return true;
+  return false;
+}
+function findMatchingVesselForMessage(m){
+  return (vessels||[]).find(v=>isRelevantMessageForVessel(m,v));
+}
+function filterRelevantInboxMessages(items){
+  return (Array.isArray(items)?items:[]).filter(m=>!!findMatchingVesselForMessage(m));
+}
+function latestRelevantReplyCount(v){
+  return (ibItems||[]).filter(m=>isRelevantMessageForVessel(m,v)).length;
+}
+function openInboxReply(idx){
+  const m=(ibItems||[])[idx];
+  if(!m){alert('Reply not found. Please click Check inbox again.');return;}
+  const body=m.body||m.snippet||'No reply body available.';
+  const subject=m.subject||'Reply';
+  const from=m.from||m.sender||'Unknown sender';
+  alert(subject+'\n\nFrom: '+from+'\n\n'+body);
+}
 
 // START MODAL
 function val(id){const el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
@@ -1610,7 +1608,7 @@ function updateReceivedStatsFromInbox(){
 }
 
 
-function renderInlineInbox(){
+function renderInlineInbox(){ibItems=filterRelevantInboxMessages(ibItems);
   const box=document.getElementById('dash-inbox-inline');
   const list=document.getElementById('dash-inbox-list');
   if(!box||!list)return;
@@ -1667,7 +1665,7 @@ async function fetchInbox(){
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
 }
-function renderInbox(){
+function renderInbox(){ibItems=filterRelevantInboxMessages(ibItems);
   updateReceivedStatsFromInbox();
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
@@ -1829,9 +1827,8 @@ async function migrateLocalToShared(){
   if(!hasSharedDb()){alert('Add SHARED_SHEET_ID in the HTML file first.');return;}
   const local=loadVesselsCompat().map(normalizeVessel);
   if(!local.length){alert('No local vessels found on this browser.');return;}
-  if(!confirm(`Upload ${local.length} local vessels into the shared database? This will merge with existing shared data.`))return;
-  const latest=await loadSharedVessels();
-  vessels=mergeVessels(latest||[],local);
+  if(!confirm(`Upload ${local.length} local vessels into the shared database? This will replace the current shared data.`))return;
+  vessels=local;
   const ok=await saveSharedVessels(vessels);
   if(ok){alert('Migration completed. Everyone should click Sync or refresh.');refreshSharedData();}
   else alert('Migration failed. Check Sheet permissions.');
