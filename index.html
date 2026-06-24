@@ -208,6 +208,19 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .tl-dot{width:10px;height:10px;border-radius:50%;background:var(--navy);margin-top:4px;flex:0 0 auto}
 .tl-row span{color:var(--muted);font-size:12px}
 
+
+/* v34.1 real operations features */
+.readiness-cell{display:flex;align-items:center;gap:7px;min-width:82px}
+.readiness-cell .prog{width:64px;height:5px}
+.readiness-cell span{font-size:12px;color:var(--muted)}
+.timeline-box{border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:14px;background:#fafaf8}
+.timeline-box h4{margin:0 0 10px;color:var(--navy);font-size:14px}
+.tl-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.tl-row:last-child{border-bottom:0}
+.tl-dot{width:24px;height:24px;border-radius:50%;background:#eef1ff;color:var(--navy);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.tl-row span{color:var(--muted);font-size:12px}
+#v-search{background:#fff}
+
 </style>
 </head>
 <body>
@@ -474,8 +487,36 @@ function roleLabel(email){email=normEmail(email);if(isSuperAdmin(email))return '
 const VKEY='orca_v3',UKEY='orca_u2';
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
 
-function lv(){try{const d=localStorage.getItem(VKEY);if(d)vessels=JSON.parse(d);}catch(e){vessels=[];}}
-function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){}}
+function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
+
+function loadVesselsCompat(){
+  const keys=['orca_v3','orca_v2','orca_v1','vessels'];
+  for(const k of keys){
+    try{
+      const raw=localStorage.getItem(k);
+      if(!raw)continue;
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return parsed;
+      if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
+    }catch(e){}
+  }
+  return [];
+}
+function normalizeVessel(v){
+  v.status=v.status||'waiting';
+  if(v.status==='new')v.status='waiting';
+  if(v.status==='escalated')v.status='followup';
+  v.risk=v.risk||'medium';
+  v.progress=Number(v.progress||0);
+  v.emailsSent=Number(v.emailsSent||0);
+  v.emailsReceived=Number(v.emailsReceived||0);
+  v.assignedTo=v.assignedTo||(user&&user.email)||'rami@orca-ai.io';
+  v.timeline=v.timeline||[];
+  if(!v.lastContact)v.lastContact=v.lastEmailDate||v.lastReceivedDate||new Date().toISOString();
+  return v;
+}
+
+function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){console.error('save failed',e);}}
 function lu(){try{return JSON.parse(localStorage.getItem(UKEY)||'{}');}catch(e){return{};}}
 function su(u){const us=lu();us[u.email]={...u,ls:new Date().toISOString()};try{localStorage.setItem(UKEY,JSON.stringify(us));}catch(e){}}
 
@@ -661,24 +702,33 @@ function readinessScore(v){
   if(v.status==='completed')return 100;
   if(v.status==='scheduled')return Math.max(v.progress||0,90);
   if(v.status==='ready')return Math.max(v.progress||0,85);
-  const received=(v.receivedItems||[]).map(x=>String(x).toLowerCase());
-  const has=t=>received.some(x=>x.includes(t));
+  const received=[
+    ...(v.receivedItems||[]),
+    ...(v.filesReceived||[]),
+    v.analysisSummary||'',
+    v.lastReplyText||'',
+    v.notes||''
+  ].map(x=>String(x).toLowerCase()).join(' | ');
+  const missing=(v.missingItems||[]).map(x=>String(x).toLowerCase()).join(' | ');
+  const got=(terms)=>terms.some(t=>received.includes(t)) && !terms.some(t=>missing.includes(t));
   let score=0;
-  if(has('vessel ga'))score+=15;
-  if(has('bridge console'))score+=15;
-  if(has('monitor'))score+=15;
-  if(has('seapod'))score+=15;
-  if(has('port')||has('agent')||has('upcoming port'))score+=15;
-  if(has('cable'))score+=10;
-  if(has('power')||has('vsat'))score+=10;
-  if(has('docs')||has('acknowledgement'))score+=5;
-  return Math.max(score, v.progress||0);
+  if(got(['vessel ga','general arrangement']))score+=15;
+  if(got(['bridge console','console ga']))score+=15;
+  if(got(['monitor','monitor location','proposed monitor']))score+=15;
+  if(got(['seapod','camera location','proposed seapod']))score+=15;
+  if(got(['port call','upcoming port','agent details','port agent']))score+=15;
+  if(got(['cable','penetration','routing']))score+=10;
+  if(got(['power','vsat']))score+=10;
+  if(got(['docs','acknowledgement','acknowledgment']))score+=5;
+  score=Math.max(score, Number(v.progress||0));
+  if((v.missingItems||[]).length&&score>75)score=75;
+  return Math.min(100,Math.max(0,score));
 }
 function readinessBar(v){
   const s=readinessScore(v);
-  return `<div style="display:flex;align-items:center;gap:7px;min-width:86px">
+  return `<div class="readiness-cell">
     <div class="prog"><span style="width:${Math.min(100,s)}%"></span></div>
-    <span style="font-size:12px;color:var(--muted)">${s}%</span>
+    <span>${s}%</span>
   </div>`;
 }
 function trafficLight(v){
@@ -705,6 +755,20 @@ function setKpiFilter(f){
   dashKpiFilter=(dashKpiFilter===f?'':f);
   renderTable();
 }
+
+function renderTimeline(v){
+  seedTimeline(v);
+  const events=(v.timeline||[]).slice().sort((a,b)=>new Date(b.ts||0)-new Date(a.ts||0));
+  if(!events.length)return '<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>';
+  return events.slice(0,20).map(e=>{
+    const icon={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'}[e.type]||'ti-circle';
+    return `<div class="tl-row">
+      <div class="tl-dot"><i class="ti ${icon}"></i></div>
+      <div><strong>${e.title||'Activity'}</strong><br><span>${fmtDT(e.ts)}${e.detail?' · '+e.detail:''}</span></div>
+    </div>`;
+  }).join('');
+}
+
 function seedTimeline(v){
   if(!v.timeline||!v.timeline.length){
     v.timeline=[];
@@ -716,6 +780,7 @@ function seedTimeline(v){
 
 function renderTable(){
   const tb=document.getElementById('vtb'),empty=document.getElementById('vempty');
+  const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==dashSearch)searchEl.value=dashSearch||'';
   const arr=filteredVessels();
   if(!vessels.length){
     tb.innerHTML='';
@@ -1047,7 +1112,8 @@ function renderInlineInbox(){
   const box=document.getElementById('dash-inbox-inline');
   const list=document.getElementById('dash-inbox-list');
   if(!box||!list)return;
-  box.style.display='block';
+  box.style.display=showInlineInboxPanel?'block':'none';
+  if(!showInlineInboxPanel)return;
   if(!ibItems||!ibItems.length){
     list.innerHTML='<div class="empty" style="padding:1rem">No new inbox replies found for the current vessels.</div>';
     return;
@@ -1067,6 +1133,7 @@ async function checkInbox(){
   const buttons=[document.getElementById('btn-chk'),document.getElementById('btn-chk-inbox-page')].filter(Boolean);
   buttons.forEach(b=>{b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';});
   await fetchInbox();
+  showInlineInboxPanel=true;
   updateReceivedStatsFromInbox();
   buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
   renderInlineInbox();renderInbox();renderTable();updateMetrics();sv();
@@ -1177,7 +1244,7 @@ function openV(idx){
   document.getElementById('vd-s').innerHTML=sb(v.status);
   seedTimeline(v);
   const timelineEl=document.getElementById('vd-timeline');
-  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${(v.timeline||[]).slice(0,12).map(e=>`<div class="tl-row"><div class="tl-dot"></div><div><strong>${e.title}</strong><br><span>${fmtDT(e.ts)}${e.detail?' · '+e.detail:''}</span></div></div>`).join('')||'<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>'}`;document.getElementById('vd-p').textContent=(v.progress||0)+'%';document.getElementById('vd-r').innerHTML=rb(v.risk||'medium');
+  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${renderTimeline(v)}`;document.getElementById('vd-p').textContent=(v.progress||0)+'%';document.getElementById('vd-r').innerHTML=rb(v.risk||'medium');
   const ALL=['Next 2–3 upcoming port calls + corresponding agent details for each port','Cable penetration','VSAT routing','Power connection','Proposed monitor location photos','Proposed Seapod location photos','Docs acknowledgement'];
   const recv=v.receivedItems||[],miss=v.missingItems||[];
   document.getElementById('vd-cl').innerHTML=ALL.map(item=>{const done=recv.some(r=>r.toLowerCase().includes(item.toLowerCase().split(' ')[0])),mis=miss.some(m=>m.toLowerCase().includes(item.toLowerCase().split(' ')[0])),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';return`<li><i class="ti ${ic}"></i>${item}</li>`;}).join('');
