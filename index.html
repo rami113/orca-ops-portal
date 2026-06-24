@@ -225,6 +225,27 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .recv-item{display:flex;align-items:center;gap:8px;background:#EAF8F2;color:#116B52;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:13px}
 .recv-item i{color:#1D9E75}
 
+
+.toast-msg{
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  background:#1D2E6B;
+  color:#fff;
+  padding:12px 16px;
+  border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.18);
+  z-index:99999;
+  font-size:13px;
+  font-weight:600;
+  opacity:0;
+  transform:translateY(8px);
+  transition:all .18s ease;
+}
+.toast-msg.show{opacity:1;transform:translateY(0)}
+.toast-msg.err{background:#A32D2D}
+.toast-msg.ok{background:#1D9E75}
+
 </style>
 </head>
 <body>
@@ -532,6 +553,24 @@ let sharedDbLastSync=null;
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
 
 
+
+function showToast(message,type='ok'){
+  try{
+    const old=document.querySelector('.toast-msg');
+    if(old)old.remove();
+    const t=document.createElement('div');
+    t.className='toast-msg '+(type==='err'?'err':'ok');
+    t.textContent=message;
+    document.body.appendChild(t);
+    requestAnimationFrame(()=>t.classList.add('show'));
+    setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),220);},2600);
+  }catch(e){console.log(message);}
+}
+function setSyncLabel(text){
+  const el=document.getElementById('last-refresh-label');
+  if(el)el.textContent=text||'';
+}
+
 function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
 function sharedDbUrl(range){
   return `https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}!${range}`;
@@ -608,7 +647,7 @@ async function loadVessels(){
         return;
       }
     }
-    alert('Shared database could not be loaded. Check the Google Sheet ID and sharing permissions.');
+    showToast('Shared database could not be loaded. Check Sheet permissions.','err');
   }
   lv();
 }
@@ -616,16 +655,29 @@ async function saveVessels(){
   if(hasSharedDb()){
     const ok=await saveSharedVessels(vessels);
     if(ok)return;
-    alert('Shared database save failed. Changes were saved locally only.');
+    showToast('Shared database save failed. Changes were saved locally only.','err');
   }
   sv();
 }
-async function refreshSharedData(){
-  await loadVessels();
-  updateMetrics();
-  renderTable();
-  populateSel();
-  if(typeof renderAdmin==='function')renderAdmin();
+async function refreshSharedData(options={}){
+  const quiet=!!options.quiet;
+  try{
+    if(!quiet)setSyncLabel('Syncing...');
+    await loadVessels();
+    updateMetrics();
+    renderTable();
+    populateSel();
+    if(typeof renderAdmin==='function')renderAdmin();
+    const tm=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    setSyncLabel('Last sync: '+tm);
+    if(!quiet)showToast('Synced successfully','ok');
+    return true;
+  }catch(e){
+    console.error('Sync failed',e);
+    setSyncLabel('Sync failed');
+    if(!quiet)showToast('Sync failed. Open Console for details.','err');
+    return false;
+  }
 }
 
 function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
@@ -698,7 +750,7 @@ async function handleToken(r){
   document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
   if(user.pic)document.getElementById('uav').src=user.pic;
   document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
-  renderTable();updateMetrics();populateSel();
+  renderTable();updateMetrics();populateSel();setSyncLabel('Last sync: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
   fetchInbox();
 }
 function signOut(){if(token)google.accounts.oauth2.revoke(token,()=>{});token=null;user=null;vessels=[];document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
@@ -1308,6 +1360,7 @@ async function sendAndSaveNew(){
     if(typeof addTimeline==='function')addTimeline(nv,'sent','Initial email sent',`Sent to ${e}`);
     vessels.push(nv);
     await saveVessels();
+    setSyncLabel('Last sync: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
     try{updateMetrics();}catch(e){console.warn(e);}
     try{renderTable();}catch(e){console.error('renderTable failed',e);}
     try{populateSel();}catch(e){console.warn(e);}
@@ -1811,6 +1864,13 @@ window.onload=()=>{
     }catch(e){console.warn('Silent sign-in skipped',e);}
   }
 };
+
+setInterval(async () => {
+  if(token && hasSharedDb()) {
+    await refreshSharedData({quiet:true});
+  }
+}, 30 * 1000);
+
 setInterval(async () => {
   if(token) {
     await fetchInbox();
