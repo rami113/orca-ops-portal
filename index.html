@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v35.6 precise inbox matching -->
+<!-- ORCA OPS PORTAL v35.7 exact inbox matching -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -1201,80 +1201,6 @@ function updateMetrics(){
 }
 function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
-
-function normMail(s){return String(s||'').toLowerCase().trim();}
-function normText(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
-function messageText(m){
-  return normText([m.subject,m.snippet,m.body,m.from,m.sender,m.to,m.date].filter(Boolean).join(' '));
-}
-function vesselUpdatedAt(v){
-  const d = new Date(v && (v.updatedAt || v.lastActivity || v.lastContact || v.createdAt || 0)).getTime();
-  return Number.isFinite(d) ? d : 0;
-}
-function vesselNameHit(m,v){
-  const name=normText(v&&v.name);
-  if(!name)return false;
-  const subj=normText(m&&m.subject);
-  const txt=messageText(m);
-  return subj.includes(name) || txt.includes(name);
-}
-function isRelevantMessageForVessel(m,v){
-  if(!m||!v)return false;
-  const txt=messageText(m);
-  const from=normMail(m.from||m.sender||'');
-  const email=normMail(v.email||'');
-  if(vesselNameHit(m,v))return true;
-  if(email && (from.includes(email)||txt.includes(email)))return true;
-  return false;
-}
-function findMatchingVesselForMessage(m){
-  const list=(vessels||[]).filter(v=>v&&v.name);
-  const byName=list.filter(v=>vesselNameHit(m,v))
-    .sort((a,b)=>String(b.name||'').length-String(a.name||'').length || vesselUpdatedAt(b)-vesselUpdatedAt(a));
-  if(byName.length)return byName[0];
-
-  const txt=messageText(m);
-  const from=normMail(m&&((m.from||m.sender)||''));
-  const byEmail=list.filter(v=>{
-    const email=normMail(v.email||'');
-    return email && (from.includes(email)||txt.includes(email));
-  }).sort((a,b)=>vesselUpdatedAt(b)-vesselUpdatedAt(a));
-  return byEmail[0]||null;
-}
-
-function inboxVesselDisplayName(m){
-  const v=findMatchingVesselForMessage(m);
-  return v && v.name ? v.name : 'Unmatched reply';
-}
-
-function filterRelevantInboxMessages(items){
-  return (Array.isArray(items)?items:[]).filter(m=>!!findMatchingVesselForMessage(m));
-}
-function latestRelevantReplyCount(v){
-  return (ibItems||[]).filter(m=>{
-    const match=findMatchingVesselForMessage(m);
-    return match && String(match.id||match.name)===String(v.id||v.name);
-  }).length;
-}
-
-function debugInboxMatches(){
-  return (ibItems||[]).map((m,i)=>({
-    index:i,
-    subject:m.subject,
-    from:m.from||m.sender,
-    match:(findMatchingVesselForMessage(m)||{}).name||null
-  }));
-}
-
-function openInboxReply(idx){
-  const m=(ibItems||[])[idx];
-  if(!m){alert('Reply not found. Please click Check inbox again.');return;}
-  const body=m.body||m.snippet||'No reply body available.';
-  const subject=m.subject||'Reply';
-  const from=m.from||m.sender||'Unknown sender';
-  alert(subject+'\n\nFrom: '+from+'\n\n'+body);
-}
-
 // START MODAL
 function val(id){const el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
 function setVal(id,value){const el=document.getElementById(id);if(el&&typeof el.value==='string')el.value=value;}
@@ -1602,6 +1528,47 @@ async function sendGmail(to, subj, body, isHtml=false) {
 
 // INBOX
 
+
+function inboxNorm(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function inboxEmail(s){return String(s||'').toLowerCase().trim();}
+function inboxWhen(v){
+  const d=new Date(v&&(v.updatedAt||v.lastActivity||v.lastContact||v.createdAt||0)).getTime();
+  return Number.isFinite(d)?d:0;
+}
+function inboxMsgText(m){
+  return inboxNorm([m.subj,m.subject,m.snippet,m.body,m.from,m.sender].filter(Boolean).join(' '));
+}
+function inboxNameHit(m,v){
+  const n=inboxNorm(v&&v.name);
+  if(!n)return false;
+  const s=inboxNorm(m&&(m.subj||m.subject));
+  const t=inboxMsgText(m);
+  return s.includes(n)||t.includes(n);
+}
+function bestVesselForInboxMessage(m){
+  const list=(vessels||[]).filter(v=>v&&String(v.name||'').trim());
+  const byName=list.filter(v=>inboxNameHit(m,v))
+    .sort((a,b)=>String(b.name||'').length-String(a.name||'').length || inboxWhen(b)-inboxWhen(a));
+  if(byName.length)return byName[0];
+
+  const fe=inboxEmail(m&&(m.fe||m.fromEmail||''));
+  const from=inboxEmail(m&&(m.from||m.sender||''));
+  const byEmail=list.filter(v=>{
+    const e=inboxEmail(v.email||'');
+    return e && (fe===e || from.includes(e));
+  }).sort((a,b)=>inboxWhen(b)-inboxWhen(a));
+  return byEmail[0]||null;
+}
+function openInboxReply(idx){
+  const item=(ibItems||[])[idx];
+  if(!item){alert('Reply not found. Please click Check inbox again.');return;}
+  if(typeof openIbModal==='function'){openIbModal(idx);return;}
+  alert((item.subj||'Reply')+'\n\nFrom: '+(item.from||'')+'\n\n'+(item.body||''));
+}
+function debugInboxMatches(){
+  return (ibItems||[]).map((m,i)=>({i, subject:m.subj||m.subject, from:m.from, matched:m.vessel&&m.vessel.name}));
+}
+
 function updateReceivedStatsFromInbox(){
   if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
   vessels.forEach(v=>{
@@ -1644,7 +1611,7 @@ function renderInlineInbox(){
       <div style="font-size:12px;color:var(--navy);font-style:italic;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${it.subj||''}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${(it.body||'').replace(/\s+/g,' ').slice(0,180)}</div>
     </div>
-    <button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-robot"></i> Analyze & Update</button>
+    <div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openInboxReply(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-robot"></i> Analyze & Update</button></div>
   </div>`).join('');
 }
 
@@ -1662,12 +1629,20 @@ async function fetchInbox(){
   const badge=document.getElementById('ib-count');
   if(badge){badge.textContent='0';badge.style.display='none';}
   if(!token||!vessels.length)return;
-  const emails=vessels.map(v=>v.email.toLowerCase());
-  const q=emails.map(e=>`from:${e}`).join(' OR ');
+
+  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean);
+  const emails=[...new Set((vessels||[]).map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
+
+  // Keep Gmail query reasonably broad, but matching below is strict and chooses the correct vessel.
+  const qParts=[];
+  names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
+  emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
+  const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
+
   try{
-    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=20`,{headers:{Authorization:'Bearer '+token}});
+    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,{headers:{Authorization:'Bearer '+token}});
     const d=await r.json();if(!d.messages)return;
-    for(const msg of d.messages.slice(0,15)){
+    for(const msg of d.messages.slice(0,20)){
       const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
       const dd=await dr.json();
       const hdr=(dd.payload&&dd.payload.headers)||[];
@@ -1676,10 +1651,15 @@ async function fetchInbox(){
       const date=hdr.find(h=>h.name==='Date')?.value||'';
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
       const body=dd.payload?eb(dd.payload):'';
-      const fe=from.match(/<(.+)>/)?.[1]||from;
-      if(user&&user.email&&fe.toLowerCase()===String(user.email).toLowerCase())continue;
-      const vessel=vessels.find(row=>String(row.email||'').toLowerCase()===fe.toLowerCase());
-      if(vessel){const logged=vessel.timeline?.some(t=>t.msgId===msg.id);if(!logged)ibItems.push({msgId:msg.id,vessel,vi:vessels.indexOf(vessel),from,fe,subj,date,body:body.substring(0,2000)});}
+      const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
+      if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
+
+      const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
+      const vessel=bestVesselForInboxMessage(temp);
+      if(vessel){
+        const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
+        if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+      }
     }
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
@@ -1689,7 +1669,7 @@ function renderInbox(){
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
   empty.style.display='none';
-  list.innerHTML=ibItems.map((item,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:10px;background:var(--white)"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${item.vessel.name}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${item.from} · ${item.date}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${item.subj}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.body.substring(0,120)}...</div></div><button class="btn btn-p btn-s" onclick="openIbModal(${i})" style="flex-shrink:0"><i class="ti ti-cpu"></i> Analyze & Update</button></div></div>`).join('');
+  list.innerHTML=ibItems.map((item,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:10px;background:var(--white)"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${item.vessel.name}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${item.from} · ${item.date}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${item.subj}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.body.substring(0,120)}...</div></div><div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openInboxReply(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-cpu"></i> Analyze & Update</button></div></div></div>`).join('');
 }
 
 function openIbModal(i){
