@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- ORCA OPS PORTAL v35.6 precise inbox matching -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -1176,7 +1177,7 @@ function renderTable(){
       <td>${dc(d)}</td>
       <td class="email-activity" style="color:var(--muted)">
         <strong>Sent</strong> ${v.emailsSent||0} · ${v.lastEmailDate?new Date(v.lastEmailDate).toLocaleDateString('en-GB'):'—'}<br>
-        <strong>Received</strong> ${Math.max(v.emailsReceived||0, latestRelevantReplyCount(v)||0)} · ${v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—'}
+        <strong>Received</strong> ${v.emailsReceived||0} · ${v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—'}
       </td>
       <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
       <td>
@@ -1201,52 +1202,70 @@ function updateMetrics(){
 function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
 
-
-
-function isValidVesselRecord(v){return !!(v&&typeof v==='object'&&String(v.name||'').trim()&&String(v.email||'').trim());}
-function cleanVesselArray(arr){return (Array.isArray(arr)?arr:[]).map(normalizeVessel).filter(isValidVesselRecord);}
-
-function gmailRelevantQuery(){
-  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean).slice(0,20);
-  const emails=(vessels||[]).map(v=>String(v.email||'').trim()).filter(Boolean).slice(0,20);
-  const parts=[...names,...emails].map(x=>`"${x.replace(/"/g,'')}"`);
-  if(!parts.length)return 'newer_than:30d (orca OR installation)';
-  return 'newer_than:30d ('+parts.join(' OR ')+')';
-}
-
 function normMail(s){return String(s||'').toLowerCase().trim();}
 function normText(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
-function vesselTerms(v){
-  const out=[];
-  if(v&&v.name)out.push(normText(v.name));
-  if(v&&v.email)out.push(normMail(v.email));
-  if(v&&v.owner)out.push(normText(v.owner));
-  return out.filter(Boolean);
-}
 function messageText(m){
   return normText([m.subject,m.snippet,m.body,m.from,m.sender,m.to,m.date].filter(Boolean).join(' '));
+}
+function vesselUpdatedAt(v){
+  const d = new Date(v && (v.updatedAt || v.lastActivity || v.lastContact || v.createdAt || 0)).getTime();
+  return Number.isFinite(d) ? d : 0;
+}
+function vesselNameHit(m,v){
+  const name=normText(v&&v.name);
+  if(!name)return false;
+  const subj=normText(m&&m.subject);
+  const txt=messageText(m);
+  return subj.includes(name) || txt.includes(name);
 }
 function isRelevantMessageForVessel(m,v){
   if(!m||!v)return false;
   const txt=messageText(m);
   const from=normMail(m.from||m.sender||'');
-  const subj=normText(m.subject||'');
   const email=normMail(v.email||'');
-  const name=normText(v.name||'');
+  if(vesselNameHit(m,v))return true;
   if(email && (from.includes(email)||txt.includes(email)))return true;
-  if(name && subj.includes(name))return true;
-  if(name && txt.includes(name) && txt.includes('orca'))return true;
   return false;
 }
 function findMatchingVesselForMessage(m){
-  return (vessels||[]).find(v=>isRelevantMessageForVessel(m,v));
+  const list=(vessels||[]).filter(v=>v&&v.name);
+  const byName=list.filter(v=>vesselNameHit(m,v))
+    .sort((a,b)=>String(b.name||'').length-String(a.name||'').length || vesselUpdatedAt(b)-vesselUpdatedAt(a));
+  if(byName.length)return byName[0];
+
+  const txt=messageText(m);
+  const from=normMail(m&&((m.from||m.sender)||''));
+  const byEmail=list.filter(v=>{
+    const email=normMail(v.email||'');
+    return email && (from.includes(email)||txt.includes(email));
+  }).sort((a,b)=>vesselUpdatedAt(b)-vesselUpdatedAt(a));
+  return byEmail[0]||null;
 }
+
+function inboxVesselDisplayName(m){
+  const v=findMatchingVesselForMessage(m);
+  return v && v.name ? v.name : 'Unmatched reply';
+}
+
 function filterRelevantInboxMessages(items){
   return (Array.isArray(items)?items:[]).filter(m=>!!findMatchingVesselForMessage(m));
 }
 function latestRelevantReplyCount(v){
-  return (ibItems||[]).filter(m=>isRelevantMessageForVessel(m,v)).length;
+  return (ibItems||[]).filter(m=>{
+    const match=findMatchingVesselForMessage(m);
+    return match && String(match.id||match.name)===String(v.id||v.name);
+  }).length;
 }
+
+function debugInboxMatches(){
+  return (ibItems||[]).map((m,i)=>({
+    index:i,
+    subject:m.subject,
+    from:m.from||m.sender,
+    match:(findMatchingVesselForMessage(m)||{}).name||null
+  }));
+}
+
 function openInboxReply(idx){
   const m=(ibItems||[])[idx];
   if(!m){alert('Reply not found. Please click Check inbox again.');return;}
@@ -1608,7 +1627,7 @@ function updateReceivedStatsFromInbox(){
 }
 
 
-function renderInlineInbox(){ibItems=filterRelevantInboxMessages(ibItems);
+function renderInlineInbox(){
   const box=document.getElementById('dash-inbox-inline');
   const list=document.getElementById('dash-inbox-list');
   if(!box||!list)return;
@@ -1665,7 +1684,7 @@ async function fetchInbox(){
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
 }
-function renderInbox(){ibItems=filterRelevantInboxMessages(ibItems);
+function renderInbox(){
   updateReceivedStatsFromInbox();
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
