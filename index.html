@@ -1779,39 +1779,63 @@ async function fetchInbox(){
   if(badge){badge.textContent='0';badge.style.display='none';}
   if(!token||!vessels.length)return;
 
-  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean);
-  const emails=[...new Set((vessels||[]).map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
+  // Search per vessel: subject must contain vessel name, and only after the initial email was sent
+  for(const vessel of vessels){
+    const vname=String(vessel.name||'').trim();
+    const vemail=String(vessel.email||'').trim().toLowerCase();
+    if(!vname)continue;
 
-  // Keep Gmail query reasonably broad, but matching below is strict and chooses the correct vessel.
-  const qParts=[];
-  names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
-  emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
-  const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
+    // Only fetch replies AFTER the initial email was sent to this vessel
+    const sentDate=vessel.lastEmailDate||vessel.createdAt||vessel.lastContact;
+    const afterClause=sentDate?` after:${Math.floor(new Date(sentDate).getTime()/1000)}`:'';
 
-  try{
-    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,{headers:{Authorization:'Bearer '+token}});
-    const d=await r.json();if(!d.messages)return;
-    for(const msg of d.messages.slice(0,20)){
-      const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
-      const dd=await dr.json();
-      const hdr=(dd.payload&&dd.payload.headers)||[];
-      const from=hdr.find(h=>h.name==='From')?.value||'';
-      const subj=hdr.find(h=>h.name==='Subject')?.value||'';
-      const date=hdr.find(h=>h.name==='Date')?.value||'';
-      const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
-      const body=dd.payload?eb(dd.payload):'';
-      const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
-      if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
+    // Query: must have vessel name in subject AND come from the vessel email (or anyone, but subject must match)
+    const subjQuery=`subject:"${vname.replace(/"/g,'')}"${afterClause}`;
+    const emailQuery=vemail?`from:${vemail} subject:"${vname.replace(/"/g,'')}"${afterClause}`:'';
 
-      const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
-      const vessel=bestVesselForInboxMessage(temp);
-      if(vessel){
+    const queries=[subjQuery];
+    if(emailQuery&&emailQuery!==subjQuery)queries.push(emailQuery);
+    const q=[...new Set(queries)].join(' OR ');
+
+    try{
+      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=10`,{headers:{Authorization:'Bearer '+token}});
+      const d=await r.json();
+      if(!d.messages)continue;
+
+      for(const msg of d.messages.slice(0,10)){
+        const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+        const dd=await dr.json();
+        const hdr=(dd.payload&&dd.payload.headers)||[];
+        const from=hdr.find(h=>h.name==='From')?.value||'';
+        const subj=hdr.find(h=>h.name==='Subject')?.value||'';
+        const date=hdr.find(h=>h.name==='Date')?.value||'';
+        const internalDate=Number(dd.internalDate||0);
+        const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
+        const body=dd.payload?eb(dd.payload):'';
+        const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
+
+        // Skip outbound emails from our own user
+        if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
+
+        // Skip emails that arrived before the initial email was sent
+        if(sentDate&&internalDate&&internalDate<new Date(sentDate).getTime())continue;
+
+        // Subject must contain vessel name (case-insensitive)
+        if(!subj.toLowerCase().includes(vname.toLowerCase()))continue;
+
+        // Skip if already logged in timeline
         const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
-        if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+        if(logged)continue;
+
+        // Skip duplicates already in ibItems
+        if(ibItems.some(x=>x.msgId===msg.id))continue;
+
+        ibItems.push({msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi:vessels.indexOf(vessel)});
       }
-    }
-    if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
-  }catch(e){console.error(e);}
+    }catch(e){console.error('fetchInbox vessel loop error',e);}
+  }
+
+  if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
 }
 function renderInbox(){
   updateReceivedStatsFromInbox();
