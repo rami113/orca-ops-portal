@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v35.10 shared reset propagation -->
+<!-- ORCA OPS PORTAL v35.11 visible reset shared db -->
 <!-- ORCA OPS PORTAL v35.7 exact inbox matching -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -405,8 +405,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
-          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
+          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear My Cache</button>
+          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button>
+        <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear My History</button>
         </div>
       </div>
     </div>
@@ -464,8 +465,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-console.log("ORCA v35.10 shared reset propagation loaded");
-window.ORCA_FIX_VERSION="v35.10";
+console.log("ORCA v35.11 visible reset shared db loaded");
+window.ORCA_FIX_VERSION="v35.11";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -581,27 +582,19 @@ async function loadSharedVessels(){
   }
 }
 async 
-function localResetAt(){
-  return localStorage.getItem('orca_shared_reset_at')||'';
-}
-function setLocalResetAt(ts){
-  if(ts)localStorage.setItem('orca_shared_reset_at',ts);
-}
+function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
+function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
 function parseSharedPayload(raw){
   try{
     if(Array.isArray(raw))return {resetAt:'',vessels:raw};
-    if(raw && typeof raw==='object' && Array.isArray(raw.vessels))return raw;
+    if(raw&&typeof raw==='object'&&Array.isArray(raw.vessels))return raw;
     if(typeof raw==='string'){
       const parsed=JSON.parse(raw);
       if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
-      if(parsed && typeof parsed==='object' && Array.isArray(parsed.vessels))return parsed;
+      if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.vessels))return parsed;
     }
   }catch(e){}
   return {resetAt:'',vessels:[]};
-}
-function isResetPayload(raw){
-  const p=parseSharedPayload(raw);
-  return !!p.resetAt && Array.isArray(p.vessels) && p.vessels.length===0;
 }
 function applySharedPayload(raw){
   const p=parseSharedPayload(raw);
@@ -695,7 +688,7 @@ function normalizeVessel(v){
   return v;
 }
 
-function sv(){try{localStorage.setItem(VKEY,JSON.stringify(typeof __payload!=='undefined'?__payload:vessels));}catch(e){console.error('save failed',e);}}
+function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){console.error('save failed',e);}}
 function lu(){try{return JSON.parse(localStorage.getItem(UKEY)||'{}');}catch(e){return{};}}
 function su(u){const us=lu();us[u.email]={...u,ls:new Date().toISOString()};try{localStorage.setItem(UKEY,JSON.stringify(us));}catch(e){}}
 
@@ -1860,7 +1853,11 @@ function refreshAllViews(){
 
 async 
 async function resetSharedDatabase(){
-  if(!isAdmin()){
+  if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
+    alert('Super Admin only.');
+    return;
+  }
+  if(typeof isAdmin==='function' && !isAdmin()){
     alert('Admin only.');
     return;
   }
@@ -1873,37 +1870,33 @@ async function resetSharedDatabase(){
     vessels=[];
     ibItems=[];
     setLocalResetAt(resetAt);
-    saveLocal();
 
-    // Save a reset marker, not just an empty array, so other users know to clear their local cache too.
-    if(typeof saveSharedVessels==='function'){
-      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
-      if(!saved){
-        // fallback for older saveSharedVessels that only accepts arrays
-        const saved2=await saveSharedVessels([]);
-        if(!saved2)throw new Error('saveSharedVessels returned false');
-      }
-    }else if(typeof sharedDbUrl==='function' && token){
-      const url=sharedDbUrl('vessels!A1');
-      await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({values:[[JSON.stringify({resetAt:resetAt,vessels:[]})]]})});
-    }else{
-      throw new Error('No shared database writer available');
-    }
-
-    // also clear local backup keys if present
+    // clear local cache/history for current user
     Object.keys(localStorage).forEach(k=>{
-      if(k.toLowerCase().includes('vessel') || k.toLowerCase().includes('timeline') || k.toLowerCase().includes('history')){
-        if(k!=='orca_shared_reset_at')localStorage.removeItem(k);
+      const kk=k.toLowerCase();
+      if(kk.includes('vessel')||kk.includes('timeline')||kk.includes('history')){
+        localStorage.removeItem(k);
       }
     });
     localStorage.setItem('orca_shared_reset_at',resetAt);
+    if(typeof saveLocal==='function')saveLocal();
+
+    // write reset marker to the shared sheet
+    if(typeof saveSharedVessels==='function'){
+      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
+      if(!saved){
+        const saved2=await saveSharedVessels([]);
+        if(!saved2)throw new Error('saveSharedVessels failed');
+      }
+    }else{
+      throw new Error('saveSharedVessels is missing');
+    }
 
     if(typeof render==='function')render();
-    if(typeof showToast==='function')showToast('Shared database reset successfully. Other users must click Sync or refresh.');
-    else alert('Shared database reset successfully. Other users must click Sync or refresh.');
+    alert('Shared database reset successfully. Ask all users to Hard Refresh and click Sync.');
   }catch(e){
     console.error(e);
-    alert('Shared database reset failed. Check Google Sheet permission and try Sync again.');
+    alert('Shared database reset failed. Check Google Sheet permission.');
   }
 }
 
