@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v36.1 safe-sync-merge -->
+<!-- ORCA OPS PORTAL v36.2 safe-sync-merge -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -465,7 +465,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
 <script>
 console.log("ORCA v35.11 visible reset shared db loaded");
-window.ORCA_FIX_VERSION="v36.1";
+window.ORCA_FIX_VERSION="v36.2";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -754,7 +754,20 @@ function loadLocalVesselsForMerge(){
 }
 
 async function refreshSharedData(){
-  await syncSharedDatabase();
+  const btn=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Sync');
+  const old=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.textContent='⏳ Syncing...';}
+  try{
+    await syncSharedDatabase();
+    const count=(window.vessels||[]).length;
+    showSyncToast('✅ Shared database synchronized ('+count+' vessels)',true);
+    const el=document.getElementById('last-sync-label');
+    if(el) el.textContent='Last sync: '+new Date().toLocaleString();
+  }catch(e){
+    showSyncToast('❌ Sync failed',false);
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML=old||'Sync';}
+  }
 }
 
 function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
@@ -2073,6 +2086,21 @@ function debugSyncState(){
     sharedDbReady:typeof sharedDbReady==='undefined'?null:sharedDbReady,
     user:user&&user.email
   };
+}
+
+
+function showSyncToast(msg, ok=true){
+  let t=document.getElementById('sync-toast');
+  if(!t){
+    t=document.createElement('div');
+    t.id='sync-toast';
+    t.style.cssText='position:fixed;bottom:24px;right:24px;padding:12px 18px;border-radius:8px;color:#fff;font:14px sans-serif;z-index:99999;display:none;';
+    document.body.appendChild(t);
+  }
+  t.style.background=ok?'#16a34a':'#dc2626';
+  t.textContent=msg;
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',2500);
 }
 
 </script>
