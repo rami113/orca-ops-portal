@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v36.0 stabilized shared-db strict-inbox cc-bcc admins -->
+<!-- ORCA OPS PORTAL v36.1 safe-sync-merge -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -422,8 +422,6 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <div class="fg">
       <div class="fr"><label>Vessel name *</label><input id="mv" placeholder="MV Ocean Star"/></div>
       <div class="fr"><label>Master email *</label><input id="me" type="email" placeholder="master@vessel.com"/></div>
-      <div class="fr"><label>CC</label><input id="cc" placeholder="ops@company.com, agent@company.com"/></div>
-      <div class="fr"><label>BCC</label><input id="bcc" placeholder="archive@company.com"/></div>
       <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd"/></div>
       
     </div>
@@ -466,8 +464,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-console.log("ORCA v36.0 stabilized loaded");
-window.ORCA_FIX_VERSION="v36.0";
+console.log("ORCA v35.11 visible reset shared db loaded");
+window.ORCA_FIX_VERSION="v36.1";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -484,8 +482,7 @@ const ADMIN_L2=[
   'israel@orca-ai.io',
   'jacob@orca-ai.io',
   'yotam.keret@orca-ai.io',
-  'yaron.y@orca-ai.io',
-  'leon.gutnik@orca-ai.io'
+  'yaron.y@orca-ai.io'
 ].map(e=>e.toLowerCase());
 
 const TEAM_USERS=[
@@ -494,8 +491,7 @@ const TEAM_USERS=[
   {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
   {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
   {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
-  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
-  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin L2'}
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'}
 ];
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
@@ -540,58 +536,6 @@ let sharedDbLastSync=null;
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
 
 
-
-function cleanEmailList(v){
-  return String(v||'')
-    .split(/[;,]/)
-    .map(x=>x.trim())
-    .filter(Boolean)
-    .join(', ');
-}
-function vesselCc(v){return cleanEmailList(v&&v.cc);}
-function vesselBcc(v){return cleanEmailList(v&&v.bcc);}
-function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
-function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
-function parseSharedPayload(raw){
-  try{
-    if(Array.isArray(raw))return {resetAt:'',vessels:raw};
-    if(raw&&typeof raw==='object'&&Array.isArray(raw.vessels))return raw;
-    if(typeof raw==='string'){
-      const parsed=JSON.parse(raw);
-      if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
-      if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.vessels))return parsed;
-    }
-  }catch(e){}
-  return {resetAt:'',vessels:[]};
-}
-function clearLocalPortalData(){
-  Object.keys(localStorage).forEach(k=>{
-    const kk=k.toLowerCase();
-    if(kk.includes('orca_v') || kk.includes('vessel') || kk.includes('timeline') || kk.includes('history') || kk.includes('ibitems')){
-      if(k!=='orca_shared_reset_at' && k!=='orca_google_consent_ok')localStorage.removeItem(k);
-    }
-  });
-}
-function applySharedPayload(raw){
-  const p=parseSharedPayload(raw);
-  if(p.resetAt){
-    setLocalResetAt(p.resetAt);
-    vessels=[];
-    ibItems=[];
-    clearLocalPortalData();
-    sv();
-    return [];
-  }
-  return (p.vessels||[]);
-}
-function safeRenderAll(){
-  try{updateMetrics();}catch(e){console.warn(e);}
-  try{renderTable();}catch(e){console.warn(e);}
-  try{populateSel();}catch(e){console.warn(e);}
-  try{if(typeof renderAdmin==='function')renderAdmin();}catch(e){console.warn(e);}
-  try{if(typeof renderInbox==='function')renderInbox();}catch(e){console.warn(e);}
-}
-
 function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
 function sharedDbUrl(range){
   return `https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}!${range}`;
@@ -608,21 +552,10 @@ async function ensureSharedDb(){
       });
     }
     r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
-    if(!r.ok){
-      console.error('Shared DB check HTTP error',await r.text());
-      sharedDbReady=false;
-      return false;
-    }
     const d=await r.json();
     const val=d.values&&d.values[0]&&d.values[0][0];
-    if(!val){
-      const initOk=await saveSharedVessels([]);
-      sharedDbReady=!!initOk;
-      return !!initOk;
-    }
-    // Keep reset marker object; only repair invalid JSON.
-    try{parseSharedPayload(val);}
-    catch(e){await saveSharedVessels([]);}
+    if(!val)await saveSharedVessels([]);
+    else{try{JSON.parse(val);}catch(e){await saveSharedVessels([]);}}
     sharedDbReady=true;
     return true;
   }catch(e){
@@ -631,30 +564,52 @@ async function ensureSharedDb(){
     return false;
   }
 }
-
 async function loadSharedVessels(){
   if(!hasSharedDb()||!token)return null;
   try{
     const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
-    if(!r.ok){
-      console.error('Shared DB load HTTP error',await r.text());
-      return null;
-    }
     const d=await r.json();
     const val=d.values&&d.values[0]&&d.values[0][0];
     if(!val)return [];
-    return applySharedPayload(val);
+    const parsed=JSON.parse(val);
+    if(Array.isArray(parsed))return parsed;
+    if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
+    return [];
   }catch(e){
     console.error('Shared DB load failed',e);
     return null;
   }
 }
+async 
+function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
+function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
+function parseSharedPayload(raw){
+  try{
+    if(Array.isArray(raw))return {resetAt:'',vessels:raw};
+    if(raw&&typeof raw==='object'&&Array.isArray(raw.vessels))return raw;
+    if(typeof raw==='string'){
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
+      if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.vessels))return parsed;
+    }
+  }catch(e){}
+  return {resetAt:'',vessels:[]};
+}
+function applySharedPayload(raw){
+  const p=parseSharedPayload(raw);
+  if(p.resetAt){
+    setLocalResetAt(p.resetAt);
+    vessels=[];
+    saveLocal();
+    return [];
+  }
+  return (p.vessels||[]);
+}
 
 async function saveSharedVessels(data){
   if(!hasSharedDb()||!token)return false;
   try{
-    const payload = Array.isArray(data) ? data : data;
-    const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(payload)]]};
+    const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(data||[])]]};
     const r=await fetch(sharedDbUrl('A1')+'?valueInputOption=RAW',{
       method:'PUT',
       headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -665,15 +620,12 @@ async function saveSharedVessels(data){
       return false;
     }
     sharedDbLastSync=new Date().toISOString();
-    const label=document.getElementById('last-refresh-label');
-    if(label)label.textContent='Last sync: '+new Date(sharedDbLastSync).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     return true;
   }catch(e){
     console.error('Shared DB save failed',e);
     return false;
   }
 }
-
 async function loadVessels(){
   const warn=document.getElementById('shared-db-warning');
   if(warn)warn.style.display=hasSharedDb()?'none':'block';
@@ -684,14 +636,12 @@ async function loadVessels(){
       const shared=await loadSharedVessels();
       if(Array.isArray(shared)){
         vessels=shared.map(normalizeVessel);
-        sv(); // local mirror only, never source of truth while Shared DB is available
+        sv(); // local mirror only
         return;
       }
     }
-    // Important: do NOT fall back to local cache when Shared DB is configured.
-    // Otherwise each user can keep seeing different stale data.
     vessels=[];
-    alert('Shared database could not be loaded. Local cache was ignored to avoid stale data. Check Google Sheet sharing/permissions.');
+    alert('Shared database could not be loaded. Local cache ignored to avoid showing stale data.');
     return;
   }
 
@@ -701,16 +651,110 @@ async function loadVessels(){
 async function saveVessels(){
   if(hasSharedDb()){
     const ok=await saveSharedVessels(vessels);
-    if(ok){sv();return;}
-    alert('Shared database save failed. Changes were NOT saved to shared DB. Check Google Sheet Editor permission.');
-    return;
+    if(ok)return;
+    alert('Shared database save failed. Changes were saved locally only.');
   }
   sv();
 }
 
-async function refreshSharedData(){
-  await loadVessels();
+function vesselKey(v){
+  return String((v&&v.id)||(v&&v.name&&v.email?`${v.name}|${v.email}`:(v&&v.name)||'')).toLowerCase().trim();
+}
+function dateScore(v){
+  return new Date((v&&v.updatedAt)||(v&&v.lastActivity)||(v&&v.lastContact)||(v&&v.createdAt)||0).getTime()||0;
+}
+function mergeTimeline(a,b){
+  const out=[];
+  const seen=new Set();
+  [...(a||[]),...(b||[])].forEach(t=>{
+    const k=String((t&&t.msgId)||(t&&t.time)||(t&&t.date)||JSON.stringify(t));
+    if(!seen.has(k)){seen.add(k);out.push(t);}
+  });
+  return out.sort((x,y)=>(new Date(x.time||x.date||0))-(new Date(y.time||y.date||0)));
+}
+function mergeVesselRecord(shared, local){
+  if(!shared)return normalizeVessel(local);
+  if(!local)return normalizeVessel(shared);
+  const newer = dateScore(local)>dateScore(shared) ? local : shared;
+  const older = newer===local ? shared : local;
+  const merged = {...older, ...newer};
+  merged.timeline = mergeTimeline(shared.timeline, local.timeline);
+  merged.cc = merged.cc || shared.cc || local.cc || '';
+  merged.bcc = merged.bcc || shared.bcc || local.bcc || '';
+  merged.emailsSent = Math.max(Number(shared.emailsSent||0), Number(local.emailsSent||0));
+  merged.emailsReceived = Math.max(Number(shared.emailsReceived||0), Number(local.emailsReceived||0));
+  return normalizeVessel(merged);
+}
+function mergeVesselLists(sharedList, localList){
+  const map=new Map();
+  (sharedList||[]).forEach(v=>{const k=vesselKey(v); if(k)map.set(k, normalizeVessel(v));});
+  (localList||[]).forEach(v=>{
+    const k=vesselKey(v); if(!k)return;
+    map.set(k, mergeVesselRecord(map.get(k), v));
+  });
+  return Array.from(map.values()).sort((a,b)=>dateScore(b)-dateScore(a));
+}
+async function syncSharedDatabase(){
+  if(!hasSharedDb()||!token){
+    lv();
+    safeRenderAll();
+    return;
+  }
+
+  const ok=await ensureSharedDb();
+  if(!ok){
+    alert('Shared database could not be reached. Sync stopped so local data will not overwrite others.');
+    return;
+  }
+
+  const sharedRaw=await loadSharedVessels();
+  if(!Array.isArray(sharedRaw)){
+    alert('Shared database could not be loaded. Sync stopped.');
+    return;
+  }
+
+  // If shared DB is reset/empty, DO NOT push local cache back into it.
+  // This prevents one user's stale browser from resurrecting deleted data for everyone.
+  if(sharedRaw.length===0){
+    vessels=[];
+    ibItems=[];
+    sv();
+    safeRenderAll();
+    return;
+  }
+
+  // Normal sync: merge shared + local cache, then save the merged truth.
+  const localRaw=loadLocalVesselsForMerge();
+  const merged=mergeVesselLists(sharedRaw, localRaw);
+
+  // Only write back if merge added/updated something beyond shared.
+  const sharedJson=JSON.stringify(sharedRaw.map(normalizeVessel));
+  const mergedJson=JSON.stringify(merged.map(normalizeVessel));
+  if(sharedJson!==mergedJson){
+    const saved=await saveSharedVessels(merged);
+    if(!saved){
+      alert('Sync merge could not be saved to Shared Database. Showing shared data only.');
+      vessels=sharedRaw.map(normalizeVessel);
+      sv();
+      safeRenderAll();
+      return;
+    }
+  }
+
+  vessels=merged.map(normalizeVessel);
+  sv();
   safeRenderAll();
+}
+function loadLocalVesselsForMerge(){
+  try{
+    const raw=localStorage.getItem(LS)||localStorage.getItem('orca_vessels')||'[]';
+    const arr=JSON.parse(raw);
+    return Array.isArray(arr)?arr:[];
+  }catch(e){return [];}
+}
+
+async function refreshSharedData(){
+  await syncSharedDatabase();
 }
 
 function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
@@ -738,7 +782,6 @@ function normalizeVessel(v){
   v.emailsReceived=Number(v.emailsReceived||0);
   v.assignedTo=v.assignedTo||(user&&user.email)||'rami@orca-ai.io';
   v.timeline=v.timeline||[];
-  v.cc=v.cc||'';v.bcc=v.bcc||'';
   if(!v.lastContact)v.lastContact=v.lastEmailDate||v.lastReceivedDate||new Date().toISOString();
   return v;
 }
@@ -961,7 +1004,7 @@ async function openCaseAnalyze(i){
         const from=String(item.fe||item.from||'').toLowerCase();
         const subj=String(item.subj||item.subject||'').toLowerCase();
         const body=String(item.body||item.snippet||'').toLowerCase();
-        return item.vi===i || item.vessel===vessel || (name&&(subj.includes(name)||body.includes(name)));
+        return item.vi===i || item.vessel===vessel || (email&&from.includes(email)) || (name&&(subj.includes(name)||body.includes(name)));
       });
     }
     if(existing&&existing.body){
@@ -1291,10 +1334,10 @@ function val(id){const el=document.getElementById(id);return el&&typeof el.value
 function setVal(id,value){const el=document.getElementById(id);if(el&&typeof el.value==='string')el.value=value;}
 function show(id,display){const el=document.getElementById(id);if(el)el.style.display=display;}
 function txt(id,value){const el=document.getElementById(id);if(el)el.textContent=value;}
-function openStart(){show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','cc','bcc','mo','md'].forEach(id=>setVal(id,''));}
+function openStart(){show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','mo','md'].forEach(id=>setVal(id,''));}
 
 async function genEmail(){
-  const v=val('mv'),e=val('me'),cc=cleanEmailList(val('cc')),bcc=cleanEmailList(val('bcc')),o=val('mo'),d=val('md');
+  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
   if(!v||!e){alert('Please enter vessel name and master email.');return;}
   show('mod-ep','block');show('mod-al','flex');txt('mod-ep-txt','');show('btn-gen','none');
   draft=`Dear Master,
@@ -1361,22 +1404,20 @@ Orca AI`;
 }
 
 async function sendAndSaveNew(){
-  const v=val('mv'),e=val('me'),cc=cleanEmailList(val('cc')),bcc=cleanEmailList(val('bcc')),o=val('mo'),d=val('md');
+  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
   if(!v||!e){alert('Please enter vessel name and master email.');return;}
   const btn=document.getElementById('btn-snd');
   const oldHtml=btn?btn.innerHTML:'';
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
   try{
     const htmlBody=buildHtmlEmail(draft,'ORCA AI OPS',d);
-    const ok=await sendGmail(e,'Orca AI Installation Coordination - '+v,htmlBody,true,cc,bcc);
+    const ok=await sendGmail(e,'Orca AI Installation Coordination - '+v,htmlBody,true);
     if(!ok)return;
     const now=new Date().toISOString();
     const nv={
       id:Date.now(),
       name:v,
       email:e,
-      cc:cc||'',
-      bcc:bcc||'',
       owner:o,
       docs:d,
       status:'waiting',
@@ -1582,15 +1623,13 @@ function stripHtmlForText(s){
   return String(s||'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
 }
 
-async function sendGmail(to, subj, body, isHtml=false, cc='', bcc='') {
+async function sendGmail(to, subj, body, isHtml=false) {
   if(!token){alert('Not authenticated.');return false;}
   const html = isHtml ? body : body.replace(/\n/g,'<br>');
   const boundary = 'orca_boundary_' + Date.now();
   const mime = [
     `From: ORCA AI OPS <${user.email}>`,
     `To: ${to}`,
-    ...(cleanEmailList(cc)?[`Cc: ${cleanEmailList(cc)}`]:[]),
-    ...(cleanEmailList(bcc)?[`Bcc: ${cleanEmailList(bcc)}`]:[]),
     `Subject: ${subj}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -1683,7 +1722,7 @@ function updateReceivedStatsFromInbox(){
 }
 
 
-function renderInlineInbox(){if(typeof filterStrictInboxItems==='function')filterStrictInboxItems();
+function renderInlineInbox(){
   const box=document.getElementById('dash-inbox-inline');
   const list=document.getElementById('dash-inbox-list');
   if(!box||!list)return;
@@ -1713,83 +1752,47 @@ async function checkInbox(){
   buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
   renderInlineInbox();renderInbox();renderTable();updateMetrics();saveVessels();
 }
-
-function inboxNorm(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
-function strictMsgText(m){return inboxNorm([m.subj,m.subject,m.snippet,m.body,m.from,m.sender].filter(Boolean).join(' '));}
-function strictSubject(m){return inboxNorm((m&&m.subj)||(m&&m.subject)||'').replace(/^(\s*(re|fw|fwd)\s*:\s*)+/i,'');}
-function strictVesselMatch(m,v){
-  const name=inboxNorm(v&&v.name);
-  if(!name)return false;
-  const subj=strictSubject(m);
-  const txt=strictMsgText(m);
-  if(subj.includes(name))return true;
-  if(txt.includes(name) && (txt.includes('orca ai installation') || txt.includes('installation coordination')))return true;
-  if(m.threadId && (m.threadId===v.threadId || m.threadId===v.gmailThreadId || m.threadId===v.lastThreadId))return true;
-  return false;
-}
-function bestStrictVesselForInboxMessage(m){
-  const list=(vessels||[]).filter(v=>v&&String(v.name||'').trim());
-  const hits=list.filter(v=>strictVesselMatch(m,v)).sort((a,b)=>String(b.name||'').length-String(a.name||'').length);
-  return hits[0]||null;
-}
-function filterStrictInboxItems(){
-  ibItems=(ibItems||[]).filter(m=>{
-    const v=m.vessel || bestStrictVesselForInboxMessage(m);
-    if(!v)return false;
-    m.vessel=v;
-    m.vi=vessels.indexOf(v);
-    return true;
-  });
-}
-function debugStrictInbox(){
-  return (ibItems||[]).map((m,i)=>({i,subject:m.subj||m.subject,from:m.from,threadId:m.threadId,match:(m.vessel||bestStrictVesselForInboxMessage(m)||{}).name||null}));
-}
-
 async function fetchInbox(){
   ibItems=[];
   const badge=document.getElementById('ib-count');
   if(badge){badge.textContent='0';badge.style.display='none';}
   if(!token||!vessels.length)return;
 
-  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean).slice(0,25);
+  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean);
+  const emails=[...new Set((vessels||[]).map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
+
+  // Keep Gmail query reasonably broad, but matching below is strict and chooses the correct vessel.
   const qParts=[];
-  names.forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
-  const q=qParts.length ? `newer_than:90d (${qParts.join(' OR ')})` : 'newer_than:7d "Orca AI Installation Coordination"';
+  names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
+  emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
+  const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
 
   try{
     const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,{headers:{Authorization:'Bearer '+token}});
-    const d=await r.json();
-    if(!d.messages)return;
-
-    for(const msg of d.messages.slice(0,25)){
+    const d=await r.json();if(!d.messages)return;
+    for(const msg of d.messages.slice(0,20)){
       const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
       const dd=await dr.json();
       const hdr=(dd.payload&&dd.payload.headers)||[];
-      const get=n=>hdr.find(h=>String(h.name||'').toLowerCase()===n.toLowerCase())?.value||'';
-      const from=get('From');
-      const subj=get('Subject');
-      const date=get('Date');
-      const body=cleanCaptainReplyText(decodeGmailBody(dd.payload)||dd.snippet||'');
+      const from=hdr.find(h=>h.name==='From')?.value||'';
+      const subj=hdr.find(h=>h.name==='Subject')?.value||'';
+      const date=hdr.find(h=>h.name==='Date')?.value||'';
+      const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
+      const body=dd.payload?eb(dd.payload):'';
       const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
       if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
 
-      const temp={msgId:msg.id,threadId:dd.threadId,from,fe,subj,date,body:body.substring(0,4000),snippet:dd.snippet||''};
-      const vessel=bestStrictVesselForInboxMessage(temp);
-      if(!vessel)continue;
-
-      const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
-      if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+      const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
+      const vessel=bestVesselForInboxMessage(temp);
+      if(vessel){
+        const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
+        if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+      }
     }
-
-    filterStrictInboxItems();
-    if(badge){
-      if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}
-      else{badge.textContent='0';badge.style.display='none';}
-    }
+    if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
 }
-
-function renderInbox(){if(typeof filterStrictInboxItems==='function')filterStrictInboxItems();
+function renderInbox(){
   updateReceivedStatsFromInbox();
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
@@ -1824,7 +1827,7 @@ async function runIbAnalysis(){
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
   const v=curIb.vessel,followBody=(ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,vesselCc(v),vesselBcc(v));
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);
   if(!ok)return;
   const idx=curIb.vi;
   vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...new Map([...(vessels[idx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
@@ -1860,7 +1863,7 @@ async function analyzeReply(){
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
   const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,vesselCc(v),vesselBcc(v));if(!ok)return;
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);if(!ok)return;
   vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:[...new Map([...(v.receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
   cleanTimeline(vessels[idx]);
   addTimeline(vessels[idx],'ai','Reply analyzed by AI',v.email);
@@ -1952,6 +1955,10 @@ async function resetSharedDatabase(){
     alert('Super Admin only.');
     return;
   }
+  if(typeof isAdmin==='function' && !isAdmin()){
+    alert('Admin only.');
+    return;
+  }
   const ok=confirm('This will delete ALL vessels from the shared database for EVERYONE. Continue?');
   if(!ok)return;
   const ok2=confirm('Final confirmation: reset the shared Google Sheet database now?');
@@ -1961,50 +1968,65 @@ async function resetSharedDatabase(){
     vessels=[];
     ibItems=[];
     setLocalResetAt(resetAt);
-    clearLocalPortalData();
 
-    const payload={resetAt:resetAt,vessels:[]};
-    const saved=await saveSharedVessels(payload);
-    if(!saved)throw new Error('saveSharedVessels failed');
+    // clear local cache/history for current user
+    Object.keys(localStorage).forEach(k=>{
+      const kk=k.toLowerCase();
+      if(kk.includes('vessel')||kk.includes('timeline')||kk.includes('history')){
+        localStorage.removeItem(k);
+      }
+    });
+    localStorage.setItem('orca_shared_reset_at',resetAt);
+    if(typeof saveLocal==='function')saveLocal();
 
-    // Verify current Google Sheet A1 is now empty/reset.
-    const verify=await loadSharedVessels();
-    if(!Array.isArray(verify) || verify.length!==0){
-      throw new Error('Reset verification failed');
+    // write reset marker to the shared sheet
+    if(typeof saveSharedVessels==='function'){
+      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
+      if(!saved){
+        const saved2=await saveSharedVessels([]);
+        if(!saved2)throw new Error('saveSharedVessels failed');
+      }
+    }else{
+      throw new Error('saveSharedVessels is missing');
     }
 
-    sv();
-    safeRenderAll();
-    alert('Shared database reset successfully. Ask all users to Ctrl+Shift+R and click Sync.');
+    if(typeof render==='function')render();
+    alert('Shared database reset successfully. Ask all users to Hard Refresh and click Sync.');
   }catch(e){
     console.error(e);
-    alert('Shared database reset failed. Open Console for details. Most likely Google Sheet Editor permission is missing.');
+    alert('Shared database reset failed. Check Google Sheet permission.');
   }
 }
 
 async function migrateLocalToShared(){
-  if(!isSuperAdmin(user&&user.email)){alert('Super Admin only.');return;}
-  if(!hasSharedDb()){alert('Add SHARED_SHEET_ID in the HTML file first.');return;}
-  const local=loadVesselsCompat().map(normalizeVessel);
-  if(!local.length){alert('No local vessels found on this browser.');return;}
-  if(!confirm(`Upload ${local.length} local vessels into the shared database? This will replace the current shared data.`))return;
-  vessels=local;
-  const ok=await saveSharedVessels(vessels);
-  if(ok){alert('Migration completed. Everyone should click Sync or refresh.');refreshSharedData();}
-  else alert('Migration failed. Check Sheet permissions.');
+  if(!isSuperAdmin()){alert('Super Admin only.');return;}
+  if(!confirm('Manually merge MY local cache into Shared Database? This is only for recovery/import.'))return;
+
+  const ok=await ensureSharedDb();
+  if(!ok){alert('Shared DB is not available.');return;}
+
+  const shared=await loadSharedVessels();
+  if(!Array.isArray(shared)){alert('Shared DB could not be loaded.');return;}
+
+  const localRaw=loadLocalVesselsForMerge();
+  const merged=mergeVesselLists(shared, localRaw);
+
+  const saved=await saveSharedVessels(merged);
+  if(!saved){alert('Migration failed.');return;}
+
+  vessels=merged;
+  sv();
+  safeRenderAll();
+  alert('Local cache merged into Shared Database.');
 }
 
 function clearAll(){
-  if(!isSuperAdmin()){alert('Super Admin only.');return;}
-  if(!confirm('Clear only MY browser cache? This does not delete the shared database.'))return;
-  clearLocalPortalData();
-  vessels=[];
-  ibItems=[];
-  sv();
-  safeRenderAll();
-  alert('My cache cleared. Shared Database was not changed.');
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all data.');return;}
+  if(!confirm('Clear all portal data? This cannot be undone.'))return;
+  try{localStorage.removeItem(VKEY);}catch(e){}
+  vessels=[];ibItems=[];
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
 }
-
 function clearAllHistory(){
   if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
   if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
@@ -2040,6 +2062,18 @@ setInterval(async () => {
     if(el) el.textContent='Auto-checked: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
   }
 }, 10 * 60 * 1000);
+
+
+function debugSyncState(){
+  return {
+    version:window.ORCA_FIX_VERSION,
+    localCount:(loadLocalVesselsForMerge()||[]).length,
+    currentCount:(vessels||[]).length,
+    sharedSheetId:typeof SHARED_SHEET_ID==='undefined'?null:SHARED_SHEET_ID,
+    sharedDbReady:typeof sharedDbReady==='undefined'?null:sharedDbReady,
+    user:user&&user.email
+  };
+}
 
 </script>
 <script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
