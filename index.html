@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- ORCA OPS PORTAL v35.11 visible reset shared db -->
 <!-- ORCA OPS PORTAL v35.7 exact inbox matching -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -404,8 +405,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
-          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
+          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear My Cache</button>
+          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button>
+        <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear My History</button>
         </div>
       </div>
     </div>
@@ -463,8 +465,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-const EXTRA_ADMIN_EMAILS=['leon.gutnik@orca-ai.io'];
-
+console.log("ORCA v35.11 visible reset shared db loaded");
+window.ORCA_FIX_VERSION="v35.11";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -522,10 +524,6 @@ function applyUserRole(){
   user.roleLabel=roleLabel(user.email);
 }
 const VKEY='orca_v3',UKEY='orca_u2';
-const FB='https://orca-ops-2b9bd-default-rtdb.firebaseio.com';
-// Shared storage via Google Drive (uses existing Gmail OAuth token)
-const SHARED_FILE_NAME = 'orca-ops-vessels-v1.json';
-let sharedFileId = null;
 
 // SHARED DATABASE CONFIG
 // Create one Google Sheet, share it with the Orca AI Ops team as Editor,
@@ -583,6 +581,32 @@ async function loadSharedVessels(){
     return null;
   }
 }
+async 
+function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
+function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
+function parseSharedPayload(raw){
+  try{
+    if(Array.isArray(raw))return {resetAt:'',vessels:raw};
+    if(raw&&typeof raw==='object'&&Array.isArray(raw.vessels))return raw;
+    if(typeof raw==='string'){
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
+      if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.vessels))return parsed;
+    }
+  }catch(e){}
+  return {resetAt:'',vessels:[]};
+}
+function applySharedPayload(raw){
+  const p=parseSharedPayload(raw);
+  if(p.resetAt){
+    setLocalResetAt(p.resetAt);
+    vessels=[];
+    saveLocal();
+    return [];
+  }
+  return (p.vessels||[]);
+}
+
 async function saveSharedVessels(data){
   if(!hasSharedDb()||!token)return false;
   try{
@@ -635,7 +659,7 @@ async function refreshSharedData(){
   if(typeof renderAdmin==='function')renderAdmin();
 }
 
-
+function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
 
 function loadVesselsCompat(){
   const keys=['orca_v3','orca_v2','orca_v1','vessels'];
@@ -664,7 +688,7 @@ function normalizeVessel(v){
   return v;
 }
 
-
+function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){console.error('save failed',e);}}
 function lu(){try{return JSON.parse(localStorage.getItem(UKEY)||'{}');}catch(e){return{};}}
 function su(u){const us=lu();us[u.email]={...u,ls:new Date().toISOString()};try{localStorage.setItem(UKEY,JSON.stringify(us));}catch(e){}}
 
@@ -1781,42 +1805,99 @@ function openV(idx){
 }
 
 // ADMIN
-async function renderAdmin(){
-  // Load users from Firebase
-  let fbUsers = {};
-  try {
-    const r = await fetch(FB + '/users.json');
-    const data = await r.json();
-    if (data) fbUsers = data;
-  } catch(e) { console.warn('Could not load users from Firebase'); }
-  
-  const users = Object.values(fbUsers);
-  
-  // Show team members
-  const admU = document.getElementById('adm-u');
-  admU.innerHTML = users.length ? users.map(u => {
-    const isAdmin = u.email === ADMIN;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <img src="${u.pic||u.picture||''}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:#e0e0e0" onerror="this.style.display='none'"/>
-      <span style="flex:1;font-weight:500">${u.name||u.email}</span>
-      <span style="font-size:11px;color:var(--faint)">${u.email}</span>
-      ${isAdmin ? '<span class="badge bn">Super Admin</span>' : '<span class="badge bg">Team</span>'}
+function renderAdmin(){
+  const roleBox=document.getElementById('current-role-info');if(roleBox&&user)roleBox.textContent=`You are signed in as ${user.email} — ${roleLabel(user.email)}`;const dbBox=document.getElementById('shared-db-status');if(dbBox)dbBox.textContent='Database mode: '+(hasSharedDb()?'Shared Google Sheet':'Local browser only');
+  if(!isAdmin(user&&user.email))return;
+  const stored=Object.values(lu());
+  const map=new Map();
+  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
+  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
+  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
+  const users=Array.from(map.values()).sort((a,b)=>{
+    const ar=isSuperAdmin(a.email)?0:isAdmin(a.email)?1:2;
+    const br=isSuperAdmin(b.email)?0:isAdmin(b.email)?1:2;
+    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
+  });
+  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{
+    const role=roleLabel(u.email);
+    const cls=role==='Super Admin'?'bn':role==='Admin L2'?'bb':'bg';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/>
+      <span style="flex:1">${u.name||u.email}<br><span style="font-size:11px;color:var(--faint)">${u.email}</span></span>
+      <span class="badge ${cls}">${role}</span>
     </div>`;
-  }).join('') : '<span style="font-size:13px;color:var(--faint)">No team members signed in yet.</span>';
-
-  // Show all vessels
-  const admV = document.getElementById('adm-v');
-  admV.innerHTML = vessels.length ? vessels.map(v => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span style="flex:1;font-weight:600">${v.name}</span>
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
+  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>{
+    const del=isAdmin()?`<button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button>`:'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="flex:1;font-weight:600">${v.name}<br><span style="font-size:11px;color:var(--faint)">${v.email||''}</span></span>
       ${sb(v.status)}
-      <span style="font-size:11px;color:var(--faint)">${v.assignedTo||'—'}</span>
+      <select onchange="setVesselStatus(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${statusOptions(v.status)}</select>
+      <select onchange="assignVessel(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
       <span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span>
-    </div>`).join('') : '<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+      ${del}
+    </div>`;
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+  const superOnly=document.getElementById('super-admin-actions');
+  if(superOnly)superOnly.style.display=isSuperAdmin(user&&user.email)?'flex':'none';
+}
+function resetInboxUi(){
+  ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const empty=document.getElementById('ib-empty');if(empty)if(empty)empty.style.display='block';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+}
+function refreshAllViews(){
+  updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
+}
 
-  // Show super admin actions only for Rami
-  const sa = document.getElementById('super-admin-actions');
-  if (sa) sa.style.display = (user && user.email === ADMIN) ? 'flex' : 'none';
+async 
+async function resetSharedDatabase(){
+  if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
+    alert('Super Admin only.');
+    return;
+  }
+  if(typeof isAdmin==='function' && !isAdmin()){
+    alert('Admin only.');
+    return;
+  }
+  const ok=confirm('This will delete ALL vessels from the shared database for EVERYONE. Continue?');
+  if(!ok)return;
+  const ok2=confirm('Final confirmation: reset the shared Google Sheet database now?');
+  if(!ok2)return;
+  try{
+    const resetAt=new Date().toISOString();
+    vessels=[];
+    ibItems=[];
+    setLocalResetAt(resetAt);
+
+    // clear local cache/history for current user
+    Object.keys(localStorage).forEach(k=>{
+      const kk=k.toLowerCase();
+      if(kk.includes('vessel')||kk.includes('timeline')||kk.includes('history')){
+        localStorage.removeItem(k);
+      }
+    });
+    localStorage.setItem('orca_shared_reset_at',resetAt);
+    if(typeof saveLocal==='function')saveLocal();
+
+    // write reset marker to the shared sheet
+    if(typeof saveSharedVessels==='function'){
+      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
+      if(!saved){
+        const saved2=await saveSharedVessels([]);
+        if(!saved2)throw new Error('saveSharedVessels failed');
+      }
+    }else{
+      throw new Error('saveSharedVessels is missing');
+    }
+
+    if(typeof render==='function')render();
+    alert('Shared database reset successfully. Ask all users to Hard Refresh and click Sync.');
+  }catch(e){
+    console.error(e);
+    alert('Shared database reset failed. Check Google Sheet permission.');
+  }
 }
 
 async function migrateLocalToShared(){
@@ -1852,53 +1933,6 @@ function clearAllHistory(){
   const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
   updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
   alert('All local portal history was cleared.');
-}
-
-
-async function lv() {
-  try {
-    const r = await fetch(FB + '/vessels.json');
-    const data = await r.json();
-    if (data && Array.isArray(data)) {
-      vessels = data.map(normalizeVessel);
-    } else {
-      vessels = [];
-    }
-  } catch(e) {
-    console.warn('Firebase load failed, using local:', e);
-    try { const d = localStorage.getItem(VKEY); if(d) vessels = JSON.parse(d).map(normalizeVessel); } catch(e2) { vessels = []; }
-  }
-}
-
-async function sv() {
-  try { localStorage.setItem(VKEY, JSON.stringify(vessels)); } catch(e) {}
-  try {
-    await fetch(FB + '/vessels.json', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(vessels)
-    });
-  } catch(e) { console.error('Firebase save failed:', e); }
-}
-
-async function luShared() {
-  try {
-    const r = await fetch(FB + '/users.json');
-    const data = await r.json();
-    return data || {};
-  } catch(e) { return lu(); }
-}
-
-async function suShared(u) {
-  su(u);
-  try {
-    const key = u.email.replace(/\./g,'_').replace(/@/g,'_at_');
-    await fetch(FB + '/users/' + key + '.json', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({...u, ls: new Date().toISOString()})
-    });
-  } catch(e) {}
 }
 
 window.onload=()=>{
