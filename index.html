@@ -1819,6 +1819,7 @@ function openIbModal(i){
   document.getElementById('mib-v').textContent=curIb.vessel.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   document.getElementById('mib-b').textContent=curIb.body;
+  const v=curIb.vessel;
   ibAna=normalizeAnalysisResult(v,curIb.body,ibAna);
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
