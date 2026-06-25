@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- ORCA OPS PORTAL v35.8 cc bcc support -->
 <!-- ORCA OPS PORTAL v35.7 exact inbox matching -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -421,6 +422,14 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <div class="fg">
       <div class="fr"><label>Vessel name *</label><input id="mv" placeholder="MV Ocean Star"/></div>
       <div class="fr"><label>Master email *</label><input id="me" type="email" placeholder="master@vessel.com"/></div>
+        <div>
+          <label>CC</label>
+          <input id="cc" placeholder="ops@company.com, agent@company.com"/>
+        </div>
+        <div>
+          <label>BCC</label>
+          <input id="bcc" placeholder="archive@company.com"/>
+        </div>
       <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd"/></div>
       
     </div>
@@ -463,8 +472,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-const EXTRA_ADMIN_EMAILS=['leon.gutnik@orca-ai.io'];
-
+console.log("CC/BCC SUPPORT v35.8 loaded");
+window.ORCA_CC_BCC_VERSION="v35.8";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -1203,15 +1212,44 @@ function updateMetrics(){
 }
 function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
+
+function cleanEmailList(v){
+  return String(v||'')
+    .split(/[;,]/)
+    .map(x=>x.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+function addCcBccToRawEmail(raw, cc, bcc){
+  cc=cleanEmailList(cc);
+  bcc=cleanEmailList(bcc);
+  let out=raw;
+  if(cc && !/^Cc:/mi.test(out)) out=out.replace(/\r?\nSubject:/i, '\r\nCc: '+cc+'\r\nSubject:');
+  if(bcc && !/^Bcc:/mi.test(out)) out=out.replace(/\r?\nSubject:/i, '\r\nBcc: '+bcc+'\r\nSubject:');
+  return out;
+}
+
+function vesselCc(v){return cleanEmailList(v&&v.cc);}
+function vesselBcc(v){return cleanEmailList(v&&v.bcc);}
+
+function makeEmailHeaders(to, subject, cc, bcc){
+  let headers=`To: ${to}\r\n`;
+  cc=cleanEmailList(cc); bcc=cleanEmailList(bcc);
+  if(cc) headers+=`Cc: ${cc}\r\n`;
+  if(bcc) headers+=`Bcc: ${bcc}\r\n`;
+  headers+=`Subject: ${subject}\r\n`;
+  return headers;
+}
+
 // START MODAL
 function val(id){const el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
 function setVal(id,value){const el=document.getElementById(id);if(el&&typeof el.value==='string')el.value=value;}
 function show(id,display){const el=document.getElementById(id);if(el)el.style.display=display;}
 function txt(id,value){const el=document.getElementById(id);if(el)el.textContent=value;}
-function openStart(){show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','mo','md'].forEach(id=>setVal(id,''));}
+function openStart(){show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','cc','bcc','mo','md'].forEach(id=>setVal(id,''));}
 
 async function genEmail(){
-  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
+  const v=val('mv'),e=val('me'),cc=cleanEmailList(val('cc')),bcc=cleanEmailList(val('bcc')),o=val('mo'),d=val('md');
   if(!v||!e){alert('Please enter vessel name and master email.');return;}
   show('mod-ep','block');show('mod-al','flex');txt('mod-ep-txt','');show('btn-gen','none');
   draft=`Dear Master,
@@ -1291,7 +1329,7 @@ async function sendAndSaveNew(){
     const nv={
       id:Date.now(),
       name:v,
-      email:e,
+      email:e,cc:cc||'',bcc:bcc||'',
       owner:o,
       docs:d,
       status:'waiting',
