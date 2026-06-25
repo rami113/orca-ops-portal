@@ -1343,6 +1343,7 @@ function renderTable(){
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}${newReplyDot}</strong>
           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
+          ${v.sentBy&&user&&v.sentBy.toLowerCase()!==user.email.toLowerCase()?`<span style="font-size:10px;color:var(--blue-t);background:var(--blue-l);border-radius:4px;padding:1px 5px">via ${v.sentBy.split('@')[0]}</span>`:''}
         </div>
       </td>
       <td>
@@ -1480,6 +1481,7 @@ async function sendAndSaveNew(){
       emailsSent:1,
       emailsReceived:0,
       assignedTo:(user&&user.email)||'rami@orca-ai.io',
+      sentBy:(user&&user.email)||'',
       nextAction:'Wait for master reply',
       receivedItems:[],
       missingItems:[...REQUIRED_ITEMS],
@@ -1812,7 +1814,9 @@ async function fetchInbox(){
   if(!token||!vessels.length)return;
 
   // Search per vessel: subject must contain vessel name, and only after the initial email was sent
+  // Only check inbox for vessels THIS user sent (replies come to the sender's inbox)
   for(const vessel of vessels){
+    if(vessel.sentBy && user && user.email && vessel.sentBy.toLowerCase()!==user.email.toLowerCase())continue;
     const vname=String(vessel.name||'').trim();
     const vemail=String(vessel.email||'').trim().toLowerCase();
     if(!vname)continue;
@@ -2277,3 +2281,4 @@ document.addEventListener('keydown',function(e){
 </body>
 </html>
 <!-- leon-gutnik-admin-l2 -->
+
