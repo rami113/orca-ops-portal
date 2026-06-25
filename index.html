@@ -494,7 +494,8 @@ const ADMIN_L2=[
   'israel@orca-ai.io',
   'jacob@orca-ai.io',
   'yotam.keret@orca-ai.io',
-  'yaron.y@orca-ai.io'
+  'yaron.y@orca-ai.io',
+  'leon.gutnik@orca-ai.io'
 ].map(e=>e.toLowerCase());
 
 const TEAM_USERS=[
@@ -503,7 +504,8 @@ const TEAM_USERS=[
   {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
   {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
   {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
-  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'}
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
+  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin L2'}
 ];
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
@@ -689,21 +691,21 @@ async function loadVessels(){
 
 async function saveVessels(){
   if(hasSharedDb()&&token){
-    // CRITICAL: always merge with current shared data before saving
-    // so we never overwrite another user's vessels
-    let sharedRaw=null;
-    try{sharedRaw=await loadSharedVessels();}catch(e){}
-    let toSave=vessels;
-    if(Array.isArray(sharedRaw)&&sharedRaw.length>0){
-      // Build merged list: start with shared, apply our local changes on top
-      const map=new Map();
-      sharedRaw.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
-      vessels.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
-      toSave=Array.from(map.values());
-    }
+    // Always read-merge-write so we never lose another user's vessels
+    let sharedRaw=[];
+    try{
+      const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+      const d=await r.json();
+      const val=d.values&&d.values[0]&&d.values[0][0];
+      if(val){const p=JSON.parse(val);sharedRaw=Array.isArray(p)?p:(Array.isArray(p&&p.vessels)?p.vessels:[]);}
+    }catch(e){console.warn('saveVessels: could not read shared, saving local only',e);sv();return;}
+    const map=new Map();
+    sharedRaw.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
+    vessels.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
+    const toSave=Array.from(map.values());
     const ok=await saveSharedVessels(toSave);
     if(ok){vessels=toSave;sv();return;}
-    alert('Shared database save failed. Changes were saved locally only.');
+    console.warn('saveVessels: shared save failed, saving locally');
   }
   sv();
 }
@@ -746,56 +748,30 @@ function mergeVesselLists(sharedList, localList){
   return Array.from(map.values()).sort((a,b)=>dateScore(b)-dateScore(a));
 }
 async function syncSharedDatabase(){
-  if(!hasSharedDb()||!token){
-    lv();
-    safeRenderAll();
-    return;
-  }
+  if(!hasSharedDb()||!token){lv();safeRenderAll();return;}
 
-  const ok=await ensureSharedDb();
-  if(!ok){
-    alert('Shared database could not be reached. Sync stopped so local data will not overwrite others.');
-    return;
-  }
-
-  const sharedRaw=await loadSharedVessels();
-  if(!Array.isArray(sharedRaw)){
-    alert('Shared database could not be loaded. Sync stopped.');
-    return;
-  }
-
-  // Sync strategy:
-  // 1. Shared DB is the source of truth for all users.
-  // 2. Local cache is only used to merge in vessels that exist locally but NOT yet in shared.
-  //    (e.g. a vessel created offline before first sync)
-  // 3. We NEVER let a local vessel overwrite a shared vessel that has newer data.
-  const localRaw=loadLocalVesselsForMerge();
-
-  if(sharedRaw.length===0&&localRaw.length===0){
-    vessels=[];ibItems=[];sv();safeRenderAll();return;
-  }
-
-  // Find vessels in local that are completely absent from shared (new vessels not yet pushed)
-  const sharedKeys=new Set(sharedRaw.map(v=>vesselKey(v)).filter(Boolean));
-  const localOnlyVessels=localRaw.filter(v=>vesselKey(v)&&!sharedKeys.has(vesselKey(v)));
-
-  // Merge: shared is truth, add any local-only vessels on top
-  const merged=localOnlyVessels.length>0
-    ? [...sharedRaw.map(normalizeVessel), ...localOnlyVessels.map(normalizeVessel)]
-    : sharedRaw.map(normalizeVessel);
-
-  if(localOnlyVessels.length>0){
-    const saved=await saveSharedVessels(merged);
-    if(!saved){
-      alert('Could not push local vessels to Shared Database. Showing shared data only.');
-      vessels=sharedRaw.map(normalizeVessel);
-      sv();safeRenderAll();return;
+  // SYNC = read from Sheet only, show everything that is there
+  // We do NOT merge with local memory here — that would overwrite others' data
+  let sharedRaw=[];
+  try{
+    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();
+    const val=d.values&&d.values[0]&&d.values[0][0];
+    if(val){
+      const p=JSON.parse(val);
+      sharedRaw=Array.isArray(p)?p:(Array.isArray(p&&p.vessels)?p.vessels:[]);
     }
+  }catch(e){
+    showSyncToast('Sync failed: could not read sheet', false);
+    console.error('Sync read error',e);
+    return;
   }
 
-  vessels=merged;
+  // Update local state from sheet — show ALL vessels from all users
+  vessels=sharedRaw.map(normalizeVessel);
   sv();
   safeRenderAll();
+  showSyncToast('Synced — '+vessels.length+' vessels', true);
 }
 function loadLocalVesselsForMerge(){
   try{
