@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v37.0 analyze-back-button -->
+<!-- ORCA OPS PORTAL v37.1 view-and-analyze-back-hard-fix -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -251,7 +251,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <div style="display:flex;align-items:center;gap:16px">
       <img src="logo.png" alt="Orca AI" style="height:28px" onerror="this.outerHTML='<span style=\'font-weight:800;color:#1D2E6B;font-size:15px\'>ORCA AI</span>'"/>
       <nav class="nav-tabs">
-        <button class="tab active" onclick="showTab('dashboard')"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
+        <button class="tab active" onclick="goBackToDashboard()"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
         <button class="tab" onclick="showTab('inbox')"><i class="ti ti-inbox"></i> Inbox<span class="ib-badge" id="ib-count" style="display:none">0</span></button>
         <button class="tab" onclick="showTab('analyze')"><i class="ti ti-cpu"></i> Analyze Reply</button>
         <button class="tab" id="tab-admin" style="display:none" onclick="showTab('admin')"><i class="ti ti-settings"></i> Admin</button>
@@ -345,7 +345,10 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <!-- ANALYZE -->
     <div id="view-analyze" class="view">
       <div class="panel">
-        <div class="panel-title"><i class="ti ti-cpu"></i> Analyze vessel reply</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+          <button class="btn btn-s" type="button" onclick="showTab('dashboard')" style="white-space:nowrap"><i class="ti ti-arrow-left"></i> Back</button>
+          <div class="panel-title" style="margin:0"><i class="ti ti-cpu"></i> Analyze vessel reply</div>
+        </div>
         <div class="fr"><label>Select vessel</label><select id="ra-sel" style="width:100%"><option value="">— Select vessel —</option></select></div>
         <div class="fr"><label>Paste captain's full reply</label>
           <div class="rw">
@@ -464,8 +467,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-console.log("ORCA v37.0 analyze back button loaded");
-window.ORCA_FIX_VERSION="v37.0";
+console.log("ORCA v37.1 view/back hard fix loaded");
+window.ORCA_FIX_VERSION="v37.1";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -852,15 +855,23 @@ function showTab(t){
   }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
-  document.getElementById('view-'+t).classList.add('active');
-  const m={dashboard:0,inbox:1,analyze:2};
-  if(m[t]!==undefined)document.querySelectorAll('.tab')[m[t]].classList.add('active');
-  if(t==='admin'){
-    document.getElementById('tab-admin').classList.add('active');
-    renderAdmin();
+  const view=document.getElementById('view-'+t);
+  if(view)view.classList.add('active');
+  else{
+    console.warn('View not found:',t);
+    const dash=document.getElementById('view-dashboard');
+    if(dash)dash.classList.add('active');
+    t='dashboard';
   }
-  if(t==='inbox')renderInbox();
+  const m={dashboard:0,inbox:1,analyze:2};
+  if(m[t]!==undefined&&document.querySelectorAll('.tab')[m[t]])document.querySelectorAll('.tab')[m[t]].classList.add('active');
+  if(t==='admin'){
+    const a=document.getElementById('tab-admin');if(a)a.classList.add('active');
+    try{renderAdmin();}catch(e){console.warn(e);}
+  }
+  if(t==='inbox')try{renderInbox();}catch(e){console.warn(e);}
 }
+
 
 function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
 function sb(s){const m={
@@ -1326,7 +1337,7 @@ function renderTable(){
       </td>
       <td>
         <div class="row-actions">
-          <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i> View</button>
+          <button class="btn btn-s" title="Open case" type="button" onclick="event.stopPropagation();openV(${idx});return false;"><i class="ti ti-eye"></i> View</button>
           <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze</button>
           ${adminDelete}
         </div>
@@ -1819,7 +1830,6 @@ function openIbModal(i){
   document.getElementById('mib-v').textContent=curIb.vessel.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   document.getElementById('mib-b').textContent=curIb.body;
-  const v=curIb.vessel;
   ibAna=normalizeAnalysisResult(v,curIb.body,ibAna);
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
@@ -1888,33 +1898,53 @@ async function saveAndSend(){
 
 // VESSEL DETAIL
 function openV(idx){
-  const v=vessels[idx];if(!v)return;
-  cleanTimeline(v);
-  v.missingItems=derivedMissing(v);
-  const title=document.getElementById('vd-t');
-  if(title)title.innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
-  const st=document.getElementById('vd-s');if(st)st.innerHTML=sb(v.status);
-  seedTimeline(v);
-  const timelineEl=document.getElementById('vd-timeline');
-  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${renderTimeline(v)}`;
-  const p=document.getElementById('vd-p');if(p)p.textContent=(readinessScore(v)||v.progress||0)+'%';
-  const r=document.getElementById('vd-r');if(r)r.innerHTML=rb(v.risk||'medium');
-  const recv=v.receivedItems||[],miss=v.missingItems||[];
-  const cl=document.getElementById('vd-cl');
-  if(cl)cl.innerHTML=REQUIRED_ITEMS.map(item=>{
-    const done=hasItem(recv,item),mis=hasItem(miss,item),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
-    return`<li><i class="ti ${ic}"></i>${item}</li>`;
-  }).join('');
-  const ri=document.getElementById('vd-ri');
-  if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
-  const mi=document.getElementById('vd-mi');
-  if(mi)mi.innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
-  const fup=document.getElementById('vd-fup');
-  if(fup)fup.innerHTML=v.lastFollowupPreview?`<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.55;margin:0;color:var(--text)">${v.lastFollowupPreview}</pre>`:'<span style="font-size:13px;color:var(--faint)">No follow-up sent yet.</span>';
-  const tlEl=document.getElementById('vd-tl');
-  if(tlEl)tlEl.innerHTML=renderTimeline(v);
-  showTab('vessel-detail');
+  try{
+    idx=Number(idx);
+    const v=vessels[idx];
+    if(!v){alert('Vessel not found. Click Sync and try again.');return;}
+
+    try{cleanTimeline(v);}catch(e){console.warn(e);}
+    try{v.missingItems=derivedMissing(v);}catch(e){v.missingItems=v.missingItems||[];}
+
+    const setHTML=(id,html)=>{const el=document.getElementById(id);if(el)el.innerHTML=html;};
+    const setTXT=(id,txt)=>{const el=document.getElementById(id);if(el)el.textContent=txt;};
+
+    setHTML('vd-t',`<i class="ti ti-ship"></i> ${v.name||'Unnamed vessel'} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email||''}</span>`);
+    try{setHTML('vd-s',sb(v.status));}catch(e){setHTML('vd-s',v.status||'');}
+    try{seedTimeline(v);}catch(e){console.warn(e);}
+    try{setHTML('vd-timeline',`<h4>Case Timeline</h4>${renderTimeline(v)}`);}catch(e){setHTML('vd-timeline','<h4>Case Timeline</h4><span style="color:var(--faint)">No timeline yet.</span>');}
+    setTXT('vd-p',(typeof readinessScore==='function'?(readinessScore(v)||v.progress||0):(v.progress||0))+'%');
+    try{setHTML('vd-r',rb(v.risk||'medium'));}catch(e){setHTML('vd-r',v.risk||'medium');}
+
+    const recv=v.receivedItems||[],miss=v.missingItems||[];
+    const cl=document.getElementById('vd-cl');
+    if(cl && Array.isArray(REQUIRED_ITEMS)){
+      cl.innerHTML=REQUIRED_ITEMS.map(item=>{
+        let done=false,mis=false;
+        try{done=hasItem(recv,item);mis=hasItem(miss,item);}catch(e){}
+        const ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
+        return`<li><i class="ti ${ic}"></i>${item}</li>`;
+      }).join('');
+    }
+    const ri=document.getElementById('vd-ri');
+    if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
+    const mi=document.getElementById('vd-mi');
+    if(mi)mi.innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
+    const fup=document.getElementById('vd-fup');
+    if(fup)fup.innerHTML=v.lastFollowupPreview?`<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.55;margin:0;color:var(--text)">${v.lastFollowupPreview}</pre>`:'<span style="font-size:13px;color:var(--faint)">No follow-up sent yet.</span>';
+    try{setHTML('vd-tl',renderTimeline(v));}catch(e){setHTML('vd-tl','');}
+
+    // Force navigation; do not rely only on showTab if anything is off.
+    document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+    const detail=document.getElementById('view-vessel-detail');
+    if(detail)detail.classList.add('active');
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  }catch(err){
+    console.error('openV failed',err);
+    alert('Could not open View. Error: '+(err.message||err));
+  }
 }
+
 
 // ADMIN
 function renderAdmin(){
@@ -2106,47 +2136,17 @@ function showSyncToast(msg, ok=true){
 
 
 function goBackToDashboard(){
-  try{
-    if(typeof showTab==='function'){showTab('dash');return;}
-    if(typeof showSection==='function'){showSection('dashboard');return;}
-    if(typeof showDashboard==='function'){showDashboard();return;}
-    const dash=document.getElementById('dash')||document.getElementById('dashboard')||document.querySelector('[data-view="dashboard"]');
-    const analyze=document.getElementById('analyze')||document.getElementById('analyze-reply')||document.querySelector('[data-view="analyze"]');
-    if(analyze)analyze.style.display='none';
-    if(dash)dash.style.display='';
-    location.hash='#dashboard';
-  }catch(e){
-    console.warn('Back to dashboard failed',e);
-    location.hash='#dashboard';
+  try{ showTab('dashboard'); }
+  catch(e){
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    const dash=document.getElementById('view-dashboard');
+    if(dash)dash.classList.add('active');
   }
 }
-function installAnalyzeBackButton(){
-  const headings=[...document.querySelectorAll('h1,h2,h3,strong,b')];
-  const h=headings.find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
-  if(!h)return;
-  const card=h.closest('.card,.panel,section,div')||h.parentElement;
-  if(!card || card.querySelector('#btn-back-dashboard'))return;
-
-  const header=document.createElement('div');
-  header.style.cssText='display:flex;align-items:center;gap:12px;margin-bottom:18px;';
-  const back=document.createElement('button');
-  back.id='btn-back-dashboard';
-  back.type='button';
-  back.className='btn';
-  back.innerHTML='← Back to Dashboard';
-  back.style.cssText='border:1px solid #ddd;background:white;border-radius:8px;padding:9px 12px;cursor:pointer;';
-  back.onclick=goBackToDashboard;
-
-  h.parentNode.insertBefore(header,h);
-  header.appendChild(back);
-  header.appendChild(h);
-}
-document.addEventListener('DOMContentLoaded',installAnalyzeBackButton);
-setInterval(installAnalyzeBackButton,1000);
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'){
-    const h=[...document.querySelectorAll('h1,h2,h3,strong,b')].find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
-    if(h && h.offsetParent!==null)goBackToDashboard();
+    const analyze=document.getElementById('view-analyze');
+    if(analyze && analyze.classList.contains('active'))goBackToDashboard();
   }
 });
 
