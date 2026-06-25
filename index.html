@@ -1782,24 +1782,41 @@ function openV(idx){
 
 // ADMIN
 async function renderAdmin(){
+  // Load users from Firebase
   let fbUsers = {};
   try {
     const r = await fetch(FB + '/users.json');
-    fbUsers = await r.json() || {};
-  } catch(e) {}
-  const users = Object.values(fbUsers).length ? Object.values(fbUsers) : Object.values(lu());
-  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{const d=ds(u.ls||u.lastSeen);return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><img src="${u.pic||u.picture||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/><span style="flex:1">${u.name||u.email}</span>${u.email===ADMIN?'<span class="badge bn">Admin</span>':''}</div>`;}).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
-  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map(v=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<span style="font-size:11px;color:var(--faint)">${v.assignedTo||'—'}</span><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
-}
+    const data = await r.json();
+    if (data) fbUsers = data;
+  } catch(e) { console.warn('Could not load users from Firebase'); }
+  
+  const users = Object.values(fbUsers);
+  
+  // Show team members
+  const admU = document.getElementById('adm-u');
+  admU.innerHTML = users.length ? users.map(u => {
+    const isAdmin = u.email === ADMIN;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <img src="${u.pic||u.picture||''}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:#e0e0e0" onerror="this.style.display='none'"/>
+      <span style="flex:1;font-weight:500">${u.name||u.email}</span>
+      <span style="font-size:11px;color:var(--faint)">${u.email}</span>
+      ${isAdmin ? '<span class="badge bn">Super Admin</span>' : '<span class="badge bg">Team</span>'}
+    </div>`;
+  }).join('') : '<span style="font-size:13px;color:var(--faint)">No team members signed in yet.</span>';
 
-function resetInboxUi(){
-  ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
-  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
-  const empty=document.getElementById('ib-empty');if(empty)if(empty)empty.style.display='block';
-  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
-}
-function refreshAllViews(){
-  updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
+  // Show all vessels
+  const admV = document.getElementById('adm-v');
+  admV.innerHTML = vessels.length ? vessels.map(v => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="flex:1;font-weight:600">${v.name}</span>
+      ${sb(v.status)}
+      <span style="font-size:11px;color:var(--faint)">${v.assignedTo||'—'}</span>
+      <span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span>
+    </div>`).join('') : '<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+
+  // Show super admin actions only for Rami
+  const sa = document.getElementById('super-admin-actions');
+  if (sa) sa.style.display = (user && user.email === ADMIN) ? 'flex' : 'none';
 }
 
 async function migrateLocalToShared(){
