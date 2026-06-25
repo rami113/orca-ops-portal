@@ -602,13 +602,13 @@ function saveApiKey(){
   const k=document.getElementById('apikey-input').value.trim();
   if(!k){alert('Please enter your Anthropic API key');return;}
   window.ANTHROPIC_API_KEY=k;
-  try{sessionStorage.setItem('orca_akey',k);}catch(e){}
+  try{localStorage.setItem('orca_akey',k);}catch(e){}
   document.getElementById('apikey-banner').style.display='none';
-  showSyncToast('API key saved for this session ✓');
+  showSyncToast('API key saved ✓');
 }
 function loadApiKey(){
   try{
-    const k=sessionStorage.getItem('orca_akey');
+    const k=localStorage.getItem('orca_akey');
     if(k){window.ANTHROPIC_API_KEY=k;document.getElementById('apikey-banner').style.display='none';}
   }catch(e){}
 }
@@ -2146,6 +2146,8 @@ function clearAllHistory(){
 }
 
 window.onload=()=>{
+  // Load API key immediately on page load
+  try{const k=localStorage.getItem('orca_akey');if(k){window.ANTHROPIC_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}}catch(e){}
   if(typeof google!=='undefined'&&google.accounts){
     initG();
     try{
