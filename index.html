@@ -250,12 +250,13 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <div id="app">
-  <div id="apikey-banner" style="background:#fff3cd;border-bottom:1px solid #f0d98c;padding:8px 1.5rem;display:flex;align-items:center;gap:10px;font-size:13px">
-    <i class="ti ti-key" style="color:#854F0B"></i>
-    <span style="color:#7a5200">Anthropic API key required for AI analysis:</span>
-    <input id="apikey-input" type="password" placeholder="sk-ant-..." style="flex:1;max-width:340px;padding:5px 10px;border:1px solid #f0d98c;border-radius:6px;font-size:13px;font-family:inherit"/>
-    <button class="btn btn-s" onclick="saveApiKey()" style="background:#854F0B;color:#fff;border-color:#854F0B">Save</button>
-    <button class="btn btn-s" onclick="document.getElementById('apikey-banner').style.display='none'" style="color:#854F0B">✕</button>
+  <div id="apikey-banner" style="background:#e8f5e9;border-bottom:1px solid #a5d6a7;padding:8px 1.5rem;display:flex;align-items:center;gap:10px;font-size:13px">
+    <i class="ti ti-brand-google" style="color:#1a6e2e"></i>
+    <span style="color:#1a6e2e;font-weight:500">Google Gemini API key required for AI analysis (free):</span>
+    <input id="apikey-input" type="password" placeholder="AIza..." style="flex:1;max-width:340px;padding:5px 10px;border:1px solid #a5d6a7;border-radius:6px;font-size:13px;font-family:inherit"/>
+    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-s" style="background:#1a6e2e;color:#fff;border-color:#1a6e2e;text-decoration:none">Get free key →</a>
+    <button class="btn btn-s" onclick="saveApiKey()" style="background:#1a6e2e;color:#fff;border-color:#1a6e2e">Save</button>
+    <button class="btn btn-s" onclick="document.getElementById('apikey-banner').style.display='none'" style="color:#1a6e2e">✕</button>
   </div>
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:16px">
@@ -600,16 +601,16 @@ async function loadSharedVessels(){
 }
 function saveApiKey(){
   const k=document.getElementById('apikey-input').value.trim();
-  if(!k){alert('Please enter your Anthropic API key');return;}
-  window.ANTHROPIC_API_KEY=k;
+  if(!k){alert('Please enter your Gemini API key');return;}
+  window.GEMINI_API_KEY=k;
   try{localStorage.setItem('orca_akey',k);}catch(e){}
   document.getElementById('apikey-banner').style.display='none';
-  showSyncToast('API key saved ✓');
+  showSyncToast('Gemini API key saved ✓');
 }
 function loadApiKey(){
   try{
     const k=localStorage.getItem('orca_akey');
-    if(k){window.ANTHROPIC_API_KEY=k;document.getElementById('apikey-banner').style.display='none';}
+    if(k){window.GEMINI_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}
   }catch(e){}
 }
 function safeRenderAll(){
@@ -1897,7 +1898,15 @@ async function runIbAnalysis(){
   const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
   document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
   const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously confirmed items: ${(vessels[curIb.vi]&&vessels[curIb.vi].receivedItems||[]).join(", ")||"none"}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
-  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':window.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,messages:[{role:'user',content:prompt}]})});const dd=await r.json();if(dd.error){throw new Error(dd.error.message||'API error');}const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
+  try{
+    if(!window.GEMINI_API_KEY){document.getElementById('apikey-banner').style.display='flex';throw new Error('No Gemini API key set');}
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:1500}})});
+    const dd=await r.json();
+    if(dd.error){throw new Error(dd.error.message||'Gemini API error');}
+    const raw=(dd.candidates&&dd.candidates[0]&&dd.candidates[0].content&&dd.candidates[0].content.parts&&dd.candidates[0].content.parts[0]&&dd.candidates[0].content.parts[0].text)||'';
+    const clean=raw.replace(/```json|```/g,'').trim();
+    ibAna=JSON.parse(clean);
+  }
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
@@ -1942,7 +1951,15 @@ async function analyzeReply(){
   const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
   const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
-  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':window.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,messages:[{role:'user',content:prompt}]})});const dd=await r.json();if(dd.error){throw new Error(dd.error.message||'API error');}const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
+  try{
+    if(!window.GEMINI_API_KEY){document.getElementById('apikey-banner').style.display='flex';throw new Error('No Gemini API key set');}
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:1500}})});
+    const dd=await r.json();
+    if(dd.error){throw new Error(dd.error.message||'Gemini API error');}
+    const raw=(dd.candidates&&dd.candidates[0]&&dd.candidates[0].content&&dd.candidates[0].content.parts&&dd.candidates[0].content.parts[0]&&dd.candidates[0].content.parts[0].text)||'';
+    const clean=raw.replace(/```json|```/g,'').trim();
+    ana=JSON.parse(clean);ana.vi=idx!==''?parseInt(idx):null;
+  }
   catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
   if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
   document.getElementById('a-load').style.display='none';
@@ -1990,10 +2007,29 @@ function openV(idx){
   const r=document.getElementById('vd-r');if(r)r.innerHTML=rb(v.risk||'medium');
   const recv=v.receivedItems||[],miss=v.missingItems||[];
   const cl=document.getElementById('vd-cl');
-  if(cl)cl.innerHTML=REQUIRED_ITEMS.map(item=>{
-    const done=hasItem(recv,item),mis=hasItem(miss,item),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
-    return`<li><i class="ti ${ic}"></i>${item}</li>`;
-  }).join('');
+  if(cl){
+    const doneItems=REQUIRED_ITEMS.filter(item=>hasItem(recv,item));
+    const missingItems=REQUIRED_ITEMS.filter(item=>!hasItem(recv,item));
+    const allSorted=[...doneItems,...missingItems];
+    cl.innerHTML=allSorted.map(item=>{
+      const done=hasItem(recv,item);
+      const mis=hasItem(miss,item);
+      const ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
+      const style=done?'font-weight:700;color:#1D6B4A':'color:var(--muted)';
+      const bg=done?'background:#EAF8F2;border-radius:6px;padding:4px 8px;margin-bottom:3px':'padding:4px 8px;margin-bottom:3px';
+      return`<li style="${bg}"><i class="ti ${ic}"></i> <span style="${style}">${item}</span></li>`;
+    }).join('');
+    if(doneItems.length>0&&missingItems.length>0){
+      cl.innerHTML=
+        `<li style="padding:2px 8px;margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Received (${doneItems.length})</li>`+
+        doneItems.map(item=>`<li style="background:#EAF8F2;border-radius:6px;padding:5px 8px;margin-bottom:3px"><i class="ti ti-circle-check ic-d"></i> <span style="font-weight:700;color:#1D6B4A">${item}</span></li>`).join('')+
+        `<li style="padding:2px 8px;margin:6px 0 4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Still missing (${missingItems.length})</li>`+
+        missingItems.map(item=>{
+          const ic=hasItem(miss,item)?'ti-circle-x ic-m':'ti-circle ic-p';
+          return`<li style="padding:5px 8px;margin-bottom:3px"><i class="ti ${ic}"></i> <span style="color:var(--muted)">${item}</span></li>`;
+        }).join('');
+    }
+  }
   const ri=document.getElementById('vd-ri');
   if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
   const mi=document.getElementById('vd-mi');
@@ -2147,7 +2183,7 @@ function clearAllHistory(){
 
 window.onload=()=>{
   // Load API key immediately on page load
-  try{const k=localStorage.getItem('orca_akey');if(k){window.ANTHROPIC_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}}catch(e){}
+  try{const k=localStorage.getItem('orca_akey');if(k){window.GEMINI_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}}catch(e){}
   if(typeof google!=='undefined'&&google.accounts){
     initG();
     try{
