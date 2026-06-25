@@ -688,9 +688,21 @@ async function loadVessels(){
 }
 
 async function saveVessels(){
-  if(hasSharedDb()){
-    const ok=await saveSharedVessels(vessels);
-    if(ok)return;
+  if(hasSharedDb()&&token){
+    // CRITICAL: always merge with current shared data before saving
+    // so we never overwrite another user's vessels
+    let sharedRaw=null;
+    try{sharedRaw=await loadSharedVessels();}catch(e){}
+    let toSave=vessels;
+    if(Array.isArray(sharedRaw)&&sharedRaw.length>0){
+      // Build merged list: start with shared, apply our local changes on top
+      const map=new Map();
+      sharedRaw.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
+      vessels.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
+      toSave=Array.from(map.values());
+    }
+    const ok=await saveSharedVessels(toSave);
+    if(ok){vessels=toSave;sv();return;}
     alert('Shared database save failed. Changes were saved locally only.');
   }
   sv();
@@ -1267,6 +1279,12 @@ function filteredVessels(){
   if((window.dashKpiFilter||'')==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
   if((window.sortMode||'newest')==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
   else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
+  // Vessels with unread inbox replies always float to top
+  arr.sort((a,b)=>{
+    const aNew=ibItems.some(m=>m.vi===a.__i||(m.vessel&&vessels.indexOf(m.vessel)===a.__i))?1:0;
+    const bNew=ibItems.some(m=>m.vi===b.__i||(m.vessel&&vessels.indexOf(m.vessel)===b.__i))?1:0;
+    return bNew-aNew;
+  });
   return arr;
 }
 function setKpiFilter(f){
