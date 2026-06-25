@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v35.9 reset shared db strict inbox -->
+<!-- ORCA OPS PORTAL v35.10 shared reset propagation -->
 <!-- ORCA OPS PORTAL v35.7 exact inbox matching -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -405,9 +405,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear My Cache</button>
-          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button>
-        <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear My History</button>
+          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear all data</button>
+          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear all history</button>
         </div>
       </div>
     </div>
@@ -465,8 +464,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-console.log("ORCA v35.9 strict inbox + reset shared db loaded");
-window.ORCA_FIX_VERSION="v35.9";
+console.log("ORCA v35.10 shared reset propagation loaded");
+window.ORCA_FIX_VERSION="v35.10";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -581,6 +580,40 @@ async function loadSharedVessels(){
     return null;
   }
 }
+async 
+function localResetAt(){
+  return localStorage.getItem('orca_shared_reset_at')||'';
+}
+function setLocalResetAt(ts){
+  if(ts)localStorage.setItem('orca_shared_reset_at',ts);
+}
+function parseSharedPayload(raw){
+  try{
+    if(Array.isArray(raw))return {resetAt:'',vessels:raw};
+    if(raw && typeof raw==='object' && Array.isArray(raw.vessels))return raw;
+    if(typeof raw==='string'){
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
+      if(parsed && typeof parsed==='object' && Array.isArray(parsed.vessels))return parsed;
+    }
+  }catch(e){}
+  return {resetAt:'',vessels:[]};
+}
+function isResetPayload(raw){
+  const p=parseSharedPayload(raw);
+  return !!p.resetAt && Array.isArray(p.vessels) && p.vessels.length===0;
+}
+function applySharedPayload(raw){
+  const p=parseSharedPayload(raw);
+  if(p.resetAt){
+    setLocalResetAt(p.resetAt);
+    vessels=[];
+    saveLocal();
+    return [];
+  }
+  return (p.vessels||[]);
+}
+
 async function saveSharedVessels(data){
   if(!hasSharedDb()||!token)return false;
   try{
@@ -662,7 +695,7 @@ function normalizeVessel(v){
   return v;
 }
 
-function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){console.error('save failed',e);}}
+function sv(){try{localStorage.setItem(VKEY,JSON.stringify(typeof __payload!=='undefined'?__payload:vessels));}catch(e){console.error('save failed',e);}}
 function lu(){try{return JSON.parse(localStorage.getItem(UKEY)||'{}');}catch(e){return{};}}
 function su(u){const us=lu();us[u.email]={...u,ls:new Date().toISOString()};try{localStorage.setItem(UKEY,JSON.stringify(us));}catch(e){}}
 
@@ -1573,45 +1606,6 @@ function debugInboxMatches(){
   return (ibItems||[]).map((m,i)=>({i, subject:m.subj||m.subject, from:m.from, matched:m.vessel&&m.vessel.name}));
 }
 
-
-function orcaNorm(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
-function orcaEmail(s){return String(s||'').toLowerCase().trim();}
-function orcaStripRe(s){return orcaNorm(s).replace(/^(\s*(re|fw|fwd)\s*:\s*)+/i,'');}
-function orcaMsgText(m){
-  return orcaNorm([m.subj,m.subject,m.snippet,m.body,m.from,m.sender].filter(Boolean).join(' '));
-}
-function orcaHasThreadMatch(m,v){
-  const tids=[v&&v.threadId,v&&v.gmailThreadId,v&&v.lastThreadId].filter(Boolean).map(String);
-  const mids=[v&&v.messageId,v&&v.gmailMessageId,v&&v.lastMessageId].filter(Boolean).map(String);
-  return (!!m.threadId && tids.includes(String(m.threadId))) || (!!m.msgId && mids.includes(String(m.msgId)));
-}
-function orcaNameHit(m,v){
-  const name=orcaNorm(v&&v.name);
-  if(!name)return false;
-  const subj=orcaStripRe((m&&m.subj)||(m&&m.subject)||'');
-  const txt=orcaMsgText(m);
-  // Strong match: subject contains exact vessel name, e.g. "Orca AI Installation Coordination - YARONA 3"
-  if(subj.includes(name))return true;
-  // Safe body match: body contains vessel name AND Orca Installation context.
-  if(txt.includes(name) && (txt.includes('orca ai installation') || txt.includes('installation coordination')))return true;
-  return false;
-}
-function bestStrictVesselForInboxMessage(m){
-  const list=(vessels||[]).filter(v=>v&&String(v.name||'').trim());
-  const byThread=list.filter(v=>orcaHasThreadMatch(m,v));
-  if(byThread.length)return byThread[0];
-  const byName=list.filter(v=>orcaNameHit(m,v))
-    .sort((a,b)=>String(b.name||'').length-String(a.name||'').length);
-  if(byName.length)return byName[0];
-  return null;
-}
-function shouldShowInboxMessage(m){
-  return !!bestStrictVesselForInboxMessage(m);
-}
-function debugStrictInbox(){
-  return (ibItems||[]).map((m,i)=>({i,subject:m.subj||m.subject,from:m.from,threadId:m.threadId,match:(bestStrictVesselForInboxMessage(m)||{}).name||null}));
-}
-
 function updateReceivedStatsFromInbox(){
   if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
   vessels.forEach(v=>{
@@ -1637,38 +1631,7 @@ function updateReceivedStatsFromInbox(){
 }
 
 
-
-function updateReceivedStatsFromInbox(){
-  if(!Array.isArray(vessels))return;
-  const counts=new Map();
-  if(Array.isArray(ibItems)){
-    ibItems=ibItems.filter(shouldShowInboxMessage);
-    ibItems.forEach(m=>{
-      const v=m.vessel || bestStrictVesselForInboxMessage(m);
-      if(!v)return;
-      m.vessel=v;
-      m.vi=vessels.indexOf(v);
-      const key=String(v.id||v.name);
-      counts.set(key,(counts.get(key)||0)+1);
-    });
-  }
-  vessels.forEach(v=>{
-    const key=String(v.id||v.name);
-    const c=counts.get(key)||0;
-    // Do not overwrite older stored counts to 0 here; only update positive findings.
-    if(c>0){
-      v.emailsReceived=c;
-      const rel=(ibItems||[]).filter(m=>m.vessel&&(String(m.vessel.id||m.vessel.name)===key));
-      const latest=rel.map(m=>new Date(m.date||Date.now()).getTime()).filter(t=>Number.isFinite(t)).sort((a,b)=>b-a)[0];
-      v.lastReceivedDate=new Date(latest||Date.now()).toISOString();
-      if(v.status==='waiting')v.status='followup';
-      v.nextAction='Analyze reply and send follow-up';
-      v.updatedAt=new Date().toISOString();
-    }
-  });
-}
-
-function renderInlineInbox(){ibItems=ibItems.filter(shouldShowInboxMessage);
+function renderInlineInbox(){
   const box=document.getElementById('dash-inbox-inline');
   const list=document.getElementById('dash-inbox-list');
   if(!box||!list)return;
@@ -1704,19 +1667,19 @@ async function fetchInbox(){
   if(badge){badge.textContent='0';badge.style.display='none';}
   if(!token||!vessels.length)return;
 
-  // Strict query: search by known vessel names and known thread IDs only.
-  // Do not query broad inbox, because it pulls unrelated personal/company emails.
-  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean).slice(0,25);
+  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean);
+  const emails=[...new Set((vessels||[]).map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
+
+  // Keep Gmail query reasonably broad, but matching below is strict and chooses the correct vessel.
   const qParts=[];
-  names.forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
-  const q=qParts.length ? `newer_than:90d (${qParts.join(' OR ')})` : 'newer_than:7d "Orca AI Installation Coordination"';
+  names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
+  emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
+  const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
 
   try{
     const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,{headers:{Authorization:'Bearer '+token}});
-    const d=await r.json();
-    if(!d.messages)return;
-
-    for(const msg of d.messages.slice(0,25)){
+    const d=await r.json();if(!d.messages)return;
+    for(const msg of d.messages.slice(0,20)){
       const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
       const dd=await dr.json();
       const hdr=(dd.payload&&dd.payload.headers)||[];
@@ -1728,24 +1691,17 @@ async function fetchInbox(){
       const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
       if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
 
-      const temp={msgId:msg.id,threadId:dd.threadId,from,fe,subj,date,body:body.substring(0,4000),snippet:dd.snippet||''};
-      const vessel=bestStrictVesselForInboxMessage(temp);
-      if(!vessel)continue;
-
-      const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
-      if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+      const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
+      const vessel=bestVesselForInboxMessage(temp);
+      if(vessel){
+        const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
+        if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+      }
     }
-
-    // Final safety filter, so unrelated emails cannot be displayed even if Gmail returns them.
-    ibItems=ibItems.filter(shouldShowInboxMessage);
-
-    if(badge){
-      if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}
-      else{badge.textContent='0';badge.style.display='none';}
-    }
+    if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
 }
-function renderInbox(){ibItems=ibItems.filter(shouldShowInboxMessage);
+function renderInbox(){
   updateReceivedStatsFromInbox();
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
@@ -1913,21 +1869,38 @@ async function resetSharedDatabase(){
   const ok2=confirm('Final confirmation: reset the shared Google Sheet database now?');
   if(!ok2)return;
   try{
+    const resetAt=new Date().toISOString();
     vessels=[];
     ibItems=[];
+    setLocalResetAt(resetAt);
     saveLocal();
+
+    // Save a reset marker, not just an empty array, so other users know to clear their local cache too.
     if(typeof saveSharedVessels==='function'){
-      const saved=await saveSharedVessels([]);
-      if(!saved)throw new Error('saveSharedVessels returned false');
+      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
+      if(!saved){
+        // fallback for older saveSharedVessels that only accepts arrays
+        const saved2=await saveSharedVessels([]);
+        if(!saved2)throw new Error('saveSharedVessels returned false');
+      }
     }else if(typeof sharedDbUrl==='function' && token){
       const url=sharedDbUrl('vessels!A1');
-      await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({values:[['[]']]})});
+      await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({values:[[JSON.stringify({resetAt:resetAt,vessels:[]})]]})});
     }else{
       throw new Error('No shared database writer available');
     }
+
+    // also clear local backup keys if present
+    Object.keys(localStorage).forEach(k=>{
+      if(k.toLowerCase().includes('vessel') || k.toLowerCase().includes('timeline') || k.toLowerCase().includes('history')){
+        if(k!=='orca_shared_reset_at')localStorage.removeItem(k);
+      }
+    });
+    localStorage.setItem('orca_shared_reset_at',resetAt);
+
     if(typeof render==='function')render();
-    if(typeof showToast==='function')showToast('Shared database reset successfully');
-    else alert('Shared database reset successfully.');
+    if(typeof showToast==='function')showToast('Shared database reset successfully. Other users must click Sync or refresh.');
+    else alert('Shared database reset successfully. Other users must click Sync or refresh.');
   }catch(e){
     console.error(e);
     alert('Shared database reset failed. Check Google Sheet permission and try Sync again.');
@@ -1947,14 +1920,14 @@ async function migrateLocalToShared(){
 }
 
 function clearAll(){
-  if(!isSuperAdmin()){alert('Only Super Admin can clear my cache.');return;}
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all data.');return;}
   if(!confirm('Clear all portal data? This cannot be undone.'))return;
   try{localStorage.removeItem(VKEY);}catch(e){}
   vessels=[];ibItems=[];
   updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
 }
 function clearAllHistory(){
-  if(!isSuperAdmin()){alert('Only Super Admin can clear my history.');return;}
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
   if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
   try{
     localStorage.removeItem(VKEY);
