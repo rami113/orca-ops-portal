@@ -1788,45 +1788,10 @@ async function renderAdmin(){
     fbUsers = await r.json() || {};
   } catch(e) {}
   const users = Object.values(fbUsers).length ? Object.values(fbUsers) : Object.values(lu());
-  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{const d=ds(u.ls||u.lastSeen);return \`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><img src="\${u.pic||u.picture||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/><span style="flex:1">\${u.name||u.email}</span>\${u.email===ADMIN?'<span class="badge bn">Admin</span>':''}</div>\`;}).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
-  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map(v=>\`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">\${v.name}</span>\${sb(v.status)}<span style="font-size:11px;color:var(--faint)">\${v.assignedTo||'—'}</span><span style="font-size:11px;color:var(--faint)">\${v.progress||0}%</span></div>\`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{const d=ds(u.ls||u.lastSeen);return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><img src="${u.pic||u.picture||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/><span style="flex:1">${u.name||u.email}</span>${u.email===ADMIN?'<span class="badge bn">Admin</span>':''}</div>`;}).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
+  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map(v=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;font-weight:600">${v.name}</span>${sb(v.status)}<span style="font-size:11px;color:var(--faint)">${v.assignedTo||'—'}</span><span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span></div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
 }
-function renderAdmin_old(){
-  const roleBox=document.getElementById('current-role-info');if(roleBox&&user)roleBox.textContent=`You are signed in as ${user.email} — ${roleLabel(user.email)}`;const dbBox=document.getElementById('shared-db-status');if(dbBox)dbBox.textContent='Database mode: '+(hasSharedDb()?'Shared Google Sheet':'Local browser only');
-  if(!isAdmin(user&&user.email))return;
-  const stored=Object.values(lu());
-  const map=new Map();
-  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
-  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
-  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
-  const users=Array.from(map.values()).sort((a,b)=>{
-    const ar=isSuperAdmin(a.email)?0:isAdmin(a.email)?1:2;
-    const br=isSuperAdmin(b.email)?0:isAdmin(b.email)?1:2;
-    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
-  });
-  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{
-    const role=roleLabel(u.email);
-    const cls=role==='Super Admin'?'bn':role==='Admin L2'?'bb':'bg';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/>
-      <span style="flex:1">${u.name||u.email}<br><span style="font-size:11px;color:var(--faint)">${u.email}</span></span>
-      <span class="badge ${cls}">${role}</span>
-    </div>`;
-  }).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
-  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>{
-    const del=isAdmin()?`<button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button>`:'';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span style="flex:1;font-weight:600">${v.name}<br><span style="font-size:11px;color:var(--faint)">${v.email||''}</span></span>
-      ${sb(v.status)}
-      <select onchange="setVesselStatus(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${statusOptions(v.status)}</select>
-      <select onchange="assignVessel(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
-      <span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span>
-      ${del}
-    </div>`;
-  }).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
-  const superOnly=document.getElementById('super-admin-actions');
-  if(superOnly)superOnly.style.display=isSuperAdmin(user&&user.email)?'flex':'none';
-}
+
 function resetInboxUi(){
   ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
   const list=document.getElementById('ib-list');if(list)list.innerHTML='';
