@@ -1,1 +1,2285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- ORCA OPS PORTAL v39.0 build:1782391775-1236 -->
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Orca AI - Installation Coordinator</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1D2E6B;--navy-l:#E8EAF6;--navy-d:#111d45;--green:#1D9E75;--green-l:#EAF3DE;--amber:#FAEEDA;--amber-t:#854F0B;--red:#FCEBEB;--red-t:#A32D2D;--blue-l:#E6F1FB;--blue-t:#185FA5;--gray:#F7F7F5;--border:#E0E0DC;--text:#1a1a1a;--muted:#6b6b6b;--faint:#9b9b9b;--white:#fff;--r:10px;--rs:6px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray);color:var(--text);min-height:100vh;font-size:14px}
+#auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
+.auth-box{background:var(--white);border-radius:var(--r);border:1px solid var(--border);padding:2.5rem;width:100%;max-width:420px;box-shadow:0 2px 16px rgba(0,0,0,.07);text-align:center}
+.auth-logo{margin-bottom:1.5rem}.auth-logo img{height:48px}
+.auth-box h2{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:8px}
+.auth-box p{font-size:13px;color:var(--muted);margin-bottom:1.5rem;line-height:1.6}
+.google-btn{display:inline-flex;align-items:center;gap:10px;padding:11px 20px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);cursor:pointer;font-size:14px;font-weight:500;color:var(--text);transition:all .15s;width:100%;justify-content:center}
+.google-btn:hover{background:var(--gray)}.google-btn img{width:20px}
+.auth-note{font-size:11px;color:var(--faint);margin-top:12px}
+#app{display:none}
+.topbar{background:var(--white);border-bottom:1px solid var(--border);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100}
+.nav-tabs{display:flex;gap:2px}
+.tab{padding:6px 12px;border-radius:var(--rs);border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--muted);font-family:inherit;display:inline-flex;align-items:center;gap:5px;transition:all .15s;font-weight:500}
+.tab:hover{background:var(--gray);color:var(--text)}.tab.active{background:var(--navy-l);color:var(--navy)}
+.user-pill{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);background:var(--gray);padding:5px 12px;border-radius:99px;border:1px solid var(--border)}
+.user-avatar{width:22px;height:22px;border-radius:50%;object-fit:cover}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--rs);border:1px solid var(--border);background:var(--white);color:var(--text);font-size:13px;font-family:inherit;cursor:pointer;transition:all .15s;font-weight:500}
+.btn:hover{background:var(--gray)}
+.btn-p{background:var(--navy);color:#fff;border-color:var(--navy)}.btn-p:hover{background:var(--navy-d)}
+.btn-g{background:var(--green);color:#fff;border-color:var(--green);font-size:15px;padding:12px 24px}.btn-g:hover{background:#0F6E56}
+.btn-d{color:var(--red-t);border-color:#f0a0a0}.btn-d:hover{background:var(--red)}
+.btn-s{padding:5px 10px;font-size:12px}
+.main{padding:1.5rem;max-width:1220px;margin:0 auto}
+.view{display:none}.view.active{display:block}
+.hero{background:var(--navy);border-radius:var(--r);padding:2rem 2.4rem;margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between;gap:2rem}
+.hero h1{font-size:24px;font-weight:700;color:#fff;margin-bottom:6px}
+.hero p{font-size:13px;color:rgba(255,255,255,.7);line-height:1.6}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem}
+.metric{background:var(--white);border-radius:var(--r);border:1px solid var(--border);padding:16px}
+.metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.metric-val{font-size:30px;font-weight:700}.metric-sub{font-size:11px;color:var(--faint);margin-top:3px}
+.panel{background:var(--white);border-radius:var(--r);border:1px solid var(--border);padding:1.25rem;margin-bottom:1rem}
+.panel-title{font-size:14px;font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;padding:8px 12px;font-size:11px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;background:var(--gray)}
+.tbl td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr.cl{cursor:pointer}.tbl tr.cl:hover td{background:#f4f4f2}
+.tbl tr.al td{background:#fff5f5}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600;white-space:nowrap}
+.bg{background:#f1f0eb;color:#5a5a5a}.ba{background:var(--amber);color:var(--amber-t)}.br{background:var(--red);color:var(--red-t)}.bgr{background:var(--green-l);color:#1D6B4A}.bn{background:var(--navy-l);color:var(--navy)}.bb{background:var(--blue-l);color:var(--blue-t)}
+.prog{height:5px;border-radius:99px;background:var(--border);overflow:hidden;width:72px;display:inline-block;vertical-align:middle}
+.prog-f{height:100%;border-radius:99px;background:var(--navy)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:1rem}
+.modal{background:var(--white);border-radius:var(--r);padding:2rem;width:100%;max-width:520px;box-shadow:0 8px 40px rgba(0,0,0,.15)}
+.modal-t{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.modal-s{font-size:13px;color:var(--muted);margin-bottom:1.5rem}
+.modal-f{display:flex;gap:8px;margin-top:1.5rem;justify-content:flex-end}
+.fr{margin-bottom:12px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500}
+input,textarea,select{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--rs);font-size:13px;font-family:inherit;color:var(--text);background:var(--white);outline:none;transition:border-color .15s}
+input:focus,textarea:focus,select:focus{border-color:var(--navy)}
+textarea{resize:vertical;min-height:80px;line-height:1.6}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.email-box{background:var(--gray);border:1px solid var(--border);border-radius:var(--rs);padding:16px;font-size:13px;line-height:1.8;white-space:pre-wrap;max-height:280px;overflow-y:auto}
+.cl-list{list-style:none}
+.cl-list li{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.cl-list li:last-child{border-bottom:none}
+.ic-d{color:var(--green)}.ic-m{color:#E24B4A}.ic-p{color:#ccc}
+.miss-list{display:flex;flex-direction:column;gap:5px}
+.miss-item{background:var(--amber);color:var(--amber-t);padding:6px 10px;border-radius:var(--rs);font-size:12px;display:flex;align-items:center;gap:6px}
+.flag-item{background:var(--red);color:var(--red-t);padding:6px 10px;border-radius:var(--rs);font-size:12px;display:flex;align-items:center;gap:6px}
+.tl-item{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);align-items:flex-start}
+.tl-item:last-child{border-bottom:none}
+.tl-dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px}
+.d-out{background:var(--navy-l);color:var(--navy)}.d-in{background:var(--green-l);color:#1D6B4A}.d-warn{background:var(--red);color:var(--red-t)}
+.tl-t{font-size:13px;font-weight:500}.tl-m{font-size:11px;color:var(--faint);margin-top:2px}
+.ai-load{display:flex;align-items:center;gap:10px;padding:14px;background:var(--gray);border-radius:var(--rs);font-size:13px;color:var(--muted);margin:8px 0}
+.spinner{width:15px;height:15px;border:2px solid var(--border);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.dg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;margin-bottom:8px}
+.bc{font-size:12px;color:var(--muted);margin-bottom:1rem;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.bc:hover{color:var(--text)}
+.rw{border:1px solid var(--border);border-radius:var(--rs);overflow:hidden}
+.rw textarea{border:none;outline:none;border-radius:0}
+.rf{padding:8px 12px;background:var(--gray);display:flex;justify-content:space-between;align-items:center}
+.ib-badge{background:var(--red);color:var(--red-t);border-radius:99px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px}
+.d-ok{color:var(--muted);font-size:12px;font-weight:500}.d-w{color:#BA7517;font-size:12px;font-weight:500}.d-d{color:#E24B4A;font-size:12px;font-weight:500}
+@media(max-width:768px){.metrics{grid-template-columns:repeat(2,1fr)}.fg{grid-template-columns:1fr}.dg{grid-template-columns:1fr}.nav-tabs{display:none}.hero{flex-direction:column;gap:1rem}}
+.tbl th,.tbl td{vertical-align:top}.tbl th{white-space:nowrap}.btn-d{color:var(--red-t);border-color:#f0a0a0;background:#fff}
 
+.tbl{table-layout:auto}
+.tbl th{font-size:11px;letter-spacing:.02em;white-space:nowrap}
+.tbl td{font-size:12px;vertical-align:top}
+.tbl .btn-s{padding:5px 8px}
+.panel{overflow-x:hidden}
+
+
+.next-action-btn{white-space:nowrap}
+
+
+.traffic{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap}
+.tl-light{width:11px;height:11px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.08)}
+.tl-green{background:#1D9E75}
+.tl-yellow{background:#F4B740}
+.tl-red{background:#E24B4A}
+
+
+.analyze-inline-btn{white-space:nowrap}
+
+
+/* Dashboard visual refresh */
+.hero-left{display:flex;align-items:center;gap:22px;min-width:0}
+.hero-logo-wrap{display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.hero-logo{height:74px;max-width:190px;object-fit:contain;filter:brightness(0) invert(1);opacity:1}
+.hero-logo-text{color:#fff;font-weight:800;font-size:22px;letter-spacing:.04em}
+#view-dashboard .panel{overflow-x:hidden;padding:1.25rem 1.4rem}
+#view-dashboard .sh{align-items:center;gap:12px}
+#view-dashboard .tbl{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0 8px}
+#view-dashboard .tbl thead th{background:#f3f3f0;border-bottom:0;padding:9px 10px;color:#616161;font-size:10px}
+#view-dashboard .tbl tbody tr{background:#fff}
+#view-dashboard .tbl tbody td{border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:11px 10px;background:#fff}
+#view-dashboard .tbl tbody td:first-child{border-left:1px solid var(--border);border-radius:8px 0 0 8px}
+#view-dashboard .tbl tbody td:last-child{border-right:1px solid var(--border);border-radius:0 8px 8px 0}
+#view-dashboard .tbl tr.cl:hover td{background:#fafaf8}
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:18%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:15%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:9%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:7%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:9%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:6%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:15%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:14%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:7%}
+#view-dashboard .tbl select{height:34px;max-width:100%;font-size:12px;padding:5px 8px}
+#view-dashboard .vessel-actions{display:flex;gap:5px;margin-top:7px;flex-wrap:nowrap}
+#view-dashboard .vessel-actions .btn{height:28px}
+#view-dashboard .vessel-actions .btn-p{min-width:34px;justify-content:center}
+#view-dashboard .email-activity{font-size:11px;line-height:1.4;color:#555}
+#view-dashboard .owner-select,#view-dashboard .status-select{width:100%!important}
+#view-dashboard .prog{width:62px}
+#view-dashboard .traffic{font-size:11px}
+#view-dashboard .badge{font-size:11px;padding:4px 8px}
+#view-dashboard .next-action-mini{width:100%;justify-content:center;white-space:nowrap}
+@media(max-width:980px){
+  .hero-logo{height:54px;max-width:145px}
+  #view-dashboard .tbl th,#view-dashboard .tbl td{padding:9px 6px;font-size:11px}
+  #view-dashboard .tbl th{font-size:9px}
+}
+
+
+/* v31 clean action layout */
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:17%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:14%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:8%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:7%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:9%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:6%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:15%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:12%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:12%}
+#view-dashboard .row-actions{display:flex;gap:6px;align-items:center;justify-content:flex-start;flex-wrap:wrap}
+#view-dashboard .row-actions .btn{height:30px;padding:5px 9px;white-space:nowrap}
+#view-dashboard .row-actions .btn-d{padding:5px 8px}
+#view-dashboard .vessel-actions{display:none!important}
+#view-dashboard .next-action-mini{width:auto}
+#view-dashboard .tbl tbody td:last-child{min-width:130px}
+
+
+/* v32 uniform action buttons */
+#view-dashboard .row-actions{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  align-items:stretch;
+}
+#view-dashboard .row-actions .btn{
+  width:88px;
+  justify-content:center;
+  text-align:center;
+  box-sizing:border-box;
+}
+#view-dashboard .row-actions .btn-d{
+  width:88px;
+}
+
+
+/* v34 Operations Upgrade */
+.kpi-card{cursor:pointer;transition:all .15s ease}
+.kpi-card:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.08)}
+#view-dashboard .tbl th:nth-child(1),#view-dashboard .tbl td:nth-child(1){width:14%}
+#view-dashboard .tbl th:nth-child(2),#view-dashboard .tbl td:nth-child(2){width:13%}
+#view-dashboard .tbl th:nth-child(3),#view-dashboard .tbl td:nth-child(3){width:10%}
+#view-dashboard .tbl th:nth-child(4),#view-dashboard .tbl td:nth-child(4){width:7%}
+#view-dashboard .tbl th:nth-child(5),#view-dashboard .tbl td:nth-child(5){width:8%}
+#view-dashboard .tbl th:nth-child(6),#view-dashboard .tbl td:nth-child(6){width:6%}
+#view-dashboard .tbl th:nth-child(7),#view-dashboard .tbl td:nth-child(7){width:13%}
+#view-dashboard .tbl th:nth-child(8),#view-dashboard .tbl td:nth-child(8){width:12%}
+#view-dashboard .tbl th:nth-child(9),#view-dashboard .tbl td:nth-child(9){width:10%}
+#view-dashboard .tbl th:nth-child(10),#view-dashboard .tbl td:nth-child(10){width:10%}
+.traffic-only{gap:6px}
+.timeline-box{border:1px solid var(--border);border-radius:var(--rs);padding:12px;margin-bottom:14px;background:#fafaf8}
+.timeline-box h4{margin:0 0 10px 0;color:var(--navy)}
+.tl-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.tl-row:last-child{border-bottom:0}
+.tl-dot{width:10px;height:10px;border-radius:50%;background:var(--navy);margin-top:4px;flex:0 0 auto}
+.tl-row span{color:var(--muted);font-size:12px}
+
+
+/* v34.1 real operations features */
+.readiness-cell{display:flex;align-items:center;gap:7px;min-width:82px}
+.readiness-cell .prog{width:64px;height:5px}
+.readiness-cell span{font-size:12px;color:var(--muted)}
+.timeline-box{border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:14px;background:#fafaf8}
+.timeline-box h4{margin:0 0 10px;color:var(--navy);font-size:14px}
+.tl-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.tl-row:last-child{border-bottom:0}
+.tl-dot{width:24px;height:24px;border-radius:50%;background:#eef1ff;color:var(--navy);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.tl-row span{color:var(--muted);font-size:12px}
+#v-search{background:#fff}
+
+
+.recv-item{display:flex;align-items:center;gap:8px;background:#EAF8F2;color:#116B52;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:13px}
+.has-new-reply td{background:#EAF8F2 !important}
+.has-new-reply td:first-child{border-left:3px solid #1D9E75 !important}
+.new-reply-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1D9E75;margin-left:6px;vertical-align:middle;flex-shrink:0}
+.recv-item i{color:#1D9E75}
+
+</style>
+</head>
+<body>
+
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <img src="logo.png" alt="Orca AI" onerror="this.style.display='none';document.getElementById('lt').style.display='block'"/>
+      <div id="lt" style="display:none;font-size:24px;font-weight:800;color:#1D2E6B">ORCA AI</div>
+    </div>
+    <h2>Installation Coordinator</h2>
+    <p>Sign in with your Orca AI Google account to access the portal and manage vessel installations.</p>
+    <button class="google-btn" onclick="signIn()">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G"/>
+      Sign in with Google
+    </button>
+    <div class="auth-note">Only @orca-ai.io accounts are permitted</div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="apikey-banner" style="background:#e8f5e9;border-bottom:1px solid #a5d6a7;padding:8px 1.5rem;display:flex;align-items:center;gap:10px;font-size:13px">
+    <i class="ti ti-brand-google" style="color:#1a6e2e"></i>
+    <span style="color:#1a6e2e;font-weight:500">Google Gemini API key required for AI analysis (free):</span>
+    <input id="apikey-input" type="password" placeholder="AIza..." style="flex:1;max-width:340px;padding:5px 10px;border:1px solid #a5d6a7;border-radius:6px;font-size:13px;font-family:inherit"/>
+    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-s" style="background:#1a6e2e;color:#fff;border-color:#1a6e2e;text-decoration:none">Get free key →</a>
+    <button class="btn btn-s" onclick="saveApiKey()" style="background:#1a6e2e;color:#fff;border-color:#1a6e2e">Save</button>
+    <button class="btn btn-s" onclick="document.getElementById('apikey-banner').style.display='none'" style="color:#1a6e2e">✕</button>
+  </div>
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:16px">
+      <img src="logo.png" alt="Orca AI" style="height:28px" onerror="this.outerHTML='<span style=\'font-weight:800;color:#1D2E6B;font-size:15px\'>ORCA AI</span>'"/>
+      <nav class="nav-tabs">
+        <button class="tab active" onclick="showTab('dashboard')"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
+        <button class="tab" onclick="showTab('inbox')"><i class="ti ti-inbox"></i> Inbox<span class="ib-badge" id="ib-count" style="display:none">0</span></button>
+        <button class="tab" onclick="showTab('analyze')"><i class="ti ti-cpu"></i> Analyze Reply</button>
+        <button class="tab" id="tab-admin" style="display:none" onclick="showTab('admin')"><i class="ti ti-settings"></i> Admin</button>
+      </nav>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="user-pill"><img class="user-avatar" id="uav" src="" alt=""/><span id="uname"></span></div>
+      <button class="btn btn-s" onclick="signOut()"><i class="ti ti-logout"></i> Sign out</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div id="view-dashboard" class="view active">
+      <div id="shared-db-warning" style="display:none;background:#fff3cd;border:1px solid #f0d98c;color:#7a5200;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+        <strong>Shared database is not configured.</strong> Data is currently saved only on this browser. Paste a shared Google Sheet ID into <code>SHARED_SHEET_ID</code> in this HTML file so all users see the same dashboard.
+      </div>
+      <div class="hero">
+        <div class="hero-left">
+          <div class="hero-logo-wrap">
+            <img class="hero-logo" src="logo.png" alt="Orca AI" onerror="this.outerHTML='<div class=\'hero-logo-text\'>ORCA AI</div>'"/>
+          </div>
+          <div><h1>Installation Coordinator</h1><p>Manage vessel installations, track replies, and coordinate your team.</p></div>
+        </div>
+        <button class="btn btn-g" onclick="openStart()"><i class="ti ti-rocket"></i> Start Coordination</button>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t">0</div><div class="metric-sub">being tracked</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-circle-check"></i> Ready</div><div class="metric-val" id="m-r">0</div><div class="metric-sub">ready for installation</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w">0</div><div class="metric-sub">under 3 days</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-alert-triangle" style="color:#E24B4A"></i> Require attention</div><div class="metric-val" id="m-a" style="color:#E24B4A">0</div><div class="metric-sub">7+ days or blocker</div></div>
+      </div>
+      <div class="panel">
+        <div class="sh">
+          <div style="font-size:15px;font-weight:700">All vessels</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-s" onclick="refreshSharedData()"><i class="ti ti-database"></i> Sync</button><button class="btn btn-s" id="btn-chk" onclick="checkInbox()"><i class="ti ti-refresh"></i> Check inbox</button><span style="font-size:11px;color:var(--faint);margin-left:4px" id="last-refresh-label"></span>
+            <select id="flt" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+              <option value="">All statuses</option>
+              <option value="waiting">Waiting for reply</option>
+              <option value="followup">Follow-up required</option>
+              <option value="ready">Ready for installation</option>
+              <option value="scheduled">Installation scheduled</option>
+              <option value="completed">Installation completed</option>
+            </select>
+            <select id="sort-vessels" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+              <option value="newest">Newest email first</option>
+              <option value="oldest">Oldest email first</option>
+            </select>
+          </div>
+        </div>
+        <table class="tbl">
+          <thead><tr><th>Vessel</th><th>Status</th><th>Readiness</th><th>Risk</th><th>Light</th><th>Reply age</th><th>Email activity</th><th>Last activity</th><th>Owner</th><th>Actions</th></tr></thead>
+          <tbody id="vtbody"></tbody>
+        </table>
+        <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
+          <i class="ti ti-ship" style="font-size:40px;display:block;margin-bottom:12px;opacity:.25"></i>
+          No vessels yet. <button class="btn btn-p" onclick="openStart()" style="margin-left:8px;font-size:12px"><i class="ti ti-rocket"></i> Start first coordination</button>
+        </div>
+      
+        <div id="dash-inbox-inline" style="display:none;margin-top:1rem;border-top:1px solid var(--border);padding-top:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <div>
+              <strong style="font-size:14px">New inbox replies</strong>
+              <div style="font-size:12px;color:var(--muted)">Latest replies detected for the vessels below.</div>
+            </div>
+            <button class="btn btn-s" onclick="document.getElementById('dash-inbox-inline').style.display='none'">Hide</button>
+          </div>
+          <div id="dash-inbox-list"></div>
+        </div>
+</div>
+    </div>
+
+    <!-- INBOX -->
+    <div id="view-inbox" class="view">
+      <div class="panel">
+        <div class="sh">
+          <div class="panel-title" style="margin-bottom:0"><i class="ti ti-inbox"></i> Inbox — vessel replies</div>
+          <button class="btn btn-s" id="btn-chk-inbox-page" onclick="checkInbox()"><i class="ti ti-refresh"></i> Check inbox</button>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem">Replies detected from vessel masters. Click "Analyze & Update" to process with AI.</p>
+        <div id="ib-list"></div>
+        <div id="ib-empty" style="text-align:center;padding:2rem;color:var(--muted);font-size:13px;display:none">
+          <i class="ti ti-mail-opened" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i>
+          No new replies detected. <button class="btn btn-s" onclick="checkInbox()" style="margin-left:8px"><i class="ti ti-refresh"></i> Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYZE -->
+    <div id="view-analyze" class="view">
+      <div class="bc" onclick="showTab('dashboard')"><i class="ti ti-arrow-left"></i> Back to dashboard</div>
+      <div class="panel">
+        <div class="panel-title"><i class="ti ti-cpu"></i> Analyze vessel reply</div>
+        <div class="fr"><label>Select vessel</label><select id="ra-sel" style="width:100%"><option value="">— Select vessel —</option></select></div>
+        <div class="fr"><label>Paste captain's full reply</label>
+          <div class="rw">
+            <textarea id="ra-reply" placeholder="Paste the full reply here..."></textarea>
+            <div class="rf"><span style="font-size:11px;color:var(--faint)">AI identifies what was received and what's missing</span><button class="btn btn-p btn-s" onclick="analyzeReply()"><i class="ti ti-cpu"></i> Analyze</button></div>
+          </div>
+        </div>
+      </div>
+      <div id="a-load" class="ai-load" style="display:none"><div class="spinner"></div> AI is analyzing...</div>
+      <div id="a-out" style="display:none">
+        <div class="panel">
+          <div class="panel-title"><i class="ti ti-report-analytics"></i> Analysis results</div>
+          <div class="dg">
+            <div><div class="sl" style="margin-bottom:8px">Received ✓</div><ul class="cl-list" id="a-recv" style="margin-bottom:16px"></ul><div class="sl" style="margin-bottom:8px">Still missing</div><div class="miss-list" id="a-miss"></div></div>
+            <div><div class="sl" style="margin-bottom:8px">Status update</div><div style="display:flex;flex-direction:column;gap:10px" id="a-stat"></div></div>
+          </div>
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+            <div class="sl" style="margin-bottom:10px">Follow-up draft</div>
+            <div id="a-fu" class="email-box" style="max-height:200px"></div>
+            <div style="margin-top:10px"><button class="btn btn-p" onclick="saveAndSend()"><i class="ti ti-send"></i> Save + send follow-up via Gmail</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VESSEL DETAIL -->
+    <div id="view-vessel-detail" class="view">
+      <div class="bc" onclick="showTab('dashboard')"><i class="ti ti-arrow-left"></i> Back to dashboard</div>
+      <div class="dg">
+        <div>
+          <div class="panel">
+            <div class="panel-title" id="vd-t"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+              <div class="metric"><div class="metric-label">Status</div><div id="vd-s" style="margin-top:5px"></div></div>
+              <div class="metric"><div class="metric-label">Progress</div><div class="metric-val" id="vd-p" style="font-size:22px"></div></div>
+              <div class="metric"><div class="metric-label">Risk</div><div id="vd-r" style="margin-top:5px"></div></div>
+            </div>
+            <div class="sl" style="margin-bottom:10px">Communication history</div>
+            <div id="vd-tl"></div>
+          </div>
+        </div>
+        <div>
+          <div class="panel"><div class="panel-title"><i class="ti ti-checklist"></i> Readiness checklist</div><ul class="cl-list" id="vd-cl"></ul></div>
+          <div class="panel"><div class="panel-title"><i class="ti ti-alert-circle"></i> Missing items</div><div class="miss-list" id="vd-mi"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN -->
+    <div id="view-admin" class="view">
+      <div class="panel">
+        <div class="panel-title"><i class="ti ti-settings"></i> Admin panel</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:.5rem">Visible to Super Admin and Admin Level 2. Destructive system actions are Super Admin only.</p><div id="current-role-info" style="font-size:12px;color:var(--muted);margin-bottom:.5rem"></div><div id="shared-db-status" style="font-size:12px;color:var(--muted);margin-bottom:1.5rem"></div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Team members</div>
+        <div id="adm-u" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
+        <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
+        <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear My Cache</button>
+          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button>
+        <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear My History</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- START MODAL -->
+<div id="mod-start" class="modal-bg" style="display:none">
+  <div class="modal">
+    <div class="modal-t"><i class="ti ti-rocket" style="color:var(--navy)"></i> Start Coordination</div>
+    <div class="modal-s">Enter vessel details. An initial email will be generated and sent directly from your Gmail.</div>
+    <div class="fg">
+      <div class="fr"><label>Vessel name *</label><input id="mv" placeholder="MV Ocean Star"/></div>
+      <div class="fr"><label>Master email *</label><input id="me" type="email" placeholder="master@vessel.com"/></div>
+      <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd"/></div>
+      
+    </div>
+    <div class="fr"><label>Documents link</label><input id="md" placeholder="https://drive.google.com/..."/></div>
+    <div id="mod-ep" style="display:none;margin-top:1rem">
+      <div class="sl" style="margin-bottom:8px">Generated email draft</div>
+      <div id="mod-al" class="ai-load" style="display:none"><div class="spinner"></div> Generating email...</div>
+      <div id="mod-ep-txt" class="email-box"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="document.getElementById('mod-start').style.display='none'">Cancel</button>
+      <button class="btn btn-p" id="btn-gen" onclick="genEmail()"><i class="ti ti-mail"></i> Generate email</button>
+      <button class="btn btn-g btn-s" id="btn-snd" style="display:none;font-size:13px;padding:8px 14px" onclick="sendAndSaveNew()"><i class="ti ti-send"></i> Send via Gmail + Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- INBOX ANALYZE MODAL -->
+<div id="mod-ib" class="modal-bg" style="display:none">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-t"><i class="ti ti-cpu" style="color:var(--navy)"></i> Reply — <span id="mib-v"></span></div>
+    <div class="modal-s" id="mib-m"></div>
+    <div class="sl" style="margin-bottom:8px">Captain's reply</div>
+    <div id="mib-b" class="email-box" style="margin-bottom:1rem;max-height:150px"></div>
+    <div id="mib-al" class="ai-load" style="display:none"><div class="spinner"></div> AI is analyzing...</div>
+    <div id="mib-res" style="display:none">
+      <div class="dg" style="margin-bottom:1rem">
+        <div><div class="sl" style="margin-bottom:6px">Received ✓</div><ul class="cl-list" id="mib-recv"></ul></div>
+        <div><div class="sl" style="margin-bottom:6px">Still missing</div><div class="miss-list" id="mib-miss"></div></div>
+      </div>
+      <div class="sl" style="margin-bottom:8px">Follow-up draft</div>
+      <div id="mib-fu" class="email-box" style="max-height:150px;margin-bottom:1rem"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="document.getElementById('mod-ib').style.display='none'">Close</button>
+      <button class="btn btn-p" id="mib-abtn" onclick="runIbAnalysis()"><i class="ti ti-cpu"></i> Analyze with AI</button>
+      <button class="btn btn-g btn-s" id="mib-sbtn" style="display:none;font-size:13px;padding:8px 14px" onclick="sendIbFollowUp()"><i class="ti ti-send"></i> Send follow-up + Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+console.log("ORCA v39.0 build:1782391775");
+window.ORCA_FIX_VERSION="v39.0";
+const GOOGLE_CLIENT_IDS={
+  'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
+  'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
+  '127.0.0.1':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com'
+};
+const DEFAULT_CLIENT_ID='150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com';
+const CLIENT_ID=GOOGLE_CLIENT_IDS[window.location.hostname]||DEFAULT_CLIENT_ID;
+const SCOPES='https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/spreadsheets profile email';
+const SUPER_ADMINS=['rami@orca-ai.io'];
+const SUPER_ADMIN='rami@orca-ai.io'; // backwards compatibility
+const ADMIN=SUPER_ADMIN; // backwards compatibility
+const ADMIN_L2=[
+  'amir.m@orca-ai.io',
+  'israel@orca-ai.io',
+  'jacob@orca-ai.io',
+  'yotam.keret@orca-ai.io',
+  'yaron.y@orca-ai.io',
+  'leon.gutnik@orca-ai.io'
+].map(e=>e.toLowerCase());
+
+const TEAM_USERS=[
+  {email:'rami@orca-ai.io',name:'Rami Moscovich',role:'Super Admin'},
+  {email:'amir.m@orca-ai.io',name:'Amir M',role:'Admin L2'},
+  {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
+  {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
+  {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
+  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin L2'}
+];
+
+function normEmail(e){return String(e||'').trim().toLowerCase();}
+function getUserRole(email){
+  const e=normEmail(email);
+  if(SUPER_ADMINS.map(normEmail).includes(e))return 'super-admin';
+  if(ADMIN_L2.includes(e))return 'admin-l2';
+  return 'user';
+}
+function isSuperAdmin(email){
+  email=normEmail(email||(user&&user.email));
+  return getUserRole(email)==='super-admin';
+}
+function isAdmin(email){
+  email=normEmail(email||(user&&user.email));
+  const role=getUserRole(email);
+  return role==='super-admin'||role==='admin-l2';
+}
+function roleLabel(email){
+  const role=getUserRole(email);
+  if(role==='super-admin')return 'Super Admin';
+  if(role==='admin-l2')return 'Admin L2';
+  return 'User';
+}
+function applyUserRole(){
+  if(!user||!user.email)return;
+  user.email=normEmail(user.email);
+  user.role=getUserRole(user.email);
+  user.roleLabel=roleLabel(user.email);
+}
+const VKEY='orca_v3',UKEY='orca_u2';
+
+// SHARED DATABASE CONFIG
+// Create one Google Sheet, share it with the Orca AI Ops team as Editor,
+// then paste the spreadsheet ID below.
+// Example URL: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+const SHARED_SHEET_ID='1Aveudwg5B8D-XrO04L33WibwtzWEaMVhLfDOMyNb3Y4';
+const SHARED_SHEET_NAME='vessels';
+let sharedDbReady=false;
+let sharedDbLastSync=null;
+
+let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
+
+
+function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
+function sharedDbUrl(range){
+  return `https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}!${range}`;
+}
+async function ensureSharedDb(){
+  if(!hasSharedDb()||!token){sharedDbReady=false;return false;}
+  try{
+    let r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    if(r.status===404 || r.status===400){
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}:batchUpdate`,{
+        method:'POST',
+        headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({requests:[{addSheet:{properties:{title:SHARED_SHEET_NAME}}}]})
+      });
+    }
+    r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();
+    const val=d.values&&d.values[0]&&d.values[0][0];
+    // Only initialize with [] if the sheet cell is genuinely empty (never overwrite existing data)
+    if(!val){
+      await saveSharedVessels([]);
+    } else {
+      try{JSON.parse(val);}catch(e){
+        // Value exists but is corrupt — log and leave it, don't wipe
+        console.warn('Shared DB cell has non-JSON value, leaving as-is');
+      }
+    }
+    sharedDbReady=true;
+    return true;
+  }catch(e){
+    console.error('Shared DB init failed',e);
+    sharedDbReady=false;
+    return false;
+  }
+}
+async function loadSharedVessels(){
+  if(!hasSharedDb()||!token)return null;
+  try{
+    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();
+    const val=d.values&&d.values[0]&&d.values[0][0];
+    if(!val)return [];
+    const parsed=JSON.parse(val);
+    if(Array.isArray(parsed))return parsed;
+    if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
+    return [];
+  }catch(e){
+    console.error('Shared DB load failed',e);
+    return null;
+  }
+}
+function saveApiKey(){
+  const k=document.getElementById('apikey-input').value.trim();
+  if(!k){alert('Please enter your Gemini API key');return;}
+  window.GEMINI_API_KEY=k;
+  try{localStorage.setItem('orca_akey',k);}catch(e){}
+  document.getElementById('apikey-banner').style.display='none';
+  showSyncToast('Gemini API key saved ✓');
+}
+function loadApiKey(){
+  try{
+    const k=localStorage.getItem('orca_akey');
+    if(k){window.GEMINI_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}
+  }catch(e){}
+}
+function safeRenderAll(){
+  try{updateMetrics();}catch(e){console.warn('updateMetrics failed',e);}
+  try{renderTable();}catch(e){console.warn('renderTable failed',e);}
+  try{populateSel();}catch(e){console.warn('populateSel failed',e);}
+  try{renderInbox();}catch(e){console.warn('renderInbox failed',e);}
+  try{renderInlineInbox();}catch(e){console.warn('renderInlineInbox failed',e);}
+}
+function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
+function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
+function parseSharedPayload(raw){
+  try{
+    if(Array.isArray(raw))return {resetAt:'',vessels:raw};
+    if(raw&&typeof raw==='object'&&Array.isArray(raw.vessels))return raw;
+    if(typeof raw==='string'){
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
+      if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.vessels))return parsed;
+    }
+  }catch(e){}
+  return {resetAt:'',vessels:[]};
+}
+function applySharedPayload(raw){
+  const p=parseSharedPayload(raw);
+  if(p.resetAt){
+    setLocalResetAt(p.resetAt);
+    vessels=[];
+    saveLocal();
+    return [];
+  }
+  return (p.vessels||[]);
+}
+
+async function saveSharedVessels(data){
+  if(!hasSharedDb()||!token)return false;
+  try{
+    const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(data||[])]]};
+    const r=await fetch(sharedDbUrl('A1')+'?valueInputOption=RAW',{
+      method:'PUT',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    if(!r.ok){
+      console.error('Shared DB save HTTP error',await r.text());
+      return false;
+    }
+    sharedDbLastSync=new Date().toISOString();
+    return true;
+  }catch(e){
+    console.error('Shared DB save failed',e);
+    return false;
+  }
+}
+async function loadVessels(){
+  const warn=document.getElementById('shared-db-warning');
+  if(warn)warn.style.display=hasSharedDb()?'none':'block';
+
+  if(hasSharedDb()){
+    const ok=await ensureSharedDb();
+    if(ok){
+      const shared=await loadSharedVessels();
+      if(Array.isArray(shared)){
+        vessels=shared.map(normalizeVessel);
+        sv(); // local mirror only
+        return;
+      }
+    }
+    vessels=[];
+    alert('Shared database could not be loaded. Local cache ignored to avoid showing stale data.');
+    return;
+  }
+
+  lv();
+}
+
+async function saveVessels(){
+  if(hasSharedDb()&&token){
+    // Always read-merge-write so we never lose another user's vessels
+    let sharedRaw=[];
+    try{
+      const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+      const d=await r.json();
+      const val=d.values&&d.values[0]&&d.values[0][0];
+      if(val){const p=JSON.parse(val);sharedRaw=Array.isArray(p)?p:(Array.isArray(p&&p.vessels)?p.vessels:[]);}
+    }catch(e){console.warn('saveVessels: could not read shared, saving local only',e);sv();return;}
+    const map=new Map();
+    sharedRaw.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
+    vessels.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
+    const toSave=Array.from(map.values());
+    const ok=await saveSharedVessels(toSave);
+    if(ok){vessels=toSave;sv();return;}
+    console.warn('saveVessels: shared save failed, saving locally');
+  }
+  sv();
+}
+
+function vesselKey(v){
+  return String((v&&v.id)||(v&&v.name&&v.email?`${v.name}|${v.email}`:(v&&v.name)||'')).toLowerCase().trim();
+}
+function dateScore(v){
+  return new Date((v&&v.updatedAt)||(v&&v.lastActivity)||(v&&v.lastContact)||(v&&v.createdAt)||0).getTime()||0;
+}
+function mergeTimeline(a,b){
+  const out=[];
+  const seen=new Set();
+  [...(a||[]),...(b||[])].forEach(t=>{
+    const k=String((t&&t.msgId)||(t&&t.time)||(t&&t.date)||JSON.stringify(t));
+    if(!seen.has(k)){seen.add(k);out.push(t);}
+  });
+  return out.sort((x,y)=>(new Date(x.time||x.date||0))-(new Date(y.time||y.date||0)));
+}
+function mergeVesselRecord(shared, local){
+  if(!shared)return normalizeVessel(local);
+  if(!local)return normalizeVessel(shared);
+  const newer = dateScore(local)>dateScore(shared) ? local : shared;
+  const older = newer===local ? shared : local;
+  const merged = {...older, ...newer};
+  merged.timeline = mergeTimeline(shared.timeline, local.timeline);
+  merged.cc = merged.cc || shared.cc || local.cc || '';
+  merged.bcc = merged.bcc || shared.bcc || local.bcc || '';
+  merged.emailsSent = Math.max(Number(shared.emailsSent||0), Number(local.emailsSent||0));
+  merged.emailsReceived = Math.max(Number(shared.emailsReceived||0), Number(local.emailsReceived||0));
+  return normalizeVessel(merged);
+}
+function mergeVesselLists(sharedList, localList){
+  const map=new Map();
+  (sharedList||[]).forEach(v=>{const k=vesselKey(v); if(k)map.set(k, normalizeVessel(v));});
+  (localList||[]).forEach(v=>{
+    const k=vesselKey(v); if(!k)return;
+    map.set(k, mergeVesselRecord(map.get(k), v));
+  });
+  return Array.from(map.values()).sort((a,b)=>dateScore(b)-dateScore(a));
+}
+async function syncSharedDatabase(){
+  if(!hasSharedDb()||!token){lv();safeRenderAll();return;}
+
+  // SYNC = read from Sheet only, show everything that is there
+  // We do NOT merge with local memory here — that would overwrite others' data
+  let sharedRaw=[];
+  try{
+    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();
+    const val=d.values&&d.values[0]&&d.values[0][0];
+    if(val){
+      const p=JSON.parse(val);
+      sharedRaw=Array.isArray(p)?p:(Array.isArray(p&&p.vessels)?p.vessels:[]);
+    }
+  }catch(e){
+    showSyncToast('Sync failed: could not read sheet', false);
+    console.error('Sync read error',e);
+    return;
+  }
+
+  // Update local state from sheet — show ALL vessels from all users
+  vessels=sharedRaw.map(normalizeVessel);
+  sv();
+  safeRenderAll();
+  showSyncToast('Synced — '+vessels.length+' vessels', true);
+}
+function loadLocalVesselsForMerge(){
+  try{
+    const raw=localStorage.getItem(VKEY)||localStorage.getItem('orca_vessels')||'[]';
+    const arr=JSON.parse(raw);
+    return Array.isArray(arr)?arr:[];
+  }catch(e){return [];}
+}
+
+async function refreshSharedData(){
+  const btn=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Sync');
+  const old=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.textContent='⏳ Syncing...';}
+  try{
+    await syncSharedDatabase();
+    const count=(window.vessels||[]).length;
+    showSyncToast('✅ Shared database synchronized ('+count+' vessels)',true);
+    const el=document.getElementById('last-sync-label');
+    if(el) el.textContent='Last sync: '+new Date().toLocaleString();
+  }catch(e){
+    showSyncToast('❌ Sync failed',false);
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML=old||'Sync';}
+  }
+}
+
+function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
+
+function loadVesselsCompat(){
+  const keys=['orca_v3','orca_v2','orca_v1','vessels'];
+  for(const k of keys){
+    try{
+      const raw=localStorage.getItem(k);
+      if(!raw)continue;
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return parsed;
+      if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
+    }catch(e){}
+  }
+  return [];
+}
+function normalizeVessel(v){
+  v.status=v.status||'waiting';
+  if(v.status==='new')v.status='waiting';
+  if(v.status==='escalated')v.status='followup';
+  v.risk=v.risk||'medium';
+  v.progress=Number(v.progress||0);
+  v.emailsSent=Number(v.emailsSent||0);
+  v.emailsReceived=Number(v.emailsReceived||0);
+  v.assignedTo=v.assignedTo||(user&&user.email)||'rami@orca-ai.io';
+  v.timeline=v.timeline||[];
+  if(!v.lastContact)v.lastContact=v.lastEmailDate||v.lastReceivedDate||new Date().toISOString();
+  return v;
+}
+
+function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){console.error('save failed',e);}}
+function saveLocal(){sv();}
+function lu(){try{return JSON.parse(localStorage.getItem(UKEY)||'{}');}catch(e){return{};}}
+function su(u){const us=lu();us[u.email]={...u,ls:new Date().toISOString()};try{localStorage.setItem(UKEY,JSON.stringify(us));}catch(e){}}
+
+function initG(){
+  tc=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,
+    scope:SCOPES,
+    callback:handleToken,
+    error_callback:(e)=>{
+      console.error('Google OAuth error',e);
+      const origin=window.location.origin;
+      alert('Google sign-in failed. Make sure this origin is authorized in Google Cloud for the OAuth Client ID: '+origin);
+    }
+  });
+}
+function signIn(){
+  try{
+    if(!tc && typeof google!=='undefined' && google.accounts) initG();
+    if(!tc){alert('Please wait, Google API loading...');return;}
+    const alreadyApproved=localStorage.getItem('orca_google_consent_ok')==='1';
+    tc.requestAccessToken({prompt: alreadyApproved ? '' : 'consent'});
+  }catch(e){
+    console.error(e);
+    alert('Sign-in failed: '+(e.message||e));
+  }
+}
+async function handleToken(r){
+  if(r.error){console.error(r);alert('Google sign-in failed: '+(r.error_description||r.error));return;}
+  token=r.access_token;
+  try{localStorage.setItem('orca_google_consent_ok','1');}catch(e){}
+  const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}});
+  const p=await res.json();
+  user={email:normEmail(p.email),name:p.name||p.email,pic:p.picture||''};
+  applyUserRole();
+  su(user); await loadVessels();
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
+  if(user.pic)document.getElementById('uav').src=user.pic;
+  document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
+  loadApiKey();
+  renderTable();updateMetrics();populateSel();
+  fetchInbox();
+}
+function signOut(){if(token)google.accounts.oauth2.revoke(token,()=>{});token=null;user=null;vessels=[];document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
+
+function showTab(t){
+  if(t==='admin' && !isAdmin(user&&user.email)){
+    alert('Admin access only.');
+    t='dashboard';
+  }
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('view-'+t).classList.add('active');
+  const m={dashboard:0,inbox:1,analyze:2};
+  if(m[t]!==undefined)document.querySelectorAll('.tab')[m[t]].classList.add('active');
+  if(t==='admin'){
+    document.getElementById('tab-admin').classList.add('active');
+    renderAdmin();
+  }
+  if(t==='inbox')renderInbox();
+}
+
+function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
+function sb(s){const m={
+  waiting:['bg','ti-clock','Waiting for reply'],
+  followup:['ba','ti-send','Follow-up required'],
+  ready:['bn','ti-circle-check','Ready for installation'],
+  scheduled:['bb','ti-calendar-check','Installation scheduled'],
+  completed:['bgr','ti-check','Installation completed']
+};const[c,ic,l]=m[s]||['bg','ti-circle','Waiting for reply'];return`<span class="badge ${c}"><i class="ti ${ic}"></i> ${l}</span>`;}
+function rb(r){const m={low:['bgr','Low'],medium:['ba','Medium'],high:['br','High']};const[c,l]=m[r]||['bg','—'];return`<span class="badge ${c}">${l}</span>`;}
+
+function trafficLight(v){
+  const d=ds(v.lastContact);
+  let c='green',label='On track';
+  if(v.risk==='high'||d>=7){c='red';label='Attention';}
+  else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
+  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
+  return `<span class="traffic"><span class="tl-light tl-${c}"></span>${label}</span>`;
+}
+
+function ds(d){if(!d)return null;return Math.floor((Date.now()-new Date(d))/86400000);}
+function dc(d){if(d===null)return'<span style="color:#ccc">—</span>';const c=d>=7?'d-d':d>=3?'d-w':'d-ok';return`<span class="${c}">${d}d</span>`;}
+
+function userOptions(selected){
+  const stored=Object.values(lu());
+  const map=new Map();
+  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
+  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
+  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
+  if(selected&&!map.has(normEmail(selected)))map.set(normEmail(selected),{email:selected,name:selected,role:'User'});
+  const users=Array.from(map.values()).sort((a,b)=>{
+    const rank={SUPER:0,ADMIN:1,USER:2};
+    const ar=isSuperAdmin(a.email)?rank.SUPER:isAdmin(a.email)?rank.ADMIN:rank.USER;
+    const br=isSuperAdmin(b.email)?rank.SUPER:isAdmin(b.email)?rank.ADMIN:rank.USER;
+    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
+  });
+  return users.map(u=>`<option value="${u.email}" ${normEmail(u.email)===normEmail(selected)?'selected':''}>${u.name||u.email}</option>`).join('');
+}
+
+function setVesselStatus(i,status){
+  if(!vessels[i])return;
+  const old=vessels[i].status;
+  vessels[i].status=status;
+  if(status==='waiting'){vessels[i].nextAction='Wait for master reply';}
+  if(status==='followup'){vessels[i].nextAction='Send follow-up';}
+  if(status==='ready'){vessels[i].nextAction='Coordinate installation window';vessels[i].progress=Math.max(vessels[i].progress||0,75);}
+  if(status==='scheduled'){vessels[i].nextAction='Installation scheduled';vessels[i].progress=Math.max(vessels[i].progress||0,90);}
+  if(status==='completed'){vessels[i].nextAction='Installation completed';vessels[i].progress=100;vessels[i].risk='low';}
+  if(old!==status)addTimeline(vessels[i],'status','Status changed',`${sbText(old)} → ${sbText(status)}`);
+  saveVessels();updateMetrics();renderTable();renderAdmin();populateSel();
+}
+function statusOptions(selected){
+  const statuses=[
+    ['waiting','Waiting for reply'],
+    ['followup','Follow-up required'],
+    ['ready','Ready for installation'],
+    ['scheduled','Installation scheduled'],
+    ['completed','Installation completed']
+  ];
+  return statuses.map(([v,l])=>`<option value="${v}" ${v===selected?'selected':''}>${l}</option>`).join('');
+}
+
+function assignVessel(i,email){
+  if(!vessels[i])return;
+  const old=vessels[i].assignedTo||'Unassigned';
+  vessels[i].assignedTo=email;
+  addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
+  saveVessels();renderTable();renderAdmin();
+}
+function deleteVessel(i){
+  if(!isAdmin()){alert('Only admins can delete cases.');return;}
+  if(!vessels[i])return;
+  if(!confirm('Delete this case from the portal history?'))return;
+  vessels.splice(i,1);
+  saveVessels();updateMetrics();renderTable();populateSel();renderAdmin();
+}
+
+
+
+function cleanCaptainReplyText(txt){
+  let s=String(txt||'').replace(/\r/g,'').trim();
+  // Remove Gmail quoted history.
+  s=s.split(/\nOn .+ wrote:\n/i)[0];
+  s=s.split(/\n> /)[0];
+  s=s.replace(/\[image:[^\]]+\]/gi,'').trim();
+  return s;
+}
+function decodeGmailBody(payload){
+  const decode=(data)=>{
+    try{
+      const bin=atob(String(data||'').replace(/-/g,'+').replace(/_/g,'/'));
+      try{return decodeURIComponent(escape(bin));}catch(e){return bin;}
+    }catch(e){return '';}
+  };
+  const walk=(p)=>{
+    if(!p)return '';
+    if(p.mimeType==='text/plain'&&p.body&&p.body.data)return decode(p.body.data);
+    if(p.mimeType==='text/html'&&p.body&&p.body.data)return stripHtmlForText(decode(p.body.data));
+    if(p.parts)for(const part of p.parts){const got=walk(part);if(got)return got;}
+    return '';
+  };
+  return walk(payload);
+}
+function isOutboundFromCurrentUser(from){
+  const f=String(from||'').toLowerCase();
+  const me=String((user&&user.email)||'').toLowerCase();
+  return (me&&f.includes(me)) || f.includes('orca ai ops') || f.includes('operations specialist');
+}
+async function gmailSearchMessages(q,max=10){
+  if(!token)return [];
+  const url=`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${max}`;
+  const r=await fetch(url,{headers:{Authorization:'Bearer '+token}});
+  const d=await r.json();
+  return d.messages||[];
+}
+async function readGmailMessage(id){
+  const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+  const dd=await dr.json();
+  const hdr=(dd.payload&&dd.payload.headers)||[];
+  const get=n=>hdr.find(h=>String(h.name||'').toLowerCase()===n.toLowerCase())?.value||'';
+  return {
+    msgId:id,
+    from:get('From'),
+    subj:get('Subject'),
+    date:get('Date'),
+    body:cleanCaptainReplyText(decodeGmailBody(dd.payload)||dd.snippet||'')
+  };
+}
+
+function openManualAnalyzeWithReply(i,replyText){
+  showTab('analyze');
+  setTimeout(()=>{
+    const sel=document.getElementById('ra-sel');
+    const txt=document.getElementById('ra-reply');
+    if(sel)sel.value=String(i);
+    if(txt){
+      txt.value=replyText||'';
+      txt.placeholder=replyText?'':'No captain reply was found automatically. Paste the captain reply here.';
+      txt.focus();
+    }
+  },50);
+}
+
+async function openCaseAnalyze(i){
+  const vessel=vessels[i];
+  if(!vessel){alert('Vessel not found.');return;}
+  try{
+    // Use existing inbox result first.
+    let existing=null;
+    if(Array.isArray(ibItems)&&ibItems.length){
+      const email=String(vessel.email||'').toLowerCase();
+      const name=String(vessel.name||'').toLowerCase();
+      existing=ibItems.find(item=>{
+        const from=String(item.fe||item.from||'').toLowerCase();
+        const subj=String(item.subj||item.subject||'').toLowerCase();
+        const body=String(item.body||item.snippet||'').toLowerCase();
+        return item.vi===i || item.vessel===vessel || (email&&from.includes(email)) || (name&&(subj.includes(name)||body.includes(name)));
+      });
+    }
+    if(existing&&existing.body){
+      openManualAnalyzeWithReply(i,cleanCaptainReplyText(existing.body));
+      return;
+    }
+
+    // Search Gmail directly and paste latest reply.
+    const latest=await fetchLatestReplyForVessel(vessel);
+    if(latest&&latest.body){
+      ibItems.push(latest);
+      openManualAnalyzeWithReply(i,latest.body);
+      return;
+    }
+
+    // Last resort: open manual screen, but with clear instruction.
+    openManualAnalyzeWithReply(i,'');
+  }catch(err){
+    console.error('openCaseAnalyze failed',err);
+    openManualAnalyzeWithReply(i,'');
+  }
+}
+
+
+
+const REQUIRED_ITEMS=[
+  'Vessel GA',
+  'Bridge Console GA',
+  'Next 2–3 upcoming port calls + corresponding agent details for each port',
+  'Cable penetration',
+  'VSAT routing',
+  'Power connection',
+  'Proposed monitor location photos',
+  'Proposed Seapod location photos',
+  'Docs acknowledgement'
+];
+function normTxt(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function isThanksOnlyReply(txt){
+  const s=normTxt(txt).replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+  if(!s)return true;
+  const generic=[
+    'thanks','thank you','thank you very much','many thanks','noted','ok','okay','yes','received','roger',
+    'will check','will look into this','i will look into this','we will check','noted with thanks',
+    'thank you for your email','thanks for your email'
+  ];
+  if(generic.includes(s))return true;
+  const technical=['port','agent','eta','vessel ga','bridge','console','cable','penetration','vsat','power','monitor','photo','picture','seapod','camera','deck','docs','document','acknowledg'];
+  return !technical.some(k=>s.includes(k));
+}
+function itemKey(item){
+  const s=normTxt(item);
+  if((s.includes('vessel')&&s.includes('ga'))||s.includes('general arrangement'))return 'vessel_ga';
+  if((s.includes('bridge')&&s.includes('ga'))||s.includes('bridge console ga'))return 'bridge_ga';
+  if(s.includes('port')||s.includes('agent')||s.includes('eta'))return 'ports';
+  if(s.includes('cable')||s.includes('penetration'))return 'cable';
+  if(s.includes('vsat'))return 'vsat';
+  if(s.includes('power'))return 'power';
+  if(s.includes('monitor'))return 'monitor';
+  if(s.includes('seapod')||s.includes('camera')||s.includes('compass'))return 'seapod';
+  if(s.includes('doc')||s.includes('acknowledg'))return 'docs';
+  return s.split(' ')[0]||s;
+}
+function hasItem(list,item){
+  const k=itemKey(item);
+  return (list||[]).some(x=>itemKey(x)===k || normTxt(x).includes(k) || normTxt(item).includes(itemKey(x)));
+}
+function derivedMissing(v){
+  const recv=v&&Array.isArray(v.receivedItems)?v.receivedItems:[];
+  const current=v&&Array.isArray(v.missingItems)&&v.missingItems.length?v.missingItems:REQUIRED_ITEMS;
+  const base=current.length?current:REQUIRED_ITEMS;
+  return REQUIRED_ITEMS.filter(item=>!hasItem(recv,item) && hasItem(base,item));
+}
+function buildFollowupEmail(v,missing){
+  const m=(missing&&missing.length?missing:REQUIRED_ITEMS);
+  return `Dear Master,
+
+Thank you for your reply regarding ${v.name}.
+
+To complete the installation coordination, we still require the following information:
+
+${m.map(x=>'• '+x).join('\n')}
+
+Once the voyage schedule, upcoming ports, agent details and technical information are reviewed, Orca AI will identify the most suitable installation opportunity.
+
+Kind regards,
+ORCA AI OPS`;
+}
+
+function inferReceivedFromReply(reply){
+  const s=normTxt(reply);
+  const got=[];
+  if(/\bga\b/.test(s)||s.includes('general arrangement')){
+    if(s.includes('bridge')||s.includes('console'))got.push('Bridge Console GA');
+    else got.push('Vessel GA');
+  }
+  if(s.includes('vessel ga'))got.push('Vessel GA');
+  if(s.includes('bridge console ga'))got.push('Bridge Console GA');
+  if(s.includes('port')&&s.includes('agent'))got.push('Next 2–3 upcoming port calls + corresponding agent details for each port');
+  if(s.includes('cable')||s.includes('penetration'))got.push('Cable penetration');
+  if(s.includes('vsat'))got.push('VSAT routing');
+  if(s.includes('power'))got.push('Power connection');
+  if(s.includes('monitor')&&(s.includes('photo')||s.includes('location')||s.includes('picture')))got.push('Proposed monitor location photos');
+  if((s.includes('seapod')||s.includes('camera'))&&(s.includes('photo')||s.includes('location')||s.includes('picture')))got.push('Proposed Seapod location photos');
+  if(s.includes('acknowledg')||s.includes('document'))got.push('Docs acknowledgement');
+  return [...new Set(got)];
+}
+
+function normalizeAnalysisResult(v,reply,analysis){
+  const oldMissing=derivedMissing(v);
+  const thanksOnly=isThanksOnlyReply(reply);
+  analysis=analysis||{};
+  let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
+  received=[...new Set([...received,...inferReceivedFromReply(reply)])];
+  let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
+  if(thanksOnly){
+    received=[];
+    missing=oldMissing;
+  }else{
+    missing=REQUIRED_ITEMS.filter(item=>!hasItem(received,item) && (hasItem(oldMissing,item)||!oldMissing.length));
+  }
+  const complete=missing.length===0;
+  analysis.received=received;
+  analysis.missing=missing;
+  analysis.status=complete?'ready':'followup';
+  analysis.risk=complete?'low':(analysis.risk||'medium');
+  analysis.progress=complete?85:Math.max(Number(analysis.progress||0), received.length?25:0);
+  analysis.nextAction=complete?'Coordinate installation window':'Send follow-up';
+  analysis.followup_email=complete
+    ? `Dear Master,\n\nThank you for providing the required information. We will review the details and coordinate the next steps for the Orca AI installation.\n\nKind regards,\nORCA AI OPS`
+    : buildFollowupEmail(v,missing);
+  return analysis;
+}
+function cleanTimeline(v){
+  if(!v)return;
+  v.timeline=(v.timeline||[]).filter(e=>e&&(e.title||e.text)).map(e=>{
+    if(!e.title&&e.text)e.title=e.text;
+    if(!e.ts&&e.date)e.ts=new Date(e.date).toISOString();
+    if(!e.ts)e.ts=new Date().toISOString();
+    if(!e.type)e.type=e.text&&e.text.toLowerCase().includes('reply')?'reply':'note';
+    return e;
+  });
+}
+
+function addTimeline(v,type,title,detail){
+  if(!v)return;
+  v.timeline=v.timeline||[];
+  v.timeline.unshift({ts:new Date().toISOString(),type,title,detail});
+  v.lastActivity=new Date().toISOString();
+}
+function fmtDT(d){
+  if(!d)return '—';
+  const dt=new Date(d);
+  if(!Number.isFinite(dt.getTime()))return '—';
+  return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+function readinessScore(v){
+  if(!v)return 0;
+  if(v.status==='completed')return 100;
+  if(v.status==='scheduled')return Math.max(v.progress||0,90);
+  if(v.status==='ready')return Math.max(v.progress||0,85);
+  const received=[
+    ...(v.receivedItems||[]),
+    ...(v.filesReceived||[]),
+    v.analysisSummary||'',
+    v.lastReplyText||'',
+    v.notes||''
+  ].map(x=>String(x).toLowerCase()).join(' | ');
+  const missing=(v.missingItems||[]).map(x=>String(x).toLowerCase()).join(' | ');
+  const got=(terms)=>terms.some(t=>received.includes(t)) && !terms.some(t=>missing.includes(t));
+  let score=0;
+  if(got(['vessel ga','general arrangement']))score+=12;
+  if(got(['bridge console ga','bridge console','console ga']))score+=12;
+  if(got(['monitor','monitor location','proposed monitor']))score+=15;
+  if(got(['seapod','camera location','proposed seapod']))score+=15;
+  if(got(['port call','upcoming port','agent details','port agent']))score+=15;
+  if(got(['cable','penetration','routing']))score+=10;
+  if(got(['power','vsat']))score+=10;
+  if(got(['docs','acknowledgement','acknowledgment']))score+=5;
+  score=Math.max(score, Number(v.progress||0));
+  if((v.missingItems||[]).length&&score>75)score=75;
+  return Math.min(100,Math.max(0,score));
+}
+function readinessBar(v){
+  const s=readinessScore(v);
+  return `<div class="readiness-cell">
+    <div class="prog"><span style="width:${Math.min(100,s)}%"></span></div>
+    <span>${s}%</span>
+  </div>`;
+}
+function trafficLight(v){
+  const d=ds(v.lastContact);
+  let c='green',label='On track';
+  if(v.risk==='high'||d>=7){c='red';label='Attention';}
+  else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
+  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
+  return `<span class="traffic traffic-only" title="${label}"><span class="tl-light tl-${c}"></span><span>${label}</span></span>`;
+}
+function filteredVessels(){
+  let arr=vessels.map((v,i)=>({...v,__i:i}));
+  const q=String(window.dashSearch||'').trim().toLowerCase();
+  if(q)arr=arr.filter(v=>[v.name,v.email,v.owner,v.assignedTo,v.docs,v.company,v.imo].some(x=>String(x||'').toLowerCase().includes(q)));
+  if(window.dashStatus)arr=arr.filter(v=>v.status===window.dashStatus);
+  if((window.dashKpiFilter||'')==='ready')arr=arr.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
+  if((window.dashKpiFilter||'')==='waiting')arr=arr.filter(v=>v.status==='waiting');
+  if((window.dashKpiFilter||'')==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  if((window.sortMode||'newest')==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
+  else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
+  // Vessels with unread inbox replies always float to top
+  arr.sort((a,b)=>{
+    const aNew=ibItems.some(m=>m.vi===a.__i||(m.vessel&&vessels.indexOf(m.vessel)===a.__i))?1:0;
+    const bNew=ibItems.some(m=>m.vi===b.__i||(m.vessel&&vessels.indexOf(m.vessel)===b.__i))?1:0;
+    return bNew-aNew;
+  });
+  return arr;
+}
+function setKpiFilter(f){
+  window.dashKpiFilter=(window.dashKpiFilter===f?'':f);
+  renderTable();
+}
+
+function renderTimeline(v){
+  seedTimeline(v);
+  const events=(v.timeline||[]).slice().sort((a,b)=>new Date(b.ts||0)-new Date(a.ts||0));
+  if(!events.length)return '<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>';
+  return events.slice(0,20).map(e=>{
+    const icon={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'}[e.type]||'ti-circle';
+    return `<div class="tl-row">
+      <div class="tl-dot"><i class="ti ${icon}"></i></div>
+      <div><strong>${e.title||e.text||'Activity'}</strong><br><span>${fmtDT(e.ts||e.date)}${e.detail?' · '+e.detail:(e.by?' · '+e.by:'')}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function seedTimeline(v){
+  if(!v.timeline||!v.timeline.length){
+    v.timeline=[];
+    if(v.lastEmailDate)addTimeline(v,'sent','Initial email sent',`Sent to ${v.email||'master'}`);
+    if((v.emailsReceived||0)>0)addTimeline(v,'reply','Captain replied',`${v.emailsReceived} replies received`);
+    if(v.status==='followup')addTimeline(v,'ai','AI analysis completed','Follow-up required');
+  }
+}
+
+
+function getVesselTbody(){
+  let tb=document.getElementById('vtb');
+  if(tb)return tb;
+  const table=document.querySelector('#view-dashboard table.tbl, #view-dashboard .tbl');
+  if(table){
+    tb=table.querySelector('tbody');
+    if(tb){tb.id='vtb';return tb;}
+    tb=document.createElement('tbody');
+    tb.id='vtb';
+    table.appendChild(tb);
+    return tb;
+  }
+  return null;
+}
+function getVesselEmpty(){
+  let empty=document.getElementById('vempty');
+  if(empty)return empty;
+  const panel=document.querySelector('#view-dashboard .panel');
+  if(panel){
+    empty=document.createElement('div');
+    empty.id='vempty';
+    empty.style.cssText='text-align:center;padding:3rem;color:var(--muted);display:none';
+    empty.innerHTML='<div style="font-size:42px;color:#d0d0d0"><i class="ti ti-ship"></i></div><p>No vessels yet.</p><button class="btn btn-p" onclick="openStart()"><i class="ti ti-rocket"></i> Start first coordination</button>';
+    panel.appendChild(empty);
+    return empty;
+  }
+  return null;
+}
+
+function renderTable(){
+  const tb=getVesselTbody(),empty=getVesselEmpty();
+  if(!tb){console.warn('Vessel table body not found');return;}
+  const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==window.dashSearch)searchEl.value=window.dashSearch||'';
+  const arr=filteredVessels();
+  if(!vessels.length){
+    tb.innerHTML='';
+    if(empty)empty.style.display='block';
+    return;
+  }
+  if(empty)empty.style.display=arr.length?'none':'block';
+  tb.innerHTML=arr.map(v=>{
+    const idx=v.__i;
+    seedTimeline(vessels[idx]);
+    const d=ds(v.lastContact);
+    const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
+    const hasNewReply=ibItems.some(m=>m.vi===idx||(m.vessel&&vessels.indexOf(m.vessel)===idx));
+    const newReplyDot=hasNewReply?`<span class="new-reply-dot" title="New unread reply"></span>`:'';
+    return `<tr class="cl${hasNewReply?' has-new-reply':''}">
+      <td>
+        <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
+          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}${newReplyDot}</strong>
+          <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
+          ${v.sentBy&&user&&v.sentBy.toLowerCase()!==user.email.toLowerCase()?`<span style="font-size:10px;color:var(--blue-t);background:var(--blue-l);border-radius:4px;padding:1px 5px">via ${v.sentBy.split('@')[0]}</span>`:''}
+        </div>
+      </td>
+      <td>
+        <select class="status-select" onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+          ${statusOptions(v.status)}
+        </select>
+      </td>
+      <td>${readinessBar(v)}</td>
+      <td>${rb(v.risk||'medium')}</td>
+      <td>${trafficLight(v)}</td>
+      <td>${dc(d)}</td>
+      <td class="email-activity" style="color:var(--muted)">
+        <strong>Sent</strong> ${v.emailsSent||0} · ${v.lastEmailDate?new Date(v.lastEmailDate).toLocaleDateString('en-GB'):'—'}<br>
+        <strong>Received</strong> ${v.emailsReceived||0} · ${v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—'}
+      </td>
+      <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
+      <td>
+        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
+      </td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i> View</button>
+          <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze</button>
+          ${adminDelete}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+function updateMetrics(){
+  document.getElementById('m-t').textContent=vessels.length;
+  document.getElementById('m-r').textContent=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
+  document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+}
+function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
+
+// START MODAL
+function val(id){const el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
+function setVal(id,value){const el=document.getElementById(id);if(el&&typeof el.value==='string')el.value=value;}
+function show(id,display){const el=document.getElementById(id);if(el)el.style.display=display;}
+function txt(id,value){const el=document.getElementById(id);if(el)el.textContent=value;}
+function openStart(){show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','mo','md'].forEach(id=>setVal(id,''));}
+
+async function genEmail(){
+  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
+  if(!v||!e){alert('Please enter vessel name and master email.');return;}
+  show('mod-ep','block');show('mod-al','flex');txt('mod-ep-txt','');show('btn-gen','none');
+  draft=`Dear Master,
+
+My name is ${user.name||user.email}, and I am an Operations Specialist at Orca AI. We are preparing for the installation of the Orca AI system on board your vessel as part of the fleet-wide deployment program, and I will be your point of contact for the coordination process.
+
+The Orca AI system is designed to enhance situational awareness on the bridge and support the Officer of the Watch alongside existing navigation systems such as radar and ECDIS.
+
+Installation Process
+Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes 12–18 hours and includes system installation, technical validation, and crew training.
+
+To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong>
+
+Information and Preparations Required
+
+1. Cable Routing
+Please confirm that suitable cable penetrations can be prepared for:
+• Two outdoor cables from the compass deck to the bridge console.
+• One cable from the bridge console to the VSAT rack or business switch.
+
+2. Proposed monitor location photos
+Please provide:
+• Photographs of the proposed monitor location(s) for the Orca AI 24-inch monitor.
+• Ideally, the monitor should be located close to the ECDIS or radar.
+• If available, we recommend a location on the center console.
+
+3. Bridge Console Compartments
+Please provide photographs of the following bridge console compartments with the doors open:
+• Center console compartment
+• Port console compartment
+• Starboard console compartment
+
+4. Proposed Seapod Location
+Please provide photographs of:
+• The forward compass deck rail
+• The proposed Seapod installation location
+
+Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:
+• A clear 225-degree view at the designated location
+• An unobstructed forward field of view
+• Installation below and clear of all radars
+• A minimum distance of 4 meters from the magnetic compass
+
+If any structure or mounting bracket is required, we kindly ask that it be prepared before the engineer's visit.
+
+Requested Response
+To help us finalize the installation plan, we would appreciate receiving:
+☐ Proposed monitor location photos
+☐ Center console photo
+☐ Port console photo
+☐ Starboard console photo
+☐ Proposed Seapod location photos
+☐ Confirmation regarding cable penetrations
+
+Relevant installation documents can be found here: ${d||'[ORCA AI Installation Documents Link]'}
+
+Please do not hesitate to contact us if you have any questions. We look forward to working with you and your crew.
+
+Kind regards,
+${user.name||user.email}
+Operations Specialist
+Orca AI`;
+  show('mod-al','none');txt('mod-ep-txt',draft);show('btn-snd','inline-flex');
+}
+
+async function sendAndSaveNew(){
+  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
+  if(!v||!e){alert('Please enter vessel name and master email.');return;}
+  const btn=document.getElementById('btn-snd');
+  const oldHtml=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
+  try{
+    const htmlBody=buildHtmlEmail(draft,'ORCA AI OPS',d);
+    const ok=await sendGmail(e,'Orca AI Installation Coordination - '+v,htmlBody,true);
+    if(!ok)return;
+    const now=new Date().toISOString();
+    const nv={
+      id:Date.now(),
+      name:v,
+      email:e,
+      owner:o,
+      docs:d,
+      status:'waiting',
+      progress:0,
+      risk:'medium',
+      lastContact:now,
+      lastEmailDate:now,
+      lastActivity:now,
+      emailsSent:1,
+      emailsReceived:0,
+      assignedTo:(user&&user.email)||'rami@orca-ai.io',
+      sentBy:(user&&user.email)||'',
+      nextAction:'Wait for master reply',
+      receivedItems:[],
+      missingItems:[...REQUIRED_ITEMS],
+      timeline:[]
+    };
+    if(typeof addTimeline==='function')addTimeline(nv,'sent','Initial email sent',`Sent to ${e}`);
+    vessels.push(nv);
+    await saveVessels();
+    try{updateMetrics();}catch(e){console.warn(e);}
+    try{renderTable();}catch(e){console.error('renderTable failed',e);}
+    try{populateSel();}catch(e){console.warn(e);}
+    try{if(typeof renderAdmin==='function')renderAdmin();}catch(e){console.warn(e);}
+    show('mod-start','none');
+    showTab('dashboard');
+    /* success: close modal and return to dashboard without popup */
+  }catch(err){
+    console.error(err);
+    alert('Email was sent, but saving/updating the dashboard failed: '+(err.message||err));
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML=oldHtml||'<i class="ti ti-send"></i> Send via Gmail + Save';}
+  }
+}
+
+// GMAIL
+
+function buildFollowupHtmlEmail(followupText, docsLink){
+  // Dedicated wrapper for follow-up emails. Never uses the initial installation template.
+  const bodyText=String(followupText||'').trim();
+  const htmlBody=bodyText
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f0f0ed;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0ed;padding:20px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #dddddd">
+<tr><td style="background:#1D2E6B;padding:24px 36px">
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:30px;font-weight:700;letter-spacing:2px;line-height:1">ORCA AI</div>
+</td></tr>
+<tr><td style="padding:34px 36px;color:#111111;font-size:14px;line-height:1.7">
+${htmlBody}
+</td></tr>
+</table>
+</td></tr>
+</table>
+<!-- v38.2 build-1782390653 -->
+<!-- orca-ops-portal updated -->
+</body></html>`;
+}
+function nextFollowupNumber(v){return Number(v.followupsSent||0)+1;}
+function saveFollowupMeta(v,body){
+  v.followupsSent=nextFollowupNumber(v);
+  v.lastFollowupPreview=String(body||'').slice(0,500);
+  addTimeline(v,'sent',`Follow-up #${v.followupsSent} sent`,String(body||'').split('\n').find(x=>x.trim().startsWith('•'))||'Missing items requested');
+}
+
+function buildHtmlEmail(plainText, senderName, docsLink) {
+  const safeText = String(plainText||'');
+  const contentHtml = /<\w+[^>]*>/.test(safeText) ? safeText : safeText.replace(/\n/g,'<br>');
+  const logo = "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VmbarzXKUSaCmJ2d8UC/PPOUj794+AdymtAbDQ9onVfL8bYVV174b3HNeN77w9rvi/MKLjOld14YySgmJmZmm+65cc4lM/btW98erbOzXXst8ox+bIGrhTFDoNnQzPNxOlxJy4AP0e70aJW7ELP6Rc9TUsNPCHONtc5FBUV/wtnOvbbyAdVgeCLVuMEFHdkmEkFR54eoTQitCb3gFGu090V+OLL+UZnXDU0zpr3EBTKFE0U0GvVvFRb3H3Owdu3vqHlHTiP79j1VD45u5moafp+/cMd3Rx8icVK9/48tR+qrpg8s7He1oBe+JokhphkNW4eWFI4+VPv8I9EyeEN4XF5mRI3WN54x47rdJAGs1spDBo1zAdfC5cmcfHz9xEdNEmH7z+giBPD7iSshNMSSJfPe53UcOzGSSzzbudeED138T7nWurItGFJfSTUgEFCPR44FgdSnBU4kzc1VDXUN6+eWVxQOy8pM/zWYTO/BFxjVXASHYbteEHZAZOz3JSB0jjZUXbl79+P7SB/B6Wp9CrQftmPZTxYUFy5MyKT4+tun3r7ltvnn9MvJvMqUbtoA7xNtwqyoNwjf0jlmgwcPvKiuYcMl/9z5yPckRsaMWXqG1yeOZbXD+79utU5KSBubPn263yP6mI5un9c3Ytv7P5xJksSepgMXixrmoz5NeJEkSOAzYE807ejwnH/55b+NOS9LSa+tK0QdykHj2eIkfuolr1K2B2tEWxljlT6flJXKSDb/+McfaBkJmuD26BVXPJj39VfflWblZA1oO+Esdrs9nTODdbwg5Q2wHBM9voOedt/RHxqfa6J+huYkGZc6zvcefGaqc6o4wp5rpUZz82ZHWfHNt7W1Oc9Sa5cgpKcTuISLTQUvdmqyvDFnzovmjz/+cKhBpy9xOtynPi8QTJ50U9oPnF76zmwe0FRdbe2oT2Bev16fZkg3GR9htRv0hoTMlBC5eTkvudpdzICc1+dKmubjESWvyWRkap2C5EsstBpkQFHOmpPNjjpWe2OjQzXBM90ovCpzvGo0TPb7v015nk8ICLdXhcLt8KNf0Gx/qSq8nS5jLE4ViFAVuXxynmXOfJlIG1hjEQT58dFrmo8cyOXRaBc30FwfP/HRPIiwZYjBRraHpCT3I9J8EARh04tml0QrGHa+lhWh9S4CSYaySrTLTwSbQEQbfc0TsU/l+SAIkhi9ZnZRci2zp3KdpTXCp1dQlFMsWuybevW4EATpfXp1IXu6kCC7lRYWk1fQNbYIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgsTF/wE3Qs+q6cuh+QAAAABJRU5ErkJggg==";
+  const icon = "iVBORw0KGgoAAAANSUhEUgAAAMgAAADICAYAAACtWK6eAAAgAElEQVR4Xux9BXhU19b2Oy7xhODuTile3K1YCxR3C+4S3D24u0OLtMWLl+IQXEORQoLFk3H7n7XPnMhkZiIE2vv9894nlzQzZ58ta6299rItsFgsFrjgggt2IXAxiAsuOIaLQVxwwQlcDOKCC07gYhAXXHACF4O44IITuBjEBRecwMUgLrjgBC4GccEFJ3AxiAsuOIGLQVxwwQlcDOKCC07gYhAXXHACF4O44IITuBjEBRecwMUgLrjgBC4GccEFJ3AxiAsuOIGLQVxwwQlcDOKCC07gYhAXXHACF4O44IITuBjEBRecwMUgLrjgBOlmEPq6QCBI+G8XXPhfQnrpN90M4oIL/z8hTQwSH69GbFw8oqLiIBIJ4eXlAW8vdygU8oTvuODCfwZE0Uk2CZPZhNhYFaKj4xCv0sDdTQkvLzd4ebpDJBIlfM8enDJIbJwKZ88F48Qf1/HmzTt8ilRDLBIgi687ChfOi5q1yqHyt0WRPZtfihdRq+nYyVxwIcNwRGvRMXF4+TIUJ0/dwcNHzxD6LgJx8Xp4ukuRI7svKlcqieZNq6Fggdx2nyc4ZJBXr99h2rx9uPTXLcTEqSAQCmCxcEwgEJiYLufm4YYiuXOgeo3SqFWjJAoXzIOs/r6QSsV29DwLLBaBw4644EJa4egcYTKbEROjQljYB1y9+Rjn/7yPx49e4c37SABmCAQiWCCEAGbAYoRAIkG5YnkwduRPqFWzAiTilLuJXQYJDfuEISPW4dSVO/D1kAC0O1gsbOciUOfYYyYzTEYTdHoB3OVC5MuTDVWrFkO5UoVQtGge5MyRFT4+7pBKxCl2GBdc+DxYoNcbodboEPYuEm/fvsODh89x4ebfePrwBaJjtIDIDKlIAIFIbBXwHA0z1iIaNlsAow65snph7qwA1KlVkW88ASkYRKc3YMGSPVi6+jDc3aXEaxwz2AExMeNkC8dDOq0JarUBEqEZCqUSJUvmRukiOZEnb24UKZoHeXL6IUd2PygVMshkMnaesYuEUbjgAgedTg+9Xo+IyDiEvY9ASMg7vHz5Gv+8+YBLN98gOuIjjGYLRFIJ3JRiEO1bQEzhmH4JRIMmnQblShfGyqBhKJA/Z8JnhBQM8ujx3+g9eAlev/0IsUQCM70pjRAKBeyMQrRNndWodYDRADPEkLsrkdPfG4Vye8Pbzw9FiuZGySI54Ofng+zZfOHh4QapRAK5XMbasQe+q/a2Vxf++0jL+pGA1uv00Gh1+PAxEuER0Xj/PgLBt98iPPw9wt5F4eX7aISHx0Fk0TFJKlPKIZNyGgrRnclEv6WDbkUCGPUGzJjQFb26NYdAIEw4CiRjEPp1y/YTGD9jO+QKYQrmIMIloW+0dsAJY7IXiIRCCIVMO4PeYIbJYILQoocZIlgEYijEYri7yeDrJYdc4YEChXPi27K5kIMYxtOL/evj4wWZTMJ2HbFYxCbX3gRzw6DPuH9d+HfA0QSdEejf5OtAa0Q/RFdanYHtCqp4Dd5/jEB4eCRiYmLx4Nk7PHj0DrHhHxETp0VsvBZqrQF6owlSsQFmOgeLJJDKhBCLhKw9k4lr0xH4vhAt0q9GU/LvisVCxMeo0apZVSyeN5BZaHkkMAj9v8FgwOx527F60xF4eLsxouZBX6I+mLQGCEWAVCIESLeznkecdZBAnUxK3BaT2UrUbCOEyWyBWguIYYRUZIFILIdEooC7nweKFsyCkoWzMxVNqfRAFn9f5M+bhe06tOMoFFJ2zuE438UcXxq0bM6m2WzhzqbEBBqNDhqNFqHvoxAWFg5VXCzCw6Pw9+twPH7xAaGvoqDXq2A0aGA0GWGwSCGRChkN0EvoUE1UIhQJuXOEmWMyjmodg9GaECAl3mQ0w2I2wWQkfUsIoVTEPuNBgl+tMaFooRzYu2k88ubJlvBZMgYhHW/mnM3YsO043L08oTOwrQIioQAxcQa0aFQGNaqVwblzd/Hg0St8jFVBYDLCIpBAqRSzQRiN5lSZhUfiJHPWLfqhHUooEMBMksFogd5E0sYEoUEPkdAAC+SQu7shh78bfLzckcXPG3lyesPH2xPuHr4oUtQfubL7ws1NyRjIw0MBsUgMIYkPO+CG77Ku2QPNjSOBwwlFM1OFYmLioVZrEBUdh2cvP+JDaATi4qLx7kMM3n+IRlR0LMIiVYiJUkFgVHOClhhBLoZUKoREJIBIxL2HtBNaeytVWt/F/kkV1FexmFPx1VoTzHoD66eXmxI5svmgXp1v4OYuxuLlR6DwkCTsJPScRm9G3pze2L91EgoWyGVt0ZZBDAbMmbcdazYdhru3B/Q8g4gEiI/To3mzylg5fxDMZhOePH2FS1cf4e7d57j/+C3ehEVCYNZCJCV1SczOItSmIZXtLzVQ54m2iUnph7qrM5ih1ZjYLgSBGQKLkX3XLFDAx0uGLB4yuLkr4e3lCW9vH+QpkA1lSuZAvly063jA398XHu5KZlnj1j+RQajPDmji/zxsx85Ig4SVyczUoU/h0YiJiUFkVCzuPgnFs5D3iP4QgYjoGKjiVYiN0+BTvB46tQYikDAjVZrOBiJIZEIo5CJOUFks7KxAdEHv4Cgw4+DPvlq9GXqNlt4KL19vFM6bFSWLF0S9OmVQqmQB5MyZFSdOXUHfgUFw81QyOuKf53aQ7Ni7aYLjHYS2uIWLf0bQqoPw8JHDkKQBMqmVKFMcv6wfiSx+XuzvJpOJORPJknDn7guEhLzEX7de4HlIKAxaNeNQqVwGuVzIpAYRIilUvGpqfXOaJ4i+Ro/SIjLJZm2Kdhz6xWyywEDnHHDqGy2AwQhYRCIoRQJ4KISQyj1RsFA2FC6YDcWL5EWhgjng758FuXNlgUIuhUQitr7l/xdm4WeVA62pwWBEeEQswt59xPsPEbj/8BX+fvke95+8gzYmAhqdHjEaAcwCI8TEBrTrM+ElZFqEWCJii8QRP2datZDrwbrQyd/oGMmZNeHXZKDvaDQWiMwm+GbxwXdVCuGbkvlRplwRFC6QC/7+3pBJpey71MSW7UcwbvJWuHvJYTBa6Zs2gFgDKn1TEFvWjkbOHFnY3wnJDum0Za5YewTT5u+Cl6c42RYkMJuQM2tOHNoXiBzZs1g3v8SBUjMkZaKi45kf5cWLN3j1TxjO//k33oWFIk6th0pthEFghkRghlhohskiYsRLhy3apWiw1C6TLEy6WBtPB1hfU8w+abK0C3EWjnidGQatBVKhERIJ4OmfFVVK50aB/DlQvGgBlCyZD/nzZmMqGmPE/+PQanWIiIrFg8f/IOTpSzz/+y0ePH6Lp89CYTBqoDOQL0wAN6UQMgkRvgCMtuzMDccUCf+ZZhCD0RmDDJj0PLVjNJKabeZow45lk5P8BlT+phCG9GuJokXywt/fB25KciEk+t2oPXraDAuClu3GnEWH4OUrg4HOJEQXYgHio3VoUr88VgQNga+Pp/VJGwYh7Dt4DsMmboDYeiZgjQsAscCMbN6eOLBvJnLlStyCGJjNmWsmKUEZjCbExakQGxOHN2GfEBr2EU+fv8Pjh28RHxuBd+FqfIjVQKPWQmA0QiwkDz31WAqZQgwJWSmsbdEhnqwVnwuegeiHVDbafXQ6I9QqPQQwAQIJCuT1R9mS+VC5cklUr1aChSIorXFnNF3/q0zDrzSN3Wg04uOnSFwPDsGFi/fxPOQlgp+EQRcXR99g8+DlLWG/kybLnwtsyCXDIKKn+SdqoRY1GhNMBj2EMDJLlcEshEwhg6+bEiaLAfE6Wp/kkEpFiI+KweB+LTB+bA/mJiBwfUwpKE0mM6bPXo/l607D21eWsAFIJEKoouPQvWN9zJjaHwqFzPpEMhWLW/g//7qFngOXI16rh5RJC+6L5PzzUcqxd9c0FC2Sn/tjBqA3GNmBjiwb7z9E4i15QUMj8Ob1R0RFhiM2Ng5/h8Xgn7fRMKhj2fSZLUKYhWIolZIUg+aRSLRch9OzjiSJmJRiuxegVethMVMoghy5s3qhfJniaN+uKsqXKw5fX09OpfsfBVmV6Px4+vwtnD4djKevPyFeFQ+JAJDIZRCJKRQjYwIpcVo49coR6BOdxsB8ZAKBGRahAr6+3iia3xs5snrAw8MH2bL5I3/BrMiZ3QerNx7DHxduQymXJLRL/y9nDBKB8SM6YOiQThAKOTeAI8TEqjB0zAoc+SMY7m4SNkYC+VCI0YYPaoMxI7taz6ZcO8nOIPS3m8GP0bP/UnyIjIFcIUo4YIsEFshFEmxeNwrVq5Vjf8tM6PR6GPRG9u+n8Fh8/BQDVVw8Qt99Yp7Tx0/+wblrzyARpdzCqd80WImA04dNZtKPk2zL1u/Tc84WjgcxDP2QRQ5mE/Q6CxQSASpVLIpO7eujRvVy8M/izSaRn7f/OmLj1Ai+/QSHfruEoydvIUalhkwKCIQiCMXkIOAO46lND42VEY91zCRWaE5JJSa1mSbbYKLP7VsNGQRC1KlaAt+WK4y8uf3h7e0NL293xgwe7gqIJWLIZRJG8BqtFr36L8PpizehUEqTGXyIQeKiojBhZAcMGdyRGQCcMQidlX/qugBvPoSycfO0QC6LmGgtJo3uhKGDWkEo4I03dlSsJ89eofeAJXj+zzvI5ImedBquxSjE8sV90aZF7UwjDHq9s0HRuYjedefuU7TvtgAm6ECCje81PWo0WODj6wkPiQh6nQqxKiNi9WZY9HqIRBbrIZ4OkGLI5JxuamKLyp13nIH6RnxG55e4WAPo/Pld1VLo3L4O6tT+lpmX/8vQ6nS4eu0x9u0/h2N/3IBGq4HSXcExhFVgOGMKdjYQWIUGaQBGM4w6shqSb8HC5tFkEUMhEcPHQwiFTAaBxA0fo6KZVZR25qRrRc/IRWKsWDIQTRpUYwzlbP3Jk967fxCu33kMiTw5g5Dkj4uKw6SxnTFowA+pMsjTZy/RocsMxGq00Js5JyP7OllbzUIsntUbnX6sw7G9IwZ59z4cAwYtxvW7zyCRyxM6RN/Xqi2YP6MTenVrkSphfw4Se2R9t0CA8IgYtO0yFw+fv4JClrizkRc0JkqDn9pUx7CBrZmz8/3HKDwJeY9/Xn5ERCQXrkC5AG/DVYiLj4PQZIDRIoWQefJFkIiFzBxNOqozYiFTIs1EfKwWvl4KVKtUGgH9m6H8N8Uhk3L6738FRpMJT568wroNJ3Hh0m2EfoiChxcXxpPUAWwP9B2aE7I5qtQm6MgPZaEzgBkSpQdy+rnB19sdPj7ebCf19vVDqZLZUSifP7y8PJnfY/S4dXj66hMU7hJmXSQwYWM2wsddjo1rx6BihdIJUjwpUSbF29AP6NVvIR49fw2hJDmDSMUCxEQbMHtyN/Tr3Yy174wmL12+jV79F0FvMcNg5r5HYzVojcjm64nN60bg2/Ilrd/mkIJB4uNVGDJ8CU6evwWJwo0RDYGkKDlfAno1weSxXZnn+mtCpzNgyuxNWL/1NLy9E010ZIGIi9Kjbo0S2LB6DHx9PNjfaVjk0VWptCzhS6VS4/nrj3j96j0iw8Px6Ok7vHr7Aa9ff4JWHQ+LSAqFUsIIg5qmWbGZmgQQUxoNZhh0euTM6oWOHRqie6fGyJbVx8rUjhfpayAyMhb7f7uAbdtP4MmLD8yJK5aKmcpob0hEU0RYpJ6ShNfoTTBptRAKxPDL4odC+f1Qomgu5Mnlj6zZs6JE0Zzw8fHknLHuCmYapygGHn+/eIMefeYxBpG7JWcQMQzw81Bgy8ZAlCldzPqEY1BbvfrNxcu3nwBxIoNQn7k1EmHZ3H5o27pGqukU67ceweQ5u0GyjJ8HjkH0KJo/J7ZsGMMMMkmRgkHI5Ddq/Eb88vt5KNykCQc1shXr1XrUq1kBq5cNgrcXR4hfAzyx7tl3EsPHrYG3nyc0Os6JSRPCBLtJiv27xqNCeW7SmSShrttMmMViZoSiUmtZQs2LF2H4558wXLwegus3QhATFQGVyQKFWMBUMoFIYPewSs3T5JKzkqxgjWuXxfAh7fBNuaIOvfZfGpQ59+DB31i64gAOn7wDuUIAEe22JvvMTmtKc2QyGrnQHxPg4aZEwcJ5UL92cRQtlBcFCuRiyUXu7krIpHxEgn0qpHfQvF+8fA+9hyxj5x7ylCcStQAiiwFZvT2xZeN4lCpZ2PqkHVjX7mbwI/QJWISIGBUEYnFCWzT3Oo0J2fzcsXntSFT8NrnktwX5d0ZO3ITtP5+Cu0KaMB+MQTRafFepJNauHAn/LCTkEpGCQWjHWLHuIOYG7YdMxjv4uFgYs06DimUKY92asciW1Y/74CuAm3jg8tUH6NpnEfQmA9vS+K7LJELER6uwaskg/NC6foJEtAX39eSqIcd8Zmi1Bmb2fPTkBU6fv4vr157gxT+fYDIboHCXse/ZYxQCHfJ0Ki1y5siGQf1aoX3bWswsTM/Y6UamgifKuHg19v58Hhu3HcOb0PeQKcmM6YAxrJ5nVbyezUfWLF4oXjAvWnxfEWVLF0LePDng6eXOmWGTzRXXlr25JfCf7z1wAUPGroWHuyjB10Cg5wRmI/Jk88e2TeNQuFCehM9swc/dtl2nMW7qFoilHA3ww6Ex6DV6FC2QA1s3jE0h+W0RGRWD/oOW4eK1e5AqZAmMRuHumng12n5fC0sXD4REQpbSxPGlYBDCsRMXMXDYGlhEFpis0oI6ZNLrUSCXP9avGc1c+F8bFP7cu/8CXAn+G+5eUi74jAYpFEClNqBVi++wav5AyOWc5zQt4EefdM21Wj3ehr5nqZqnz97AX9dDIBabIFdKHRIdqV2aeAM7iwzq0xj9+rSGj7dHAgF/EVA3BEDYu3CsXncQO/aeh1ZvgsKN4oxSnjOoG6RCkolVrzOgRNG8qFe7HBo3rIgSxfOzWgN8T7khpq/vNFb6Wb/xV0yetRVevl6sPzyIhiisvHSRgtixhYSsb8JntuDbmr9wLxat2g8PbyVnVbSC7SBqHaqUL4p1q0Yy57UzvHz1Fr37z8ezl+8glCYyCB0dNCoTxgz9EaOHt2XtJt0h7TLI1ev30bP/Yqh1WlDgBoHmiRoVi6VYsSAALZtWTVyhrwQKjJs8dQO27jkNDx/3hFAYtohmE7L7+2P/zkDky5sjU3pEZ5iPH6Nw7vwd7Nx7FtduhUDpRoFhiUaCpCCVRWAxQ2A0oV2b2hg9oiMjgi/FJNTuvYcvsHDJPly4eAdCqRgWZq5N3jd6NTdHZhZSUbJYDqazN21cFfnz50gIxciM9aQMv4nT1mP7nrPw9HFLWCMC9UGjNaB+jYrYtn4Y5LJEh5w9qNQaTJi4DnsOnYebp3syBiHrmDZejdbNvsOShYOhVCoSPrOHsxduIWDoSsRrNBBKOBMvTYmYXAMWYP2q4ahXp0rC93nYZRDKR+/YdSZCP0XAwuzF3N+pU7ExOswY3xVDBrb87MlMD/hubtl+DIHTtkKmlDITIw+J0AKhSYD1a4ajfp3KCX//LCShl3fvI/HHqatYveEIXoZFQCETwiJImTNDRMByZjQ6NG1UERPGdkXB/LkynUmIec+eu4MR03bg/Zu3cHOXMl+Q7WoyiUj5FwYTcvp5olP72vixdR3ky5cD4i+QBh0aFo723efg2cswFpyYdH6oLxRuNDKgJcaP6sjyhZyB4sD6BizC1eAQKD1kyVRcpjXE6zGod0tMmdgJQgepDhzdWLB81a+YuWAXi8FKDKECRBYzfD08sGMLnYkKWZ9KhF0GiYmNx49d5+HRkxCIxOIE4iQ1QhWjQvcODTFzWu9kLvmvhdt3nqDPoCUI+xAFSVI/DUkntQEDezfFpPFdIRFnvpWNfDKPnrzElh0ncPjIJagMJpZ1yVv6koJMkBTV2qBeJUwL7M5SOTOLSciEe/jIFUydvRuh4eHwcJcmk648yCtu0BkgFwlQtca3GNSnGSp/UwwSKXmkOQLJbPz51x106LEAMqUg2fmDQHFcBrUea1cOQ7PGZHWyPx98365ce4he/ZcgVh0PkTSR2dgjZguEFiGWLR6A1s1rWp+0D7VGi8BJ67Br/zm4eSXuRPRug9GIkkUL45dtY+HnywXhJoVdBqG0x2nzdmDD5mPw8Ew0qRKDqGNVaFSnHFYsHfmvOMkiIqMRMHgJLl57AIlSwby/BJJOBq0OFcoUxsa1o5E9m3OdNCPgF44OxL/9/ifmrPgdH9+Fwz1JbkFSSMRkITGgQd3ymDapB/LnzeGQKNIKssYcOHQOM+buRJRKy7zOjhg0Ps6AXHn8MbhXE7RuWSuBAD63D/bAU9GBQ39gyMgV8PDxhkrHn2C5eSOHvUwox/7dE1G6VCGHTEr9o//t3HUSIyesg7efR7KzDD3DSX43bN04DmXLFE34zB7ehn5ErwELEHz/Ndw8Ei2ztAvFxhnQs1tDzJvS067rwi6DEA4cOoXBI1ayvBBKJiGwg5HWyBKStq8fg9Ilv/5BnaT47KB9WLn+V+ZJpdgpAk2ayWCBm0yGVUsHolH9yokUnYngmySivHbrCYKW/YwrV4lZZSyoz3Y6yVpEZsRWzb/D9Mm9mWMto90yGk049NsFTJm5BRqDAWYhmXCTv4/WiBx8Zr0edWt+g2GD26Fc2cJfRJ1KBms3fjl4AkNHroSHnw9UGlPCOEk9j4sxoEm9sli9bHiytNaUsECt0WPClHXYue88PL2VCUKaQMxNpukSBfNj9zbHFlVOEACnzgSjR/8giOXkG0tkZrmUNCIN1q8ahu+b1rQrNBwyyF+X76BD9wWQKsnzmvgVZlKN0bC4+WZNqloXO2XDXwI8YZERoRcZEfQ6ZmXjR0AWGsot7t+jKSZP7J7k8Jn54KUwndcWLd2DI8evAGIJTJaUgXokzYlJundujHGju7BkrfSC3zmmz9kJlU4Hs53zDzEHJblJIEKvzvUQ0L81K+rH9/Vr4MJfwejadwEkUnFCshy9m+KmIj7FYnoghYX8mKqv6MXLMLTvPhthnyKZpE86pTROCnPv1rEB5k/tZc3hSQkaN9XKWrv+AKbN2QUvP0/orDsRmw/KNlQosXf7BJQuVdAuLTtkkLehn9Cm0yz88+4js/PzX2OBXZHxmDjmJwwb/FOqBy17SP5K595Pe6DMtoChS3DxxhPIZMmdR6Rz582XA9vWjEbxIo7t7JkBnvAolGX12v3YvOM0KFjL3k7C1tBgwtCAHxHQrxXLpU8raNc8fPQKJk7bhDiNChZh4ph5MKuOxgyRQonAga3Qs3tDuCkVX5U5CNEx8Rg/bTN27zsHLy85xFIRy+vQqlSoVLYQViwdgUIFnfssCMdO/IU+A5dC4SFPyPzjQUJaG6/DmuVD0KJZLfY3RzQUGRWHbgMX4dq1J1BQOSDrvNHOHhOjR4tG32BF0HB4ebpZn0gOhwxCnubRgaux9+BleHnLEw42rOFoPVo2oeSS4fD0SL80/FzQINdv+RUTZ+yCp1di4guBJi86Wo3Fs/qgW+cmqUqqzwUndbj6xStW78eajb9BKJOnYBJiJDIBm81SLJzZCx3a8gvrYGV5BgRw8dpD9B+1FhEfP0EupzNHSuags07WrL4YN6Yjfvz+u4TciH8Db958xKZtR3Hw92t4/zEabu4K1KtVAkP6t8I35VIPL6HEu4kzN2Pr7tNwd5cxBuNB0yVgVT09cWj7BBQvlj9hDZKC/9ut24/RrttcWASmZHTCCfo4TBnXCUMGtnNIJ3YZhP5ECTIbNv6KSTO3wtsv0eFDLyVtVi5RYv8u2pocH7bsQa3W4mnIPwgLDWehHMWL5UG+vFlZaHNawL/rwcO/8VPX2YjXalloOz8MIhZVrB41qxXDhlVjEtKDvwZUKg2WrtyH9ZuPs50kqb5LYFJeZUCJIrmwaulglCqR0qzIgzGHQICHj1+g34jVePL8DdwV9pnDqNWjRNE8mDyhK2pUK+e4IN9XBPmsqIoJ5fx4ebkjd66s8PayL6Vt8feLt+jcYw5zM1AJnaRzmDQ4NWj+IFYOyh64ZyxYvf5XzJy3E26eioSdiOiHZshsEGLL2pFoUO9bhzutQwahL589H4w+g5bCYDYmC+2gRCptHLfFtfq+tvWp1EEe33UbD+DQ4Vt49/4TLEIpypXMi25dmqLDjzUgowSFNIJMd5Omrce23efg5Zu8RBEzsaoMWLdyCJo34UyAdsb+RUDxXQsW78HOfachlKa0btECG9QaNKlfGQvnBrAELEcgP8C4iWtx8sxtyEmSpmAOIcccRXJh5tReqFK5NMvP+FpjdQSeojLaj217/0AghZeIBSy1ISlIQ4iJVCFobn907dzYLlHziIqKRaeeC3Hn0VNm2ubVKzJ/a+I0qFahKNasGJUsB90WdhmEByXt9x6wEDfuvkpmHmOHJJUB7X6ozSIppWkI9aadY878bdi26ziMQjkUCs6/oo7XQqn0xppl/RnRpAe/HrmEfiNWQCkXJSMedhbRGlC3ehmsWDLUrn37S4IIe/L0TTh68jqkbonqKQ8y/8arTJgxoQP6dP/e7iGT5ito2V5s2HoUAimFuCRfJto59BoDihfOidnTeqEqMUcq4d5fArSGEREx+BQeyTLx/P392E6R0X6QgBkyehVOnrvJzmlJz1q0ria9ETmz+mLbxrEoWbyAU+3l5q1HLLw9WqWGRUjnaO7vJFhUsWr0794MUyd1g9SJMccpgzAHy+QN2PnLGbjbOFgsJiPy5cyOPduoTEp26xOOcffeM/QOWIQPETGsfirfFlmeNPEqtGlWHYsWDGIHy7Tiw8coBAxfiktXH0DurmAJ/gQ2YcyRJMbSBb3RpiUlwXwd8LtvyPN/MGTUKty49wru7slVI0Y8ZhNyZPHEqiXDUKliqYSFpufpUL5t5x+YNmcHBBIu5TjpMlFIi1ZtQk5/Hyye1xt1a1dgZ5WMEmVGQTFrJ/64jKDlxxH+KRRCoRhFS+XHoN7NUKdWhQwVLD93MRgBI1exG8cMYsoAACAASURBVAXINJ103EQrcTEqdPqhNubO7u+UVsjqNyfoZyxfewhKRWJ6LTf1FK0txYqgADRtRCFTjuGQQbiFBtZvOo6pc7ZBquCsMwT6O5XWkYrEWLNsKBrUdSz5+YXf//tFDA/cAIvJwCQB/1Ym7TU6lC1RgDn48uS2KQjhBORM2rDpOKbN3QGJnCsuwIOzaOlQ+dtiWLl4aLra/Vzwc3f2/B0MHL4Kan0cYGN54s4jWjSuUwlLFgWwXY6fKwrx7jVoGT58ioGM0p5TMBcd9mWYPakrunaumyFL4ueCmHjvL6cxa+5mxGlMEFu1iDiVHlm8ZFiyaDia1q9k/XbaQOeW6bO2YOOOP+BOwYnJ4ri4c4NRD8yf0QddOtZL+Mwewt59woAhS3A9+Cnbxfk55HYhPUoVyYctG8YiV86s1ifswyGD8Lj/IAR9BixC2Kcodp8Cv8j0IpIgAT2bYdLYrnbVBAJHLAIcP30dg0ethlanhTCJZGCETBldfl7YtGY4KqQS128LLuNsCe49fQFpktATArVtNBgROKIdBvRt8+WdZTYgx962nccwd+FuGEiqWRIlPC04pfxKBALMmdYdP7VtwCwppJ6NHrcK5/66B4kypXpGV1iYDcDoIe3Qr09zyNNxbstMnD1/C2MD1yIiJhZmYWK4DVmHVGod6tQoj/XLhrJbnFIDLxju3HuGnv0X4mNkPESS5H4ejk70KFeiIDasGelQ4PH09vuRSxg6dh2MdA+ItT40gQtJMqFvtyaYNqlzqta+VBmEdMK+AUvw57X7kCkSM7pYApVKi8rfFMW61aNSDTd+8vQl+vRfgFdh4RBKk6ROMquYAHqtETMndUWv7qmnTiYF7SJbt5/AlFnbWHKQ7VmESqP6eHhgw5pRqFShRMIEfi1QXNuICetw+OQ1KGwZmJKx9Abkyp4TuzaNRt48WTEz6Bds2PQbFIqUB3xSMfRqDfp0a8ocjkrlv3EFngXBd54jYNhqvHkXComMmCOxnzS3ZoMehfPlxJb1lKeRWMbTEYgCqVjd/KCdWLLqd3j7KlOkBdPuodOYMXZ4awwf3M6p+kYuisBJ67HrwHkWJp80opjCXaQCEbZtGI1qVVMvPpIqg9DHy9ccxOzFP1urnHB/JxojvU4ulWDVooFo2tC5LvfhIxeZeeNuCCsvk5RQqC5RXFQ8enZqgBnT+kKRDicagfJEOnVbiCcv/obYZsGYWTBah1ZNKmDhnP4pMsa+JBIlYwj6DVqCD+GRLDwk6ZQze3yUClPHd0KpUgUwfOw6RMbEJdtlCSyxR6VD3RqlsXTBIK54n5MD6pfC3QcvEDBqA54+fwF3ZUqzMzGIxWhAgdyUyDQmVacgL7BIU+nUYwELTKQogaRjpzEKzGZk8fbA9o3jULqUk0xEkO/jKdp2ngezQEf3SiW0RWoteeCrVymBzStHJSsQ5wipMggh+PZjdOy+ADqz1hpKwf2dEXa0Cv26N8GUwB5OvcN6vQGjAzdi96Fz7NBku31S+mT+3Nmwa/NYFC6UutRJChrC8ZNXMGT0ChgoBMNm0cRCAcx6Iwb1/x7DBrdPNQ8hM0FzRT6lXXtPYtTkrXBTJt/leEGT1c8L3p5ueP7qXcJnPDhV0cRu7Fq+YAC+q1zyX2AOC+4+eomhgVtxO/gJfLySCyIebC3VOjStXx7LFg9Lk4pFxqBZc7di046zLIedP1DzoJ0zJkaDgN5UD6G704Q42omCVuzD/KD98PFzS+aFJxNxbJQKQfP6o0vHxswknhBN6QBpYhAKH+g/eBnOXLwLN4/EiWF6oZ6sMf7Yu20sijoI7aA3ECH8fOgcRgWu51SL5DuotfMarFw8EO3b1kuXGkTtx8WrMGnGZuw5cB7uHopk2yqByvbIBCJMmdANHX+q73SL/hL4FB6DgWNW4OKfwVC42Qbfcem8ZqMZElliegEPsdACsUCIaRO6o1MH7qzydUFq1d8YMn4LHj59Di83cQoiJtCaUS1MgVmCdSsHoXEazfanz9/EoNGroVaprY7BxLZpbug/PZQy7N44HuW/KeZUOLx4+Rbd+87D83/CWY1gvi0mZPQm5M/ph+2bJqBwodxcgKWDdnikiUHoKzt2H8fI8Rvh5ZtYFZvAOW7UWL5oADq2b+iUsOkc0rn7HETExbNMxaSvJlUoLk6Llo0rYvnCofBIRwgLP2HkXR80fClCXr+HOOk5xzpBdGeFu6c3Fs3qheYNKn51Qjt74QYGDVuFGLUO4iTFDAjUf6a/2xAe1S2Oj9WhV5e6mDyhR4YCHT8HtEZXrz/C8HHb8OTVa3iTydoBczADgs6AcSM7oE/PFmnyj0VExmDMhDU4duYmlytusyuRlhIfq0Kfbk0wZUIPp+o3WdY2bTuMyTN2Q+aWaHUlkCpL2g4rUzqGqvI4rtKZFKkyCH1Mg3/0+BV+6DjHarJMXFwW2hFvQL0aJbF2+Uineh3dUT1u8lrsOXQFHu4pt2iaYJEZ2L5xLKpX+ybh3WkFTdCW3ScxcdZOdgELtZ50dMQkFDLj4eWDpbN6olmDil81LCNepcaUaZux5+AFSBVcBqAzUH+p2naubNmwY9Nop0UOvgQoL+jkH1cxfc4uvHofyZXrtKNWEShGjwr19e7eFKOGd4JbKgYEWlv62bL9JMZP2wY3dxFXzM9mvcgSmDWLNzYuH4aK35ZI+MweXr4KRZ+AxXjy91vma+NplGiIksyyZfHE2qChzKmaVqTKIDwo13gyhXbsOZMsH5xA1QaFJrBDWc3q5Z1ugb8dvoB+Q1aw1EfbKE0Ka9aq9OjwQw3MmdEPbm6OHUGOQBfGT52xGft/Ow+xQpFMlSGQeqdSGeGf1R9LZ3dDwzoZc2hlFNdvPkSfgOWIjIuBwOYgnhRs/ixcNcNFs3qjbZu66RIWnwu6A2TX3j+wftMRxKg0EFAov61ebAWX86JHmxbVMSWwO7L6p80Q8vTZK/QbvAQhL99DnCQqmweZZKnUVEDfZhg3qrMTkzZXR3j9Jkqr3ceyD5O2xASjRof2rWpi3oy+rIRRWpFmBiH8dvQvDB27mt18S+CfJMLWqQ34qU0dzJvd2+42yO8GlN3Vs988PHj6FlLycCY7sHIeZoVciZWLB6BRvbTpsLZ4/c97jAlcjb+uPoaUyt/YMgn1V2eCv58vAkf8iHY/1GLlXpwxdmZBq9Nj2szN2LLrDBSUKutIIlN6c6wGbb6vjgWz+37xOmTc+rAABISEvMbMuQfx56WbgNhMakIK1YcHhc1Q3FvTRhUwZUJ35MubPU07P91GNXLsRhw/cxlyN0oZTt4+PW8xGpEne1ZsWjsCJUs4T86jvJx+g4Jw5+FLVqaJpyvqBkX/yqVSLF88EE3qpyzM4AzpYhBWlnRIEK4FP2U3iyZ2QgCz0Yjsfr7YuGYEypeznwJJb6IQgBVr9mP2wj0pdiICEa9eq0e96mURtGAQuwE3PeAX59btJ8yL/eKfD8nKX/Kg99CZRCEWYuzwduj4U2N27vmSTMK3fe36fXTpNZ/dwUQ3LdmC9U1vRBZvT6xdMRTVqpT5Kv0ia9KZszcRtPxn3H/2jvliqMOOSISYg6IBmjSohOmTeyJv7mxp6iepwtt3n0Dg1J2QyMmBmvBRAljb8QZMn9gJfXq2YnNiD/Q+uvFs09bDmDJ7O+RuymQlj5i/Tq1HjUrlsHHdsHQLmnQxCA1s8dKDWLxqP6QJt0ZxYGeROD0G9vwekwM7MYnsCHfuPUfPwYvZ9b5Joyx50OTExRgxcXQ7DA5ozTzgqUmkZLDmNB/8/QpGTN4GvT6OGRNs9WeadAqZoVqjbdvURt9ezVGsSD72WVqkYEZBOe0jx6/CgcNX4eWVUg1kIewaA7p3bIwpk7o6US0yBzT/VOJzy46T2P/7JWg0amu8nH3SoHkhq6BFb0SjBpUxeXwXFo+X2pzxzHP12gMMH7OKZQtS8pctCbLx6/T4pmQxbFgz3Gm0LYHC43sMWIhnLz9AlqRuM4ErnmHCptXD0KQRFctOH9LFIATSG7v3XoTQT+Fs6+UfJ2IjD2rOnNmxaeVIlClVwPpESpBPZMmKvVi27ghEzBSX8BEDJ0HNyOKjxKqlQ1mOQ2qTbw90SczeXy9i8owd0Os1ENthEmqSVER1vAGli+fDiMGtUL9uRealzsg70wJq99cjF9F/5Eq4KaQpTL4kefw8fLFr20iWM8IT1pcApaSeOR+MoKV7cfvBS+bEZWtpZ2cj0Gd0FQbV/urQvi6GDmyXjrReC0JehGHw2HW4e+cJZDYqNoGjIwt8PGVYtWQIatX4NuEze6BwpxkL9mDLtiNMVUuaFEUWQPLJ1K3xLVYvGwJv79R9MrZIN4MQcc+cuw3rtpyE0iO5Dk0muZhoNSaOao9hg9o5jX168uwVu0zx5Zv37ABo2w2SIhSGUbZ4ASxZOBDFiubLEKFQtfe9v1xA4Ow90GrioSQbvh0mIacRqXbe7gq0bFWDxeoUKpTni12W8yb0I3oMWIwHD1+yhU0ay0Rm3aH9W2HcqA4OY9wyC89C/sHgEctw/zHp7px/xhFFkCAxmMwQmy0YOqAl+vRqyYovpHVdaOecPmcbNu46B28v+6WKWCpAjA5D+rdk45fJSBNJ2Tj/zhs3H6J7/yDEa9SsaB7fd/qM+quJB7asGYpmTaqkuZ9JkS4G4V9A0aZde82DWm+kS8sSQNxPZjn/rFnwy+axKFo4b8JntmAm2e1HMXH6TsjdE+9DTApiEiqTWbNaeSxd0Be5UtlqHYFVAzl6GdPm7kFUeDgzDth7H/Wf0mLjtUaUKZQDPbs2Y9UHs2b1TvhOZoDmkS5MXbFyL4JW/AKJmxvMLJCRDqY6+Hj4YO/2QFYO9EuCahKv2HAEsxbuTpFTkxScSgWWf+Lm4YtJo3/AT23rpEv1o5vFNm/9HfMW7yVJavddTHPQ6VCtYjEsWZh6BHZsXDxGjlmPw39csQqZxDYpKUoVp0bbFjWxYFY/eDrIOU8N6WIQHnSN16TpG7B551n4+CUPLKOwAEqCCujZEoHjOjp1FrHiC0NW4NKNu+zQb0+i0KRFxRnRpW1tzAzsxO5FzwhYmZ6bDzF/0W4E33nKTMAktG1VCSZ52O5FV8UBjeuWRs8eTfBdlTKp2vbTCyqMMX/RFhw+FYzYOBPbgfNkd8f4kR3RplW9L+ujsXC3ek2dtQsbtx+Du1dKax+BzQURnkGH6lVKYdiQdqhcoSTE5LRKI0gY/rz/DGbM3Qa1wZQsXIkHMSHVOFNK3LFuZX/Uq10x4TP7sODX3//E2EmboDYY2G1ifJtM1TObIFMqsXLRYDSpSym16d89CBliEML5i8HoN2wpNOy2IU4qEqgTdMeEp8ITOzaNQIXyxZ12jrbIgGHL8O5THEQ23mUCe84M6HVApw61MXFUh4zlmVOzAu4MtXTFLzhw+CbzZtP93bYqF4Hp2kK6NEgLT29vtG5cEZ07NkCpEgUz1W/y8VMUzly4jQf338LHR4naNUvhm7JFMk21Srq8tmcEOqPNXbwfy9YehLt7SqlOwo7uQKF7Obr8UBMD+7Vmd4g7W09b0C519Ph1TJi6GdHx5PtJ6e8gkGpFhSdGDu6AwQGOvfD8u1++foeBI5czg49Unnz3oHGS5tGjU11MC+yRat1eZ8gwg5A+OXHaRuw9cB5KdxvTmjV2v13LWpg7q4/TzC9Sf9ZuPc4OWgopZc+lNCvShAgsXF3Xju3rYPKYDsiWRmdUUlCrtK4U3rB15yls2X4c0XGxENHNRQ4uzKFrH0wGIyxGM/y8fdC3ZwO0+L4G8ufNzhaCnrElvIyAiJXeRTVmM4qkhEvz+vrNe9wKfoTY6GiIJVIULVoAFcqXsOr1HK5cf4iBw5YhMjramu/DTRL5DjQaA8oUzYX+/VqjWaMqcGeOW34WUwfNzYVLdxEwdDUi42LZ9Xe25nYCC+NXafDTj7UwfUofeLg7UYcsdA2cEYuW7sayNYehdKeqNom0R2tBV5Zn8fHFlrUjUK5skYTPMoIMMwjh4uU7CBi+koVniyRitnMQqJNmkwmeCjlzzjSsV9mp1KHbR2fM2Yp9B85CoqBSp/a7RKQTHW9Ci2ZVMXPcTyhYIGfCZ+kFGRtI5Qpauh8XqWq7FBCSbmxHzaDxkBneYjZDo9ajeMlCGNm/GerVrZimaNUvjiQ0S0aJJ8/f4uSp6/jl98t49fw1u7GXsm7o3vdRQ35Az+7fQ2G91pruEdyy4ziWrfwFEdEaRoFmswA+ngq0aVMTfbo2YSEu6RICbPksuHDlAQZP2ISwt+/shsYTSI2Mj9OhWoUiWBk0GPnzUQ1j+7TCCyNKy+07cAmMFhOM7Cq1xHZZWm60DjMndULf3i2dGorSgs9iEHIsTZu5Cdv3nmexRRTWzYMOSeREqlOjLJYvHOz0LgjCm7cfEDh5Lc79dR9iecoKHjzI8RMfZ0KtSsUxY0pnlClNEiL9UpyfbKq0sm3XSfy8/xzevIuBu4eURQrYUwPo+2RXp7AFpUzOSnv26dWEOUa/lifeESjO7cmTlzj42zWcvXwbIS/esdKalKTFzw2V66Tf584KQPuWNRK4ilJdL125j0OHrkOlioVC6YHvm1dA7Zrl2K7hiGAdgdQqWsfhgdvwNjQUHnYshwRm1DGY4OPjh2Xz+6JBLWsCk5OXkbN66OiVuHDlEeQ2aRNUBUWv0aF86WLYsHokcuYgmnPcVlrwWQxCuBX8GD36BVkTXZIfvkg6kKo1a1I39OjazGH0LL8Ajx6/wJjA9Qi+/xIypX1pTqCDI90uVKpILowf0wk1a5T/rEs0SYpevfYIW3b8gXMXbkJvAavYSExqb3aYI8tggVGvYz6Adu3ro0+nBsjO14j9vDVJFyhG7ur1ezhw6C9c/OsBwsJj2R18MgXVCuZKf9IQqEsUvqJRa9CmeXUsmTcwYRfhQWoe5VNQ2VCxyHoG4h9OI+hAfvLUTYyesg1hn8LhSTuHA2EjEpjZ1eKzp/VBm1Y1HNIHD2LkxUv3YsOWo0wdTBqFQO3RWOUSMVYHDUTjBs4T+NKKz2YQMt8tWb4Hi5b/ziwhtvqgkFXh9sT2TWNQprTjTDBeol+7+QjDxqzBq3/oGrHkh6+kICI1GwzwcvdgHvCuHRo4rTGVFtA1XcdOXsOSDUfx7lUou5BGJOayKG2niRiaJKDZSBX7zKhVuQQGDGiNmlXLsAM2z/RfEpRaumbdz1i9/ghUOmJqAbu5l+jG3g7I6mhp4tG0XnksXTIa7m4OdH06j1nHmB7Quef4yasYN3kHIuKiIJOL7Z45OOawQGQ2YuK4rujWuSnETq6r4GnjwJFLGDZhAwQmHbvWO+maUMAkOQW7dWiEKRO7ZZrF8bMZhECFhrv1DsKr0H9YiEJSoiZnDYWgtGtdDfNm9ktFZyeJx5V+mTx9G16+5pjE3nViBGY315uh0ZjRrlVlDBnYmvkORNZqfOlZYP77JAHpwvmdu09j34GL+BQVxSpASmQiu9GstHBk8dSo9JB7emJknybo0L5BmiNaMwpatl+P/IkR41ZAKpFCa+IMBs5WkzzLWo0GrZpWx9IFKXeQzwGZ/smUOz9oL2K1epYybI9JOeYwQ2QRYNjANujbq2Wa7pmhcJJBw5bi7uN/UgS5Eh3odUaUK5EPq5cOTTXNNz3IFAahJvZTtuDEDSyfWCBIvlAUtyO2CBA4pgt6dG3s1ExKz9Fh+MqNB5g+eycePv4bUreUGYI82IQzJ5YOBfLmQvduTdGxbU3nlhAnoLFQm6R23bsfgq07TuPE6ZtQa9WQKbjbiexNGfMXGE0QmU1oWL8ShgS0QdnShVlbXwJ05qC6W0fPXIdcljKezRakXolhgsVswoxpAej0Y51M6xv5syhYcOuOE9AYTbAI7DMHgYSJwGhE7x7NWbRFWhLA6N71CZM24/cTFyFTpoxdozZNRgGWzOuHH1rUYgyTWcgUBiFERMZi9ITVOH7qOmRuihQcTveK5M+TDWuXDGJpk87AuiQAbt95humzt+LmnRCWbeboTECgLVarMbJMsR9bVGELwO0mzvXa1BAbp8LFS3eweuMJXL35BO4KESzWGDTbvtA4KeVUozEiT46cmDm5AxrUr/hFbruKjolF156LEfzgcbLkoKQgBiBaoftCqBKmUirEgD6NMXDAT/D0yJgAsUXI87dYsPQXnPjjGoQSgd1r6QjEiyTIzDojenZtzO4toeQ6XiA5AiVtUUHw2UEHoWS1z5K3TVYrnUqD7h0bYHJgz0yv9JI5DEItCLhkoAHDVuFDRKTdqhx6tRZN6pXHovmD4Ofr3CPOTxxtreT9PnbqBgR0YX2SbEZbEIESMVCBaD+/rJgw4ns0a/pdppQeDXsXgeMnL2PVumN4+z4CCiVliTlwMtIFLyYjvBRiDBvcFh3bN870Kvi0gwQMWYXTf17n1NAkUpUsfURylE9hMFigkMhRv145dj9hlUqlM4WI6OqyS5fvYtqsvbjz+DW8PCUwUwx1yulIEBwWgwl9ejbFkIC21gt0rITjBIePX8L4iRsRo9FAYJOvTrt2fLwBVcoXwuolQ5E/X+Zc3poUmcMgVpAFZNHqQ1i+6hfI5ZIU/gwKxKM7qQN6/YAxI9ulqntSz0i4kLd5ybL92PzLeYgsRnY3IV9m1B5YgWi9AVKBALW+K4/ePRujapVSbHfh28wIiBlI5du68wR+P3IVMSod3FhR6ZR9YURhMbOaX107N8LAvq0y/Vzy29E/0X/waogkgEIpYeRGh2JVvI71NVc2b1SrVBqdOtZC+W+KfzaT8kKLkp1+OXgW69b/jveRMZDInJjlWXybia0FqdeDA9qycyjfljOQikth8SEvw5IVLSSw3dFihIfCDYvnBaBRw4qM31JrM73IVAYhEDGPnbASJ8/dg8wteXwP6zudMYxSrFrSGy2a1mADSsuYSNXZd/ACNmw8jNAP4ZDKk1vMbMEtDKBS6ZA7uw/a/lALHdvWRf78OTm1i0adhvcmBc9cFEVw5NhVbNp6HI+evuTGaef+dLaIlBSlM6N582qYNr5zqrkN6UFcHN1J8it27D2F8IhINiQ6iBctnI+lCLRoXhllyxRMiGRIC1E6AyW7PXn6CouX/opT528DIiOzmtkzXhBoDcjqIheJMHRgK3Tv2pydOdLSD8oQHDJyDW7de8J8bLYmfxE9bjRjzPAf0b9vmy+ixhIylUH4gV+58Qid+y2BQRsPgci2egeZZ40onC8rghYMZKEPaQUt0M3gx5i3cB/OX3sKT3eRQ52Xh4hK6BtM0OhMKFc0J3r1aI5mjas6LS6RFtBYSf1bs+437DhwiUlx0odt+8IzSXSsEXXrVcDiaV1QKA3VBtMK8g3cvvsM9+6GMMalezgqfFuMCQK+rObn7Jo8KNrhyLHLWLfxVzyjHHKpjKlytuPlwULjDSa4y6SYGtgFP7bhon/T0hcKBZo6ezt2/PwnfH1SCkJSrWJVBnzfsBKWzOmb4QDWtCBTGYQH2cM3bT2CeYt3wyxKXn6FwCw+Oi2qVSiFhfMC0qE7Ule5vPZ1W45i/4GziI7TQmwNu3Y0FCJSOiAadEbodQI0bVAOHTs1RO3vSkP5maZOkuJU/X7N+iOIiIiCmKqV2NnZiGAi4w2oU60cgmZ2R5HCmWeKJJB5miIZaHdMTTqnBySUHjx6gY2bj2HvoauQSi2cydvOnew8qFAfVTDM6pcVsyd3xPfNqjq1XCYFXfuwYu0BrFhzBCJpyvtB6CxLxacL5s2NDauGsTyhL4kvwiAEKjY3e/527Pr5PFe/1eY1LCxepUPTelUxf3bPVENRkoMsRXpcuBiMpat+w71HLyGVkf2Qyrs4Hg5t+USo8fFauHl6onOrqmjfti6L0E1P+LYt9Hojrly/j0VB+xB8P4SZIm1ryxJI4kZFG1CrUhksW9gr3RUkHYHt3PRLJgRPJn2ewjoOHLqA7XvO401oGOR014kdVZIHPUehOGSMoSsdRg1vh2qVSqbqIedBFqttO44iaPl+aIzmZGVDCUxtNhnh7+OBxfMHolbN8lx1xC+IL8YgBJYr3Hc5Ql6/Ys4dW68q7STRsSZ06VAPswM7pXI1sH28fBWGnXv/wNYdpxATr4cHZao5MQcTKE6M1Dy9zoTc2fzQu0dDtPy+FnLlzJIh4qJ30WNUGG/m3J04/ec9yJVcbJptP0jCh0fq8EOLKlg4o6e1KEX635nZ4MdAoPsWL1y6h6Vrj+LZoxDoTGZWuNzRWYNAgofNu8GATm1rsZtsC+RPezAppf4ePHQ+8YprG18KWxezGTKxCFMndEann8ifljbG+xx8UQahps9duI3hY1YgVq2xP2gLxRNZMGpwCwwLaJOhEAGtVocLf93BmvW/42bwM+anoNtV7YWI8KB3M3owm6DTWFC2ZH4MCmiO2jXLw8c7fZUvCDyB0b0UM2bvwa7fLsHLgys2YdsHkYB2MRN+bF0NMyd2Q7asmWvdyijoPHP3Xgi27z6Fk6duQG00QUo1A+D4rMGsdQIu21Dq5oERAd+jZ+dGzM+SlOmcgQQJFagbN2kDouPVJDlTvI/eo9aYMbRfM4wa3DZDNdMygi/KIATSjfcfPIvJM7dCZzSlKDnKCMhkhlwswbDBrdCrW/MMMQm1SVXet+88i137zuJjxCcIRBKmetkzw/KgBWTST69nHuAm9b5ljiyq4sellFJf07DKSUCe5RlzfsaO387DQ0ZhQykJjKwweo0Rvbo3wtgRHR1eQ/ylQPPFEa+Ahf5ToOjen8/j2KnreBMWxaqtUCS5bb+TgsV26U2s5FPVCsUwZPAPqFGtLKTpSPaifhw7cRmTZ2zFp+g4VkzP9p2kjmtUWjSr/x3mz+kF/yxf7lBuiy/OIASKOF2++hcsX3OYSXZKv07KliQdiElkIgmGD2nNcsHp9tL0fOGTCwAAIABJREFUqDvcgnMhIvcfPMfmbSdx/NQtaPUayJVcjokzWUDqHn1M92/4+2XBjy2roWvnhkxNIB06rdKQ5ye6V2XG4v3YtOMUxySs/cT3U1/JukUxSSMGt2G5C+nJ8f5cUIyvTmtAyPPX2H/wEo7/cQOv376HRCaFRC5yGNrDg9KDDVod5BI52rSoicEBLVnpH3LUpm2iuDU7eeoqJk7bgo+R1oQtGzWcmMOg1aBG5dJYMHcgy2j8mvgqDEIgqTpl9g7sPfgXPD1ShkDzTCIVijFy2A/o0aWJ00zE1MCFiNzGitUncOPOM7iTSZgRespzAQ9aV2IGCnwTWczIni0nBvVvjNYtqsPHO/1mYTJUzFp6AJt2nIS71Sea9N3EJCKQYBBg1tRe+LFNvTQfaD8HVCP48ZNXOPDrnzh2/CY+RcWyXU6qoHRYx7sGzQ9jbIsF0TEGVCqXH0MHt2T547RWvJBKC0izOHXmOsZP3sh2DpEkZWlTZrHSaVGxXGHMmzWA3Yn+tfHVGIRARQqGjN6IS9eDobRxIhLY5JpNkAolCOjXAn17Nksl+jd1hIaF4+jxS1i74ThCP0ayHHQhhbA7sXYxwhVQOIUJQrMBjepXRZ8ezVC5YvE0myt50A1Tk6bvwO4D51jetz3BILSY4KGQI2j+EDSsT3Wg0kZk6UVsnJoVbfv92GX8cfoWIqPVcHOnVErayxwzBoGFr1gs0GqN8HaToX3bOujRuQkKFUy/JY52rxMnr2DClA2IjKUzR8o8dc4VoEexQrmxYE5/Vtvg38DXYxAav4CC295g+OjVCL7/PIWnncAxiQV6gwAdf6yLwNFtkdXfO13SyRYkmR49eYE9P5/FgaPXERUVDTc3GcubsBdLxYOIl84n0VE6FMrrhz49G6PdD/WSXbiZFlB0wdQZO3Hg6AW4uZO6ZyspqciAEYXy58O65f1RuiQVi8v4eO2BzmeLl+7CoeM3EBmpYuMnax6dzxztqATqAqk58bF6KGVClCtbEgF9m6BWjXJMDU4vyEdGZ47pc3ZyahXlr9hlDgNy5/DFnBl9UafWt//a/e9fj0GSgO7xGDdps9VnkDKMgAiTJHysyoQfm1TB1IkdmTMxw0RjZU7KWbh8/SH27D2DwyeCIRKbmDmWCNYZkZC+TUXszEYhan33DQLHtmXFlKkrqfbH+m66gm7CpA04cY7uwUhZ4ojGTFmSLZpUwuxpfTM1bosCC2fM2oN1Ww+w4nBUHILe72zMBKb/G83Qa7QoVSw/OrWvi1YtqiOrf3p8Vhxo7cjPsf8g5YzsQ2Sc1pqMZoc59Ebkzp4FM6f1QL1a3zK1M9V5/kL4VxiE8ODhC4wN3IhbD0KgYElRySeKJoTmhIimeqUSmDS+M74pVzRTJioqKo6ZMbfvOo7rt19C4Sbm1C4nZmF2RjJTXJUeJQrnxJhRHVGvTgXInFxCnwiOS8gvNHr8GnYmEslSZktSyL5Zp8Ogfq0xfEh7yDLp0E75/l16zMPfb0JZYQpbokwKml8WqmYyQaszwt/XEx3b1kGHtnVRIH+uDPseyLeyY89JVnKJ/Cq2Jn8CzTF5yXP4087RGw3rVeKUzUxY84ziX2MQApkWR4/fgOAHz6FwSxlzQ6BEfLp7okDe7OjXrxV+bFE93QdCe6Dn6Uz025E/sXPPKbwIjYJcKmKMYivdedDr2O5mMMBd4YbunRuhX+/mXFxXGnUuqjo/JnAtnv0dBqFNHgc9TvRn1AuxbGF/tG5e3So9E76SIdA89+i7CGHhEdY7SRI+SgBTJynXXm9klwz5+7ijYaMq6NG+LtstqVRQGoeYAnS19ZqNv2PHrlMwCywpTP0E9m6dEbmyZ8HkwM5o2rDKZ1ckyQz8awzCE/jDR7STbML1eyFQutn31pKuTEXFzBIZerWriQF9WiB37mws7yKji8Y/RzrxfYo12n4SZ07dQHi0Ch5eFFLhWAWhA6tJZ2ae+C7tamLMqA7ImcM/1b7Q51Tx49TZ6+gzdB0ZWtkcJCUWpmrpTShSIAfWBA1G6VKFEj7LKCjaoHvveXgd9p7daZ70ffR+dseH3sSq0GTL4ofadcoxb3iF8sUyHKvGz8WzkDeYPGMvzl26CQXdkmwTPkKg9ATamXNn98esaT1Rl6lVab8K/EviX2OQpHjy9DXGT96JM3/dgY+PlFk5bOaQixwllcRgRIVvimBAvxZMP80sNYRMn+fO38ambcdx/dYjiGVyynxKoQbwoAUkDzLtbo3rVUDguM6sfhTP+I5An1Ohi+VrfsPi5fugoMtjbEJjyDBANWpbNK6KWTP6we8zi1GQh5xCOLbuOsWYn8vTsQZwGsysemT2HH5oVq8CuyKgWpVin1WNkEChI7duPWKlTW/cfQGFUszOYrbMwQUf6pAzqy9mTuuFhnUrsflzNodfE/8JBiFQoYT5S/bj18OXIJZa7Iax06QRUWrURuZ5796lNjq0a4jiRfOk2/zqCBSgt3PPGazZeAY6fTQkrEBAyoUl0BoSMRs0OlSuUAxTAruhfDm6hdU5kxDi4lSYNXc7dv1yFmJ58jMY1y6gijdj6thOCOjX/LMPqiF/v8EIMozcfASD1aQrMglQMJ8fWn5fFU0bVUXxYvns3g6WVvC7BtVL+/3IX1iy/GeEfoyCSJryvEWgM5dRp0PpYvkxObAruyiIBA/jpP8I/jMMQoiMimMV3zduOQyVzgChJKWFi8CkN0X0qnUoXDgPurSrje+bfsdyIXgi4hcrfeAkK0n4azceYNWag7hw5TGEYgnLK7FlWB5k5SIPfOniBTBnRh98a825T42g6ao4KoJ2+dZTKKjwXpL2aYwUxpEnuw+r1FEhlQssUwMxLZl6/zh7A3fuv2CqZbnS+VHru3LImzfHZ9UVY+CmjhXiW7n2KPYePAOjUcfMuPaYg6l1Gg0qlyuGqZN64JtyNGepC5avjf8UgxAoLOXIsYtYEHQAL95GwMsr+QUzPGgeSXfVafUQWIQoWyIfWreqhgZ1KrKQh8Tiz9aVywAo72TNhqPYtu8cYNazyyHtLTaBpfmq9ShTKj9mTO6OShVKsvc6Wm9+lzl59iYGj1oDvV5t1c8TvsKNT61FzaoVsHrZwIwV7bYDKhBHIDPr54aL84KI0q1v332KZSv3448Lj1gMnD2hQmOm3VGtMqJx7TJs5yhahO5++e8xB+vvlw5WzAioS5evPsTSVQdw+cp9SFjoeMrJJpCkZeZXq58iV94saNGsClo0qoySJQpkyJlF4NmK1IXfjl7GqtX78Tr0E0RS+znoBGaJ0epQrlQBLJwTgFIlnV88SSBJvn7Tb+zeDKHMfoV1dawBc2d0RY8ujqtTphUZ21mdg3LUt+49g3WbjyM+OgJiGVV15NYxKYg5KE8/Nt6C9q1rYsr4n1iKwX8Z/0kG4UHb9eath7Fp9zmoNFooKafETtVAWnA2+dbDoU6jh5vCE62bfYumTaqgYoVi8PXhpG+6CMTKJWaLGcHBjzF91nbcvP83y4e3DRnhQXo1HdxrfVcG82b1Y7e+pgYisLET12H/b1fh5ZvciUjjEpiNyJk9C9atGIFyTqpTfm2QA/L6rWfYtv0YDp+8zq7TI4ujvV2W+XiYeVyO3j2bo3vnpsji93nGh6+B/yyD8FuuTqdnasiGTUdx8/YzdukjldxxFG1KxE9Sl9JeqWq4n7cbqlQsih9/qIXaNb7JUNAh35dnIa8xZeYOnL78AEqqj+Ug7ZSpWxotWjSujJnT+sI/i2OvON/2jVtPETB0GT5EhLMr6WzPIxqtAd3a1cH0iT3Sdc93ZoLrK/0mQGjYJ5bGsGH3OXx4Fw53D8dF9Vi4ulqPgrmzYPyYDmjUoOpXjVz+HPxnGSQpaNLJG8zKgR48z25HVVLCDO0mDqJzaSGZfV1vgl6ng1zqhga1S6Fn9ybsfJBe8zBPyHS34IRpO/Hr0Svw8aZrkrldyRbsGmOVFt06NGW3/rq7OSdqim7dtvMYps3ZDTNthUna5XZHLtJ58dwBaPl99fTthJkA/n1UD/ivS3exeNlhPHkWApPAwmoC2MvDJ8amdKvoOD0qVyqF6WPbo2rlUomN/Q/gf4JBeFWHYnnu3XuGlVtP4MyZW+yePxllvFkvnbFVvQhMRaHQCaOZVTeRSZTo0aU2unVuzOK76PP04t27CMxctA+7f/kTHhRGzzqYHNQu7TACiwhzpnVFp3YNUg3TiIiMxuBha3D+yu0U9WeJ2elyy7rVS2LVsuGZGquVFhADU6Dplp0ncfDXi4jX6FluDxG67bzTlNLhn+6IoVD+jj/VR89uzVEof1qLc/x38L/BIDagXA+qAr9hx2kE33qM2Hg1RAIR5EquOIS9UHa2aEwSW5hlqFSJwixRqXHDSk4riztCeEQMRk/ehkPHL8Hb3b4pkyQo5b5TAbelCwehWpWyCZ85ws1bj9Bv8BJ8iIyHUJzcqkV3vcfHqDFnei/rgf3rONSorOzPh/7Evn1/4O6jUHh4yhw6UclQQUlTdAVaruw5MHpYK7T8vkaGjSX/Nv4nGYQHZe1duPwAh49ewY0bTxD2/hMkUimrMmgwcXdj2IIYhYqrxcWQ99YdQwNaoX27hqzYdXo3E9LDx03ZilPnrrNYMns+G3Ye0WpRoWxJrFo6GHly+3PboR2QGkfm0uVrDmDuol/g7auALslZixiCwltKFMqOTWvGoGAm1tdKCl4DInPwnXshWLfpKH4/FQwxjKx4g6PoZ2ZxizdAKgaLSu7XpxXKlin8xa7S/hr4n2YQHvHxKjx68gpnzwfj6PFbeBTyhu0mUinlo3OEZwsiXJgoc9CCTh0bYsgALu8kvXjxMhRjJ6zDlWAKT5HZ3UmIcKIjdRg7vBVGDGnv8ID6/9o7E7AoqzWO/wcYGGBY3bXMtDIzvVqmZaZpaZtbomKiorjgAqJsam6YuwiIKCCiCLngcjUzvenF0rJbrrnvmqi31JSd2Zf7vGeYgYHhm4/stuj59WTP830w81Xn/51z3vO+/9eyz7l9F8EhcTh++gZk7pWWWo5kUqHDyBG9EBNFfdQf8oCvGshRPWt9DtIy9qGg8AGcZFLWh9zW7EzCpcWjWqlG06caIGjoO/iwb+eHNuf7K/BICMQMhR1v3bqHAwdPYE3WQeTeymX171LqWWKjSScNRmrkolTo0euDVzFn2hA0akhv+Jpx5uwVhEcn48K16tPJaacil7mwpRa1R6gO9ogSIzZmf4Ups9bCkTU2Lbte9sxGvQ4N69VG2orJaNPqmd91z0t7jcNHL2F1xufYm3MEcJIyzzBbYW0SBn23UacBDDL0eb89Qsb3ZAd/D+uq/1fhkRKI5dzCYGQ5Vbt2f4cNmw7i+s3b9Bpns4atNzw5AVIDnFHDe2BaZIDdiFNF2KcZgf0HjmJiZCoKihVwlFZN56ZkS42CnMhbInXFBDSoL3xAlpdfhIipKfgih7JgrdNQ6EyhRKHBmGHvYfa0ISJrUuzDDkU//wYL43Yw/2NvbxdoqjG7oPQaSo1Xao1o/2ITjBvdC106v8QMss0z4aPAoyUQokwkBL0NqUiJSm2zth5EaXEpW3pVdp03zSRUC++MlMTJeKtr2xr9T6afpfyt5LSdmB+7BZ7ezjadFU2GyzpMixyEUUF97NqE/vvAcYRGJLGBS5E68zhlb26dDl5yT2SsisArLwv3ohfC/Hu0n1q1die2bP0apWRa4Wy7RyR9NwXjqAy5yRO+GDTgTfj7da2Bfezfi0dPIDYgY7n935zEypXbcPLcddZquvJM4uLsiMIH+YibPw6Bw94vGzjiRpxZk2S6PGV6KutlIqUmmpW+gyI8yhIyImiItakRePaZxpZ7tihVKBE9Iw2bdhyCh9w6I5ZaSRQ8KMXkkL6YGhFgcjcX97hVIIeTiBmf4uixM3Bzr8YQnIrFaA+i00Oi16Lbm68geOQHeKVdi/+bs/pfgcdCIGauXruFeYs24ouc4/DwMKWY00AgHZBASopKkLBwHAb7d6+RQCpy6swVBIeswE+378CF2ehYDzRTpEeBkOC+iJ70EavUE+L7w6cxavxSFCt1Vn5i9CY36A3sPGRDWhRaPP+06UYNOXr8HD6elYkT53+CB9WmVBZG2fKQwuNUtFa7Vn2Ejn0H/R6RTbg9HhuBmJcSZA06b2E2tu06CJmbC1tLkxDUihI0alQHKYlRaNvqGaulWk0gN/RV6XuwOH4jJM7kV2u5xaBnoO0r7XM2rI4qS/O2DT0zFTstiP0Uyen/grePtSk2S+EoVWFySD9EhPrX2ICbxDdt5mpcvfELpLKqbisE7dtUpTq2HOzXsx1GB/VCyxeasUNP83/TR5nHRiCEeV9x79c8zF28Cdu/+BbqUhW792Sj2pgxZSB69+r20EuG+w8KMGFyIvYfOgd3Orys9FY29VPUwN+/OxbPGi4Q9jUNQOqJMiI4jpUDk6+XeVZiM5xBjyZP1EFm2hQ0fVpES4Uy4dNnRkQn4/qtO3CkDlE2xWEqBqtftw6Cg3pigF/n3+Rb/HfmsRJIRaghzKnTl3H+Yi7revSPVs/i+eaNa/wWro79B45hzIQE6OnArZJAaFxLjAb4eHogMy0SbVpXP4sQlP8UM3ct1m3KgZuHm1XdPs1GWrUB82YPQdDQD0QtC0+fvYpJkam4eP0msxqt7APAggAGI7QaPbp2bInwsP54qW1z1l77ceOxFYgZ8x5EzMASj5EN6pkxa5Cx8QC8a8mqZB/T96nUWoSP7Y2oSYPsprt8891JBE9cztJsHKROltArDWbKHO7UviWSkyYLZg4TFK0KCU/Ft4dPQ26jv6IpQqaHRuOAwf5dER32IQtJ1ySq9yjx2AvETOX1NKVZ5BeUoLRUybrC0qmw2NnFPJgOHz3HZpEHhSVwkFr7QJnORdRo/XwTrFoZbreXRlFRCcZHrGChX8pELl9mUV95I6QOzkiKHY+e73eo8u9ihvYzcYnZWLl6D6QuTiwTuiJmcXi6uSF4dE8MH0Lded1/837sUYALxAYFBUVIyfoSn+86Am2JEh5ebujdqz2G+L9t9w1dEaVKhVkxGcjMzoGrB/WOr/C2ppwwcqNX6rAwZjiGDXmHXbT1ljYP+M92f4fJUSthJO+sCh9FgYai/FKMGNwdc2NGVjFeoN+njONduw8x4zotjNAbrQ8zSRyUeuPtIcf0KQHMsd35YevUHwG4QCpRVFSKhUsysS7733BwcmGHe3SuqFYpMaRfN8yZNRLe3iIMtcveuof+cxLBIctRqCiFxLF8aURQhKi0SIl3326H5UtD4WPnc8l0YWhQHM5cumqaASps1qmSsl5tL6xfFc1Kfc2iMv+TcsYCxsbjVu5t1pm24mzGRKk3sFSYmJlD4dfnTdGz5aMOF0glvtz3H4wcFwe5lxsUaspaNbK3q5Q6qxbokJo4Dn59O4tec9DSKHxKMnblHIWzM3V5LR+YBEW0jEYJNq6OxuuvtRZcztCgztqwB1HT18LTxzrTl85xivJKsOiTERg+rCccJOWOjGq1FouWbkBaxm44My/iiuJgf7K6lRlR/VkpLDXAsTWTPY5wgVSAlkArUrdg7qLN8PJ1txqAdApOte4dX2uF9MRJ8K2Bmdvne75FaGQKJI6oci5CNR6FeSX4OHIgJk7wN9lt2hqbZcKhw86AEfNx8+cC1ujGPBPQ85GPcZuWLbA+I5KZzZlnj+M/XkBQ8DLkFRfS5sdKpHSWUlKswqjAdzE9KoB19+LiKIcLpALUD2T5ymwsWLoN3pUEQlAZrV5rxMqEEPR6t6Pluj0ocXLwmFhcuJTLev5ZbdbJRVGrQ7MnG2Prxo/t9itUqTWYM28NVmXshXctudXBIa2KJFoHZGdNQYf2rdg1SrMhs4m1G/dB5m6drkLfrVOp8Hr7FohfEoonn/hjuzf9HeACqQBtZD/beQDBE5Pg6ePOTJwrQgOK+vm90akt1iRONEV4RED7g6SUbZi7KBtevm5VEhlpYDvogKw1UejUsa3lelVM08ieL39gzyhxIgdK0z6DoOWaokSDqDA/REwcyCyCjp24iDETluGX+/lV9i2UVyWXuSM5cSzeerP6FPzHGS6QSpDje1DwUpy99BOkMutiJVquSAwG+HrIsTolvMwcThjzModKaQePXASl1mTaVnErwga2Qouw8X0xZZI/nOhAztYyqww6yxgXGo/DJy5DJi9PvCQBazVatGn5LLJWR8LX1wtxCRuxJHE7PH2shUmWqRqVFoGD3sbsGYFVIl8cE1wgFaC1Of29dt1uTJ2TBQ+vqi0Z2MBSahAa3AdR4YNEp6VQv8LQiGX4MucECwBUPDhkSx2NBu3bNkd6ciRq1xKubKTCsCUJ2UhctRMyWaUzEb0BHq5uWJM6GU892QB9BszFnQd3rCJXbP9toAIuL2zOikDrVs9ahMyxhgvEBhQSHTMhHmdpz+DmYlVmSgd8qhIVXnu5OTvgq19PuPDJDNWmrEzdgdkL1sOrlruVQFiYVqtDHR8vrEmZhHYvvWB3wB489CPGhiahSKlgHaPMMxKlpBcrtIieOABtXmiI4WNiIfeWW+2nKFW+MK8UIcG9MH3KMCZyoe96nOECsYFWq8WS+A1ISt0FZzeZ1YkzW7trDZC7UnFVKLq92Y7NOkKRH/P9rw+eRtD4BGgNKkjKOu5WRKcFFswYiqDAd+mbLNdtQQmXgaOX4NT5a3ByLp9FmIAVGnR4qTmaNPZB9vbv4O7hCl1ZaNc0ewDuzk7IWjMF7du1tCvGxxkukGr4/vAZjB6fgMLSUtaFteJgZsVVecWICOmHyMmDRRcrUaelkLB4HDpyAS7u1kmH7NCwUIGAAd2wYO4ou41rKK1+YXw2klI+s/QYMUNaoXYQdMJOjoyskrEMulZSUAq/Xh1Z33GxgYbHFS6QaiBXj6Ax8cytRMraj5UPQDpzKFXq8Mo/miIzdYpoNxS1Wo3ps7KwLnsf3D2crdLgydNWXaJAx/YtkJxIS7dalnvVceCbY6y1moOzAyoF3Bi2ZgbaQ5UqdFgwMxCjh79ncncXIe7HFS6QaiBBpKR/hpiF2aw7kq2aDq3KiM2ZU9Gpo31DOPNg3b7zIMKi0mGQ6KyM4djSzWCATOaK9asi8Vp7+/sQas/Q76O5+O+9+2X7EOtnrAwLU6u0eKpRXaQnT0ar36G926MOF4gAJ09dxMAhC6GTaKExRWctyJxNJ+Cm1I7ebHMsNJjNkEXQ8NGxuJdfSFORRSCEKelQieS4CRg4oKvd3h0qlQaz5qVjdWYOfGycr1SGZQOUKvFut1ewPCEUnh7CuV8cHsUShCw3x4yPY12m3D2tz0SYAYNCg25dX0F6YijrvCtGIL/ez8fQ4Qtx7soNSCp5aFF0qSi/BOEhHyI6PECwRsQ8W2Rv2YdJ0anw8JFXOdisDBVXaVR6TIvoj5Bxfmy5xddXwvAZRABa8iQkZWN+7DZ417J+Q9OSSGLUo66vL3ZuiUGjhnUt94SgmoyZn6xFxsavIKd9SAXRmcOvH/l1ROyiiYKHdyQQeoZjP17CwKBFzMGeBFrdKovuSYxGyBylSE8JQ+dOL1vucaqHC6QaTAMQyPnqKAaPWAQPb7cquVlOEiNcHKVYtzpSlDG1mfWbdiNy2lq4ecqYMZsZCtEqS3V4rukT2JQRjcZP2s+NuvdrAYLGx+L7o5erCK4iTCAGPRrW9sWGzOlo1lRE/TqHC6Q6zG/oi5du4qPARbibl8fs/isuicjeV6PUI2HxSPj372G5bo+cr44gaGw8nGSOVgIhnKUS6JXArn/GoFVZNymhMxZqMDR/UQZS1u6Gh48X67FuC1Maig6tnnsWWzdOhZcn33+Igc8gdigsKsHkyGXYtfc45N7WJ+AsZKrUsl4jC6cPs+txZebS5Vz08psFjVFrVRlIUPo7hXs/XTsNXbsIJxCSiOmvtPTdmDkvC3IbqTFmKOpWVKjBiIAemB9DTirinvVxhwvEDmqNBp/MX4e0jD2Q+8ht5FCp0blDa6Qlh9uPCrHSV+DevXy82/cT3M3/hR3oVQzPUn1GaaEKi+cHYcSQ9y3XhWCHmhMSWe271MV6ljNDUbeSgmIkxo6F/4D3LNc5wnCB2MWItDV7MGX2Wnj5UsqGtUCMWiU6vvws0lKmw8tLXBFVUbECE6NWYOeeI/Dytm7aSW/6wnwNpkzqhejwoaZgQPUrLEbuzZ8RFByL85dvQ1rJ6NoMCURdosLaVZHo/tarluscYbhAhCg7qduXcwyjwpKgN2hBrv7mFz6FevVqFd5o/yJWJUfC01OcqRpl48Yv+xSxy3bAu7YXlBq95cSDPrOgSIvhAzti0Sfj4CqiMxOd+oeEJWL/tz/C2c3VpkCoZNigdcTW9VPRvp39NH2OCS4QEVD9RWhEAo4cuwipq5vlVN3BaIRKocPsaYMwZmRfuz0ICbZvMBqRkfk5ps1eA69a3lCoywXCTrs1OrzY4jlsWD0Z9er6lt2pBupKpdchetpqbPjnfri6VzXmplmIirZ8fHzwr82zRUXHOCa4QERAA/rgtycwZ/46nL16hx24GSGBg9EB3Tq9hPjYkaJypwjzfmPLtq8REpkMT2+ZVfiYBrOD0YC6vnWwZf1Uu35Z9HG0UV++6jMsWLoZMrImrTSBkOhKVXq0ffEpbMmY/kh0fvqj4AIRCWXenj1/DRu2f4db136Bi0yGzp2ao+d7r/2mjrM5X59AQHA8ZC4mh3nzso0E4uyghw+ZW2fNQvPnmphu2GFvzvcYPzEJOokRBmqjWUEktGwrKtLivbfbIHVZGM/grQFcIDWE0syLSxQsxd2derX/Rs6dvw6/4fNRUKRg+4OKA9rF0QAPFydkZcxE61bCvr1mTp66gOGjFqNIqYKWmcJZbrHIWGGeEkHD3sbcWWQsZ9ssm1MVLpCaQKPOXkhJJD/d+Bld7MXIAAAHH0lEQVSDghbgWu59uLlWOoCkvooSB6QlT0LXzvYLsojLV3IxZMRidqBpkFiHjqmZadGDIkRP6o/wsMHcFK4GcIH8SZA5xDCqCDx3E+6eTlZlvUwKOgckLBmF/n3fFCVMKsbyD1iCKzdvwLGCuTX96eZC3bMeYPHcMQgc2rssdCz8eRwTXCA1RKvV46cbt3Hz9h3odHo82agumjVtzMwTagI16QwNT8Ler09A7ml9vkIpLI4GB6SsCEWPbh0s14VQKlUIGLkU3xw5AzeZtbWozMUJRQ/ysWzxeHw0qHoPYE5VuEBqAOU9fbrxS6Su/oI5v9Mg9PFxRT+/7hgf9EGN3BbJPT5h+WbEJW2Fu6c7tGUpVBRxkug1eKJuPazP/BhPNRbXHJPq6MOmpSJ7xyHIK7V+k9ESK78Ey2MnwH/AW+waF4g4uEBEQqnvm7btx6wYshB1Nrmjl4Vt8wr0mDHZD+Fh/SCVis9xyr15BzNjUrDv27Nwoo63JByjBHW9nREzYzR6f/CGqLMVglwh58eux7KUPfCkJVsFgVB+V1GBGikJE+D3YRd2jQtEHFwgIsnLK8SgoIU4f/E6HKXlxVM0gHVqNZ5p9gTWJkeh2dPC5xaVuXnrDjZuO4AjP5yDTqtFvYb18NHALujc8R812kzT4WVq+g7MnrcJcq9yEwdaSZkSFSXIWBmCXj07gOwY+QpLHFwgIrl67SaGBM7DnbxC6FmUyHSdBhoV5qm1zvhnZjRef9V+LXllKPWEXOBplnJ1dYW8huFj9iwSIHvrPkyOToO7Z/nhIxfIw8EFIhJKCAwYNge37+VDL6EokeUWa3ZZXKDB9vXT0aVzmxoL5Pdi77+/w6hxcXCRu0GlMQukrMzQ0RkZKybh7S5/3vP9HeECEcm9e/fhP3g6bvySDx2sBUIHccUFSmzfMAOd32j7hwvEfE7yn++PIyBwDqTunqy3CUGbfpVKj3p1PLEuOQIvtxV38MgxwQUikrt3f4X/4BnIvVO9QLZkfoxuXV8WLZCylREUChVu3vqFNeikjruNGzdkfTrEUi6QExgcOAfO7h5WAlGq9ahPAlnJBVJTuEBEQlaf/oPn4vrtn2FwsHZaNLmRKJC6bCKLEtXEjI18gBcu3YHjx09Do9FAJpOic+c2CAnui6Zsw2//g0wCAY4cPQv/IfPg5CqFsmyJxQXycHCBiITsevwDFuJKbi4klXr8mQRSihVLQ+A/oJvoECqJLnJqMvbkHIfc3VT3Qb9K9SCdXm+L1YnjRGUJmwVy9Nh5DBwyH44uEqi0pufjAnk4uEBEYhbI1Zu5zKvXlkBWxoVgYH/7AmGzjwTYvO1rRM1Ih4SSFU132J9OZLCgNuCTGYEIGkZG1sKUzyDn4D90QVWBqPRoUNcTGbQHadPcsiTj2IcLRCT2BaJA0tIJGCRiBqEBSlnBsXHrsSx5B9x9PK3cSGhQFxdrMKx/DyTGjaQrlnu2MO95fjx1CX6DFsDBWQe1zpRCT6nuilIdmj9dF5mrp3C7nxrCBSKS+w8KMGjoYly8fr1KO2dm+FagQPryMHzYx34HXJNAdFgSuw6JqZ9B7uMLdSWBFBWpMXxADyyLG2VXIGby8osRFpmEvfuPwd3TlXWzpb6K6pJi+PXpjIVzx0Mud7P8PMc+XCAiUao0mLs4E2mZe+DtKYdGRy2iTWcgRp0WLm4e2LRmGl5q3aw8PFUN5hlkydJ1WJ66A+7etgUS2L87EuNHixYI8cOxC5g6ew2uXv8vVDoJnI0GdHmtKWZNH40Wzz9t+TmOOLhAasCZs5cRFhGHC5fvAFJX1rJAq9RA7mrA+DH9MGHsQFFZvf9PgdBp/M1bd/HDsfO4ey8fDev7omOHVmjYoI6o0DPHGi6QGkBlt0ePn0PGut04cjoXBQo1nmngDb8+HeE/8B34eItzNbEIJDaD1ZJXK5ABtAcRv8Ti/P5wgfwGiopL8FPuXRQWK9HkiTpoUL8WpNLqndgrUz6DZGFZCu1BrC1DzZv0wAHdsWwpF8ifCRfIn4Bpf29E1oZ9mD4nA86ujqwehIRDyyDKvlWrtfg4aghCRvX+E56QY4YL5DdiHuT2QrpC/PfnexgbshIHvz+FWnWoVyB9lhEahQKdXm2JJQtC8FTj+paf5/zxcIH8qRhx+OgVpGd8jr05J6HWaOHgKEWPbi0RNWkgXmjRlAnwITTIeUi4QP4CUJLi5Su3UVBQAi8vOZo1bQRfH7nopEfO/w8uEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HAC4QDkcALhAORwAuEA5HgP8BoOaSl+S5cMsAAAAASUVORK5CYII=";
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 2);
+  const dateStr = dueDate.toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'});
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f0f0ed;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0ed;padding:20px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #ddddd9">
+  <!-- HEADER -->
+  <tr><td style="background:#1D2E6B;padding:24px 36px">
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:30px;font-weight:700;letter-spacing:2px;line-height:1">
+    ORCA AI
+  </div>
+</td></tr>
+
+  <!-- GREETING -->
+  <tr><td style="padding:32px 36px 0 36px;font-size:14px;color:#1a1a1a;line-height:1.75">
+    <p style="margin:0 0 14px 0">Dear Master,</p>
+    <p style="margin:0 0 10px 0">We are the Operations team at Orca AI. We are preparing for the installation of the Orca AI system on board your vessel .</p>
+    <p style="margin:0 0 10px 0">The Orca AI system is designed to enhance situational awareness on the bridge and support the Officer of the Watch alongside existing navigation systems such as radar and ECDIS.</p>
+  </td></tr>
+
+  <!-- INSTALLATION PROCESS -->
+  <tr><td style="padding:20px 36px 0 36px">
+    <p style="margin:0 0 8px 0;font-size:14px;font-weight:bold;color:#1D2E6B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1D2E6B;padding-bottom:5px">Installation Process</p>
+    <p style="margin:8px 0 0 0;font-size:14px;color:#333;line-height:1.75">Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes <strong>12–18 hours</strong> and includes system installation, technical validation, and crew training.</p>
+    <p style="margin:10px 0 0 0;font-size:14px;color:#333;line-height:1.75">To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong></p>
+  </td></tr>
+
+  <!-- SECTION TITLE -->
+  <tr><td style="padding:20px 36px 12px 36px">
+    <p style="margin:0;font-size:14px;font-weight:bold;color:#1D2E6B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1D2E6B;padding-bottom:5px">Information and Preparations Required</p>
+  </td></tr>
+
+  <!-- 1. UPCOMING PORT CALLS -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">1. Upcoming Port Calls</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Could you kindly share the next 2–3 upcoming port calls, along with the corresponding agent details for each port?</p>
+  </td></tr>
+
+  <!-- 2. CABLE ROUTING -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">2. Cable Routing</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please confirm that suitable cable penetrations can be prepared for:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Two outdoor cables from the compass deck to the bridge console</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; One cable from the bridge console to the VSAT rack or business switch</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 2. MONITOR LOCATION -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">3. Monitor Location</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A photograph of the preferred installation location for the Orca AI 24" monitor</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Ideally located close to ECDIS or radar — preferably on the center console</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 3. BRIDGE CONSOLE -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">4. Bridge Console Compartments</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of the following compartments with the doors open:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Center console compartment</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Port console compartment</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Starboard console compartment</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 4. SEAPOD -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">5. Proposed Seapod Location</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The forward compass deck rail</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The proposed Seapod installation location</td></tr>
+    </table>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#444;line-height:1.6">Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A clear 225-degree view at the designated location</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; An unobstructed forward field of view</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Installation below and clear of all radars</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A minimum distance of 4 meters from the magnetic compass</td></tr>
+    </table>
+    <p style="margin:0;font-size:13px;color:#444;font-style:italic">If any structure or mounting bracket is required, we kindly ask that it be prepared before the engineer's visit.</p>
+  </td></tr>
+
+  <!-- CHECKLIST -->
+  <tr><td style="padding:8px 36px 16px 36px;background:#f7f7f5;border-top:1px solid #e5e5e2;border-bottom:1px solid #e5e5e2">
+    <p style="margin:0 0 10px 0;font-size:13px;font-weight:bold;color:#1D2E6B">Requested Response</p>
+    <p style="margin:0 0 8px 0;font-size:13px;color:#444">To help us finalize the installation plan, we would appreciate receiving:</p>
+    <table cellpadding="0" cellspacing="0">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Next 2–3 upcoming port calls + corresponding agent details for each port</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Vessel GA</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Bridge Console GA</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Proposed monitor location photos</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Center console photo</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Port console photo</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Starboard console photo</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Proposed Seapod location photos</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Confirmation regarding cable penetrations</td></tr>
+    </table>
+    <p style="margin:10px 0 0 0;font-size:13px;color:#444">We would appreciate receiving the above information by <strong>${dateStr}</strong>.</p>
+    
+  </td></tr>
+
+  <!-- CLOSING -->
+  <tr><td style="padding:20px 36px 8px 36px;font-size:14px;color:#333;line-height:1.75">
+    <p style="margin:0 0 10px 0">Please do not hesitate to contact us if you have any questions. We look forward to working with you and your crew.</p>
+  </td></tr>
+
+  <!-- SIGNATURE -->
+  <tr><td style="padding:8px 36px 28px 36px;border-top:1px solid #e5e5e2">
+    <p style="margin:0 0 2px 0;font-size:13px;color:#555">Kind regards,</p>
+    <p style="margin:6px 0 2px 0;font-size:14px;font-weight:bold;color:#1a1a1a">Orca AI - OPS Department</p>
+    <img src="data:image/png;base64,${logo}" alt="Orca AI" height="28" style="display:block;margin-top:10px"/>
+  </td></tr>
+
+  <!-- FOOTER -->
+  <tr><td style="background:#1D2E6B;padding:12px 36px;text-align:center">
+    <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.55)">Orca AI Installation Coordinator &nbsp;|&nbsp; This email was sent via the Orca AI Operations Portal</p>
+  </td></tr>
+
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+function stripHtmlForText(s){
+  return String(s||'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
+}
+
+async function sendGmail(to, subj, body, isHtml=false) {
+  if(!token){alert('Not authenticated.');return false;}
+  const html = isHtml ? body : body.replace(/\n/g,'<br>');
+  const boundary = 'orca_boundary_' + Date.now();
+  const mime = [
+    `From: ORCA AI OPS <${user.email}>`,
+    `To: ${to}`,
+    `Subject: ${subj}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/plain; charset=utf-8`,
+    ``,
+    body,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/html; charset=utf-8`,
+    ``,
+    html,
+    ``,
+    `--${boundary}--`
+  ].join('\r\n');
+  const raw = btoa(unescape(encodeURIComponent(mime))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  try{
+    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw})});
+    if(!r.ok){const e=await r.json();alert('Gmail error: '+JSON.stringify(e.error?.message||e));return false;}
+    return true;
+  } catch(e){alert('Send error: '+e);return false;}
+}
+
+// INBOX
+
+
+function inboxNorm(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function inboxEmail(s){return String(s||'').toLowerCase().trim();}
+function inboxWhen(v){
+  const d=new Date(v&&(v.updatedAt||v.lastActivity||v.lastContact||v.createdAt||0)).getTime();
+  return Number.isFinite(d)?d:0;
+}
+function inboxMsgText(m){
+  return inboxNorm([m.subj,m.subject,m.snippet,m.body,m.from,m.sender].filter(Boolean).join(' '));
+}
+function inboxNameHit(m,v){
+  const n=inboxNorm(v&&v.name);
+  if(!n)return false;
+  const s=inboxNorm(m&&(m.subj||m.subject));
+  const t=inboxMsgText(m);
+  return s.includes(n)||t.includes(n);
+}
+function bestVesselForInboxMessage(m){
+  const list=(vessels||[]).filter(v=>v&&String(v.name||'').trim());
+  const byName=list.filter(v=>inboxNameHit(m,v))
+    .sort((a,b)=>String(b.name||'').length-String(a.name||'').length || inboxWhen(b)-inboxWhen(a));
+  if(byName.length)return byName[0];
+
+  const fe=inboxEmail(m&&(m.fe||m.fromEmail||''));
+  const from=inboxEmail(m&&(m.from||m.sender||''));
+  const byEmail=list.filter(v=>{
+    const e=inboxEmail(v.email||'');
+    return e && (fe===e || from.includes(e));
+  }).sort((a,b)=>inboxWhen(b)-inboxWhen(a));
+  return byEmail[0]||null;
+}
+function openInboxReply(idx){
+  const item=(ibItems||[])[idx];
+  if(!item){alert('Reply not found. Please click Check inbox again.');return;}
+  if(typeof openIbModal==='function'){openIbModal(idx);return;}
+  alert((item.subj||'Reply')+'\n\nFrom: '+(item.from||'')+'\n\n'+(item.body||''));
+}
+function debugInboxMatches(){
+  return (ibItems||[]).map((m,i)=>({i, subject:m.subj||m.subject, from:m.from, matched:m.vessel&&m.vessel.name}));
+}
+
+function updateReceivedStatsFromInbox(){
+  if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
+  vessels.forEach(v=>{
+    const name=(v.name||'').toLowerCase();
+    const email=(v.email||'').toLowerCase();
+    const matches=ibItems.filter(m=>{
+      const from=((m.from&&m.from.email)||m.from||'').toLowerCase();
+      const subj=(m.subject||'').toLowerCase();
+      const snip=(m.snippet||m.body||'').toLowerCase();
+      return (email&&from.includes(email)) || (name&&(subj.includes(name)||snip.includes(name)));
+    });
+    if(matches.length){
+      v.emailsReceived=matches.length;
+      const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(t=>Number.isFinite(t)).sort((a,b)=>b-a)[0];
+      v.lastReceivedDate=new Date(latest||Date.now()).toISOString();
+      if(v.status==='waiting')v.status='followup';
+      v.nextAction='Analyze reply and send follow-up';
+    }else{
+      v.emailsReceived=v.emailsReceived||0;
+      v.lastReceivedDate=v.lastReceivedDate||'';
+    }
+  });
+}
+
+
+function renderInlineInbox(){
+  const box=document.getElementById('dash-inbox-inline');
+  const list=document.getElementById('dash-inbox-list');
+  if(!box||!list)return;
+  box.style.display=window.showInlineInboxPanel?'block':'none';
+  if(!window.showInlineInboxPanel)return;
+  if(!ibItems||!ibItems.length){
+    list.innerHTML='<div class="empty" style="padding:1rem">No new inbox replies found for the current vessels.</div>';
+    return;
+  }
+  list.innerHTML=ibItems.map((it,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;margin-bottom:8px;background:var(--white);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+    <div style="min-width:0">
+      <div style="font-weight:700;font-size:13px">${it.vessel?.name||'Vessel reply'}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">${it.from||''} · ${it.date||''}</div>
+      <div style="font-size:12px;color:var(--navy);font-style:italic;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${it.subj||''}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${(it.body||'').replace(/\s+/g,' ').slice(0,180)}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openInboxReply(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-robot"></i> Analyze & Update</button></div>
+  </div>`).join('');
+}
+
+async function checkInbox(){
+  const buttons=[document.getElementById('btn-chk'),document.getElementById('btn-chk-inbox-page')].filter(Boolean);
+  buttons.forEach(b=>{b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';});
+  await fetchInbox();
+  window.showInlineInboxPanel=true;
+  updateReceivedStatsFromInbox();
+  buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
+  renderInlineInbox();renderInbox();renderTable();updateMetrics();saveVessels();
+}
+async function fetchInbox(){
+  ibItems=[];
+  const badge=document.getElementById('ib-count');
+  if(badge){badge.textContent='0';badge.style.display='none';}
+  if(!token||!vessels.length)return;
+
+  // Search per vessel: subject must contain vessel name, and only after the initial email was sent
+  // Only check inbox for vessels THIS user sent (replies come to the sender's inbox)
+  for(const vessel of vessels){
+    if(vessel.sentBy && user && user.email && vessel.sentBy.toLowerCase()!==user.email.toLowerCase())continue;
+    const vname=String(vessel.name||'').trim();
+    const vemail=String(vessel.email||'').trim().toLowerCase();
+    if(!vname)continue;
+
+    // Only fetch replies AFTER the initial email was sent to this vessel
+    const sentDate=vessel.lastEmailDate||vessel.createdAt||vessel.lastContact;
+    const afterClause=sentDate?` after:${Math.floor(new Date(sentDate).getTime()/1000)}`:'';
+
+    // Query: must have vessel name in subject AND come from the vessel email (or anyone, but subject must match)
+    const subjQuery=`subject:"${vname.replace(/"/g,'')}"${afterClause}`;
+    const emailQuery=vemail?`from:${vemail} subject:"${vname.replace(/"/g,'')}"${afterClause}`:'';
+
+    const queries=[subjQuery];
+    if(emailQuery&&emailQuery!==subjQuery)queries.push(emailQuery);
+    const q=[...new Set(queries)].join(' OR ');
+
+    try{
+      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=10`,{headers:{Authorization:'Bearer '+token}});
+      const d=await r.json();
+      if(!d.messages)continue;
+
+      for(const msg of d.messages.slice(0,10)){
+        const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+        const dd=await dr.json();
+        const hdr=(dd.payload&&dd.payload.headers)||[];
+        const from=hdr.find(h=>h.name==='From')?.value||'';
+        const subj=hdr.find(h=>h.name==='Subject')?.value||'';
+        const date=hdr.find(h=>h.name==='Date')?.value||'';
+        const internalDate=Number(dd.internalDate||0);
+        const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
+        const body=dd.payload?eb(dd.payload):'';
+        const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
+
+        // Skip outbound emails from our own user
+        if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
+
+        // Skip emails that arrived before the initial email was sent
+        if(sentDate&&internalDate&&internalDate<new Date(sentDate).getTime())continue;
+
+        // Subject must contain vessel name (case-insensitive)
+        if(!subj.toLowerCase().includes(vname.toLowerCase()))continue;
+
+        // Skip if already logged in timeline
+        const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
+        if(logged)continue;
+
+        // Skip duplicates already in ibItems
+        if(ibItems.some(x=>x.msgId===msg.id))continue;
+
+        ibItems.push({msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi:vessels.indexOf(vessel)});
+      }
+    }catch(e){console.error('fetchInbox vessel loop error',e);}
+  }
+
+  if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
+}
+function renderInbox(){
+  updateReceivedStatsFromInbox();
+  const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
+  if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
+  empty.style.display='none';
+  list.innerHTML=ibItems.map((item,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:10px;background:var(--white)"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${item.vessel.name}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${item.from} · ${item.date}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${item.subj}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.body.substring(0,120)}...</div></div><div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openInboxReply(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-cpu"></i> Analyze & Update</button></div></div></div>`).join('');
+}
+
+function openIbModal(i){
+  curIb=ibItems[i];ibAna=null;
+  if(!curIb||!curIb.vessel){alert('Reply item not found. Please click Check inbox again.');return;}
+  document.getElementById('mib-v').textContent=curIb.vessel.name;
+  document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
+  document.getElementById('mib-b').textContent=curIb.body;
+  const v=curIb.vessel;
+  ibAna=normalizeAnalysisResult(v,curIb.body,ibAna);
+  document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
+  document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
+  document.getElementById('mod-ib').style.display='flex';
+}
+async function runIbAnalysis(){
+  if(!curIb)return;
+  const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
+  document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
+  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously confirmed items: ${(vessels[curIb.vi]&&vessels[curIb.vi].receivedItems||[]).join(", ")||"none"}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
+  try{
+    if(!window.GEMINI_API_KEY){document.getElementById('apikey-banner').style.display='flex';throw new Error('No Gemini API key set');}
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:1500}})});
+    const dd=await r.json();
+    if(dd.error){throw new Error(dd.error.message||'Gemini API error');}
+    const raw=(dd.candidates&&dd.candidates[0]&&dd.candidates[0].content&&dd.candidates[0].content.parts&&dd.candidates[0].content.parts[0]&&dd.candidates[0].content.parts[0].text)||'';
+    const clean=raw.replace(/```json|```/g,'').trim();
+    ibAna=JSON.parse(clean);
+  }
+  catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
+  document.getElementById('mib-al').style.display='none';
+  document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
+  document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
+  document.getElementById('mib-fu').textContent=ibAna.followup_email||'';
+  document.getElementById('mib-res').style.display='block';document.getElementById('mib-sbtn').style.display='inline-flex';
+  // Update vessel receivedItems & missingItems immediately so checklist reflects reality
+  if(curIb&&curIb.vi!=null&&vessels[curIb.vi]){
+    const vIdx=curIb.vi;
+    vessels[vIdx].receivedItems=[...new Map([...(vessels[vIdx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
+    vessels[vIdx].missingItems=ibAna.missing||[];
+    vessels[vIdx].status=ibAna.status;
+    vessels[vIdx].risk=ibAna.risk;
+    vessels[vIdx].progress=ibAna.progress;
+    saveVessels();
+    renderTable();updateMetrics();
+  }
+}
+async function sendIbFollowUp(){
+  if(!ibAna||!curIb)return;
+  const v=curIb.vessel,followBody=(ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel));
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);
+  if(!ok)return;
+  const idx=curIb.vi;
+  vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...new Map([...(vessels[idx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'reply','Reply received from captain',curIb.from||v.email);
+  saveFollowupMeta(vessels[idx],followBody);
+  vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
+  saveVessels();updateMetrics();renderTable();
+  document.getElementById('mod-ib').style.display='none';
+  ibItems.splice(ibItems.indexOf(curIb),1);
+  const badge=document.getElementById('ib-count');
+  if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else badge.style.display='none';
+  renderInbox();
+}
+
+// ANALYZE (manual)
+async function analyzeReply(){
+  const idx=document.getElementById('ra-sel').value,reply=document.getElementById('ra-reply').value.trim();
+  if(!reply){alert("Please paste the captain's reply.");return;}
+  const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
+  document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
+  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
+  try{
+    if(!window.GEMINI_API_KEY){document.getElementById('apikey-banner').style.display='flex';throw new Error('No Gemini API key set');}
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:1500}})});
+    const dd=await r.json();
+    if(dd.error){throw new Error(dd.error.message||'Gemini API error');}
+    const raw=(dd.candidates&&dd.candidates[0]&&dd.candidates[0].content&&dd.candidates[0].content.parts&&dd.candidates[0].content.parts[0]&&dd.candidates[0].content.parts[0].text)||'';
+    const clean=raw.replace(/```json|```/g,'').trim();
+    ana=JSON.parse(clean);ana.vi=idx!==''?parseInt(idx):null;
+  }
+  catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
+  if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
+  document.getElementById('a-load').style.display='none';
+  // Update vessel receivedItems immediately so checklist reflects reality
+  if(ana.vi!=null&&vessels[ana.vi]){
+    const vIdx=ana.vi;
+    vessels[vIdx].receivedItems=[...new Map([...(vessels[vIdx].receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
+    vessels[vIdx].missingItems=ana.missing||[];
+    vessels[vIdx].status=ana.status;
+    vessels[vIdx].risk=ana.risk;
+    vessels[vIdx].progress=ana.progress;
+    saveVessels();
+    renderTable();updateMetrics();
+  }
+  document.getElementById('a-recv').innerHTML=(ana.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
+  document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
+  document.getElementById('a-stat').innerHTML=`<div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Status</div>${sb(ana.status)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Risk</div>${rb(ana.risk)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Progress</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div class="prog" style="width:100px"><div class="prog-f" style="width:${ana.progress}%"></div></div><span style="font-size:13px;font-weight:700">${ana.progress}%</span></div></div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Next action</div><span style="font-size:12px">${ana.nextAction||'—'}</span></div>${(ana.flags&&ana.flags.length)?ana.flags.map(f=>`<div class="flag-item"><i class="ti ti-flag"></i>${f}</div>`).join(''):''}`;
+  document.getElementById('a-fu').textContent=ana.followup_email||'';
+  document.getElementById('a-out').style.display='block';
+}
+async function saveAndSend(){
+  if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
+  const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);if(!ok)return;
+  vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:[...new Map([...(v.receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'ai','Reply analyzed by AI',v.email);
+  saveFollowupMeta(vessels[idx],followBody);
+  vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
+  saveVessels();updateMetrics();renderTable();document.getElementById('ra-reply').value='';document.getElementById('a-out').style.display='none';showTab('dashboard');
+}
+
+// VESSEL DETAIL
+function openV(idx){
+  const v=vessels[idx];if(!v)return;
+  cleanTimeline(v);
+  v.missingItems=derivedMissing(v);
+  const title=document.getElementById('vd-t');
+  if(title)title.innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
+  const st=document.getElementById('vd-s');if(st)st.innerHTML=sb(v.status);
+  seedTimeline(v);
+  const timelineEl=document.getElementById('vd-timeline');
+  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${renderTimeline(v)}`;
+  const p=document.getElementById('vd-p');if(p)p.textContent=(readinessScore(v)||v.progress||0)+'%';
+  const r=document.getElementById('vd-r');if(r)r.innerHTML=rb(v.risk||'medium');
+  const recv=v.receivedItems||[],miss=v.missingItems||[];
+  const cl=document.getElementById('vd-cl');
+  if(cl){
+    const doneItems=REQUIRED_ITEMS.filter(item=>hasItem(recv,item));
+    const missingItems=REQUIRED_ITEMS.filter(item=>!hasItem(recv,item));
+    const allSorted=[...doneItems,...missingItems];
+    cl.innerHTML=allSorted.map(item=>{
+      const done=hasItem(recv,item);
+      const mis=hasItem(miss,item);
+      const ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
+      const style=done?'font-weight:700;color:#1D6B4A':'color:var(--muted)';
+      const bg=done?'background:#EAF8F2;border-radius:6px;padding:4px 8px;margin-bottom:3px':'padding:4px 8px;margin-bottom:3px';
+      return`<li style="${bg}"><i class="ti ${ic}"></i> <span style="${style}">${item}</span></li>`;
+    }).join('');
+    if(doneItems.length>0&&missingItems.length>0){
+      cl.innerHTML=
+        `<li style="padding:2px 8px;margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Received (${doneItems.length})</li>`+
+        doneItems.map(item=>`<li style="background:#EAF8F2;border-radius:6px;padding:5px 8px;margin-bottom:3px"><i class="ti ti-circle-check ic-d"></i> <span style="font-weight:700;color:#1D6B4A">${item}</span></li>`).join('')+
+        `<li style="padding:2px 8px;margin:6px 0 4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Still missing (${missingItems.length})</li>`+
+        missingItems.map(item=>{
+          const ic=hasItem(miss,item)?'ti-circle-x ic-m':'ti-circle ic-p';
+          return`<li style="padding:5px 8px;margin-bottom:3px"><i class="ti ${ic}"></i> <span style="color:var(--muted)">${item}</span></li>`;
+        }).join('');
+    }
+  }
+  const ri=document.getElementById('vd-ri');
+  if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
+  const mi=document.getElementById('vd-mi');
+  if(mi)mi.innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
+  const fup=document.getElementById('vd-fup');
+  if(fup)fup.innerHTML=v.lastFollowupPreview?`<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.55;margin:0;color:var(--text)">${v.lastFollowupPreview}</pre>`:'<span style="font-size:13px;color:var(--faint)">No follow-up sent yet.</span>';
+  const tlEl=document.getElementById('vd-tl');
+  if(tlEl)tlEl.innerHTML=renderTimeline(v);
+  showTab('vessel-detail');
+}
+
+// ADMIN
+function renderAdmin(){
+  const roleBox=document.getElementById('current-role-info');if(roleBox&&user)roleBox.textContent=`You are signed in as ${user.email} — ${roleLabel(user.email)}`;const dbBox=document.getElementById('shared-db-status');if(dbBox)dbBox.textContent='Database mode: '+(hasSharedDb()?'Shared Google Sheet':'Local browser only');
+  if(!isAdmin(user&&user.email))return;
+  const stored=Object.values(lu());
+  const map=new Map();
+  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
+  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
+  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
+  const users=Array.from(map.values()).sort((a,b)=>{
+    const ar=isSuperAdmin(a.email)?0:isAdmin(a.email)?1:2;
+    const br=isSuperAdmin(b.email)?0:isAdmin(b.email)?1:2;
+    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
+  });
+  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{
+    const role=roleLabel(u.email);
+    const cls=role==='Super Admin'?'bn':role==='Admin L2'?'bb':'bg';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/>
+      <span style="flex:1">${u.name||u.email}<br><span style="font-size:11px;color:var(--faint)">${u.email}</span></span>
+      <span class="badge ${cls}">${role}</span>
+    </div>`;
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
+  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>{
+    const del=isAdmin()?`<button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button>`:'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="flex:1;font-weight:600">${v.name}<br><span style="font-size:11px;color:var(--faint)">${v.email||''}</span></span>
+      ${sb(v.status)}
+      <select onchange="setVesselStatus(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${statusOptions(v.status)}</select>
+      <select onchange="assignVessel(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
+      <span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span>
+      ${del}
+    </div>`;
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+  const superOnly=document.getElementById('super-admin-actions');
+  if(superOnly)superOnly.style.display=isSuperAdmin(user&&user.email)?'flex':'none';
+}
+function resetInboxUi(){
+  ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const empty=document.getElementById('ib-empty');if(empty)if(empty)empty.style.display='block';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+}
+function refreshAllViews(){
+  updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
+}
+
+async function resetSharedDatabase(){
+  if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
+    alert('Super Admin only.');
+    return;
+  }
+  if(typeof isAdmin==='function' && !isAdmin()){
+    alert('Admin only.');
+    return;
+  }
+  const ok=confirm('This will delete ALL vessels from the shared database for EVERYONE. Continue?');
+  if(!ok)return;
+  const ok2=confirm('Final confirmation: reset the shared Google Sheet database now?');
+  if(!ok2)return;
+  try{
+    const resetAt=new Date().toISOString();
+    vessels=[];
+    ibItems=[];
+    setLocalResetAt(resetAt);
+
+    // clear local cache/history for current user
+    Object.keys(localStorage).forEach(k=>{
+      const kk=k.toLowerCase();
+      if(kk.includes('vessel')||kk.includes('timeline')||kk.includes('history')){
+        localStorage.removeItem(k);
+      }
+    });
+    localStorage.setItem('orca_shared_reset_at',resetAt);
+    if(typeof saveLocal==='function')saveLocal();
+
+    // write reset marker to the shared sheet
+    if(typeof saveSharedVessels==='function'){
+      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
+      if(!saved){
+        const saved2=await saveSharedVessels([]);
+        if(!saved2)throw new Error('saveSharedVessels failed');
+      }
+    }else{
+      throw new Error('saveSharedVessels is missing');
+    }
+
+    if(typeof render==='function')render();
+    alert('Shared database reset successfully. Ask all users to Hard Refresh and click Sync.');
+  }catch(e){
+    console.error(e);
+    alert('Shared database reset failed. Check Google Sheet permission.');
+  }
+}
+
+async function migrateLocalToShared(){
+  if(!isSuperAdmin()){alert('Super Admin only.');return;}
+  if(!confirm('Manually merge MY local cache into Shared Database? This is only for recovery/import.'))return;
+
+  const ok=await ensureSharedDb();
+  if(!ok){alert('Shared DB is not available.');return;}
+
+  const shared=await loadSharedVessels();
+  if(!Array.isArray(shared)){alert('Shared DB could not be loaded.');return;}
+
+  const localRaw=loadLocalVesselsForMerge();
+  const merged=mergeVesselLists(shared, localRaw);
+
+  const saved=await saveSharedVessels(merged);
+  if(!saved){alert('Migration failed.');return;}
+
+  vessels=merged;
+  sv();
+  safeRenderAll();
+  alert('Local cache merged into Shared Database.');
+}
+
+function clearAll(){
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all data.');return;}
+  if(!confirm('Clear all portal data? This cannot be undone.'))return;
+  try{localStorage.removeItem(VKEY);}catch(e){}
+  vessels=[];ibItems=[];
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+}
+function clearAllHistory(){
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
+  if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
+  try{
+    localStorage.removeItem(VKEY);
+    localStorage.removeItem(UKEY);
+    sessionStorage.clear();
+  }catch(e){}
+  vessels=[];ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+  alert('All local portal history was cleared.');
+}
+
+window.onload=()=>{
+  // Load API key immediately on page load
+  try{const k=localStorage.getItem('orca_akey');if(k){window.GEMINI_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}}catch(e){}
+  if(typeof google!=='undefined'&&google.accounts){
+    initG();
+    try{
+      if(localStorage.getItem('orca_google_consent_ok')==='1'){
+        setTimeout(()=>tc && tc.requestAccessToken({prompt:''}),250);
+      }
+    }catch(e){console.warn('Silent sign-in skipped',e);}
+  }
+};
+setInterval(async () => {
+  if(token) {
+    await fetchInbox();
+    renderTable();
+    updateMetrics();
+    const el=document.getElementById('last-refresh-label');
+    if(el) el.textContent='Auto-checked: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  }
+}, 10 * 60 * 1000);
+
+
+function debugSyncState(){
+  return {
+    version:window.ORCA_FIX_VERSION,
+    localCount:(loadLocalVesselsForMerge()||[]).length,
+    currentCount:(vessels||[]).length,
+    sharedSheetId:typeof SHARED_SHEET_ID==='undefined'?null:SHARED_SHEET_ID,
+    sharedDbReady:typeof sharedDbReady==='undefined'?null:sharedDbReady,
+    user:user&&user.email
+  };
+}
+
+
+function showSyncToast(msg, ok=true){
+  let t=document.getElementById('sync-toast');
+  if(!t){
+    t=document.createElement('div');
+    t.id='sync-toast';
+    t.style.cssText='position:fixed;bottom:24px;right:24px;padding:12px 18px;border-radius:8px;color:#fff;font:14px sans-serif;z-index:99999;display:none;';
+    document.body.appendChild(t);
+  }
+  t.style.background=ok?'#16a34a':'#dc2626';
+  t.textContent=msg;
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',2500);
+}
+
+
+function goBackToDashboard(){
+  try{
+    if(typeof showTab==='function'){showTab('dash');return;}
+    if(typeof showSection==='function'){showSection('dashboard');return;}
+    if(typeof showDashboard==='function'){showDashboard();return;}
+    const dash=document.getElementById('dash')||document.getElementById('dashboard')||document.querySelector('[data-view="dashboard"]');
+    const analyze=document.getElementById('analyze')||document.getElementById('analyze-reply')||document.querySelector('[data-view="analyze"]');
+    if(analyze)analyze.style.display='none';
+    if(dash)dash.style.display='';
+    location.hash='#dashboard';
+  }catch(e){
+    console.warn('Back to dashboard failed',e);
+    location.hash='#dashboard';
+  }
+}
+function installAnalyzeBackButton(){
+  const headings=[...document.querySelectorAll('h1,h2,h3,strong,b')];
+  const h=headings.find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
+  if(!h)return;
+  const card=h.closest('.card,.panel,section,div')||h.parentElement;
+  if(!card || card.querySelector('#btn-back-dashboard'))return;
+
+  const header=document.createElement('div');
+  header.style.cssText='display:flex;align-items:center;gap:12px;margin-bottom:18px;';
+  const back=document.createElement('button');
+  back.id='btn-back-dashboard';
+  back.type='button';
+  back.className='btn';
+  back.innerHTML='← Back to Dashboard';
+  back.style.cssText='border:1px solid #ddd;background:white;border-radius:8px;padding:9px 12px;cursor:pointer;';
+  back.onclick=goBackToDashboard;
+
+  h.parentNode.insertBefore(header,h);
+  header.appendChild(back);
+  header.appendChild(h);
+}
+document.addEventListener('DOMContentLoaded',installAnalyzeBackButton);
+setInterval(installAnalyzeBackButton,1000);
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    const h=[...document.querySelectorAll('h1,h2,h3,strong,b')].find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
+    if(h && h.offsetParent!==null)goBackToDashboard();
+  }
+});
+
+</script>
+<script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
+</body>
+</html>
+<!-- leon-gutnik-admin-l2 -->
+
+<!-- updated -->
