@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v36.8 view-event-delegation-hard-fix -->
+<!-- ORCA OPS PORTAL v37.0 analyze-back-button -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -464,8 +464,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-console.log("ORCA v36.8 view event delegation loaded");
-window.ORCA_FIX_VERSION="v36.8";
+console.log("ORCA v37.0 analyze back button loaded");
+window.ORCA_FIX_VERSION="v37.0";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -1752,7 +1752,7 @@ function renderInlineInbox(){
       <div style="font-size:12px;color:var(--navy);font-style:italic;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${it.subj||''}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${(it.body||'').replace(/\s+/g,' ').slice(0,180)}</div>
     </div>
-    <div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openVesselSafeView(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-robot"></i> Analyze & Update</button></div>
+    <div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openInboxReply(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-robot"></i> Analyze & Update</button></div>
   </div>`).join('');
 }
 
@@ -1810,7 +1810,7 @@ function renderInbox(){
   const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
   if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
   empty.style.display='none';
-  list.innerHTML=ibItems.map((item,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:10px;background:var(--white)"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${item.vessel.name}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${item.from} · ${item.date}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${item.subj}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.body.substring(0,120)}...</div></div><div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openVesselSafeView(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-cpu"></i> Analyze & Update</button></div></div></div>`).join('');
+  list.innerHTML=ibItems.map((item,i)=>`<div style="border:1px solid var(--border);border-radius:var(--rs);padding:14px;margin-bottom:10px;background:var(--white)"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${item.vessel.name}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${item.from} · ${item.date}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${item.subj}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.body.substring(0,120)}...</div></div><div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="openInboxReply(${i})"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="openIbModal(${i})"><i class="ti ti-cpu"></i> Analyze & Update</button></div></div></div>`).join('');
 }
 
 function openIbModal(i){
@@ -2104,110 +2104,51 @@ function showSyncToast(msg, ok=true){
 }
 
 
-function escHtml(s){
-  return String(s==null?'':s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-}
-function vesselMissingItems(v){
-  const items=[
-    'Vessel GA',
-    'Bridge Console GA',
-    'Next 2–3 upcoming port calls + corresponding agent details for each port',
-    'Cable penetration',
-    'VSAT routing',
-    'Power connection',
-    'Proposed monitor location photos',
-    'Proposed Seapod location photos',
-    'Docs acknowledgement'
-  ];
-  const docs=String((v&&v.docs)||'').toLowerCase();
-  return items.filter(x=>!docs.includes(x.toLowerCase()));
-}
-function openVesselSafeView(i){
-  i=Number(i);
-  const v=(vessels||[])[i];
-  if(!v){alert('Vessel not found. Please click Sync and try again.');return;}
-  let m=document.getElementById('safe-view-modal');
-  if(!m){
-    m=document.createElement('div');
-    m.id='safe-view-modal';
-    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99998;display:none;align-items:center;justify-content:center;padding:24px;';
-    document.body.appendChild(m);
+function goBackToDashboard(){
+  try{
+    if(typeof showTab==='function'){showTab('dash');return;}
+    if(typeof showSection==='function'){showSection('dashboard');return;}
+    if(typeof showDashboard==='function'){showDashboard();return;}
+    const dash=document.getElementById('dash')||document.getElementById('dashboard')||document.querySelector('[data-view="dashboard"]');
+    const analyze=document.getElementById('analyze')||document.getElementById('analyze-reply')||document.querySelector('[data-view="analyze"]');
+    if(analyze)analyze.style.display='none';
+    if(dash)dash.style.display='';
+    location.hash='#dashboard';
+  }catch(e){
+    console.warn('Back to dashboard failed',e);
+    location.hash='#dashboard';
   }
-  const timeline=(v.timeline||[]).slice().reverse().map(t=>{
-    const when=escHtml(t.time||t.date||t.ts||'');
-    const title=escHtml(t.title||t.type||'Activity');
-    const note=escHtml(t.note||t.body||t.text||'');
-    return `<div style="padding:10px 0;border-bottom:1px solid #eee"><b>${title}</b><br><span style="color:#666">${when}</span>${note?`<div style="margin-top:4px">${note}</div>`:''}</div>`;
-  }).join('') || '<div style="color:#777">No communication history yet.</div>';
-  const missing=vesselMissingItems(v).map(x=>`<li>${escHtml(x)}</li>`).join('');
-  m.innerHTML=`
-    <div style="background:#fff;border-radius:14px;max-width:980px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:system-ui,-apple-system,Segoe UI,sans-serif;">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #eee">
-        <div>
-          <h2 style="margin:0;font-size:22px">${escHtml(v.name||'Unnamed vessel')}</h2>
-          <div style="color:#666">${escHtml(v.email||'')}</div>
-        </div>
-        <button onclick="document.getElementById('safe-view-modal').style.display='none'" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:8px 12px;cursor:pointer">Close</button>
-      </div>
-      <div style="padding:20px 22px;display:grid;grid-template-columns:1fr 1fr;gap:18px">
-        <div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
-            <div style="border:1px solid #eee;border-radius:12px;padding:14px"><div style="color:#777;font-size:12px">STATUS</div><b>${escHtml(v.status||'')}</b></div>
-            <div style="border:1px solid #eee;border-radius:12px;padding:14px"><div style="color:#777;font-size:12px">PROGRESS</div><b>${Number(v.progress||0)}%</b></div>
-            <div style="border:1px solid #eee;border-radius:12px;padding:14px"><div style="color:#777;font-size:12px">RISK</div><b>${escHtml(v.risk||'')}</b></div>
-          </div>
-          <h3>Communication history</h3>
-          ${timeline}
-        </div>
-        <div>
-          <h3>Missing items</h3>
-          <ul style="line-height:1.8">${missing||'<li>None detected</li>'}</ul>
-          <h3>Docs / Notes</h3>
-          <pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:12px;max-height:240px;overflow:auto">${escHtml(v.docs||v.notes||'')}</pre>
-        </div>
-      </div>
-    </div>`;
-  m.style.display='flex';
 }
-function getVesselIndexFromRow(row){
-  const rows=[...document.querySelectorAll('#rows .row, .vessel-row, tr')].filter(r=>r.offsetParent!==null);
-  let idx=rows.indexOf(row);
-  if(idx>=0 && idx<(vessels||[]).length)return idx;
-  const name=(row.querySelector('b,strong,.vessel-name')||row.querySelector('td,div'))?.textContent?.trim();
-  if(name){
-    const j=(vessels||[]).findIndex(v=>String(v.name||'').trim()===name);
-    if(j>=0)return j;
+function installAnalyzeBackButton(){
+  const headings=[...document.querySelectorAll('h1,h2,h3,strong,b')];
+  const h=headings.find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
+  if(!h)return;
+  const card=h.closest('.card,.panel,section,div')||h.parentElement;
+  if(!card || card.querySelector('#btn-back-dashboard'))return;
+
+  const header=document.createElement('div');
+  header.style.cssText='display:flex;align-items:center;gap:12px;margin-bottom:18px;';
+  const back=document.createElement('button');
+  back.id='btn-back-dashboard';
+  back.type='button';
+  back.className='btn';
+  back.innerHTML='← Back to Dashboard';
+  back.style.cssText='border:1px solid #ddd;background:white;border-radius:8px;padding:9px 12px;cursor:pointer;';
+  back.onclick=goBackToDashboard;
+
+  h.parentNode.insertBefore(header,h);
+  header.appendChild(back);
+  header.appendChild(h);
+}
+document.addEventListener('DOMContentLoaded',installAnalyzeBackButton);
+setInterval(installAnalyzeBackButton,1000);
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    const h=[...document.querySelectorAll('h1,h2,h3,strong,b')].find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
+    if(h && h.offsetParent!==null)goBackToDashboard();
   }
-  return -1;
-}
-function installViewButtonDelegation(){
-  if(window.__orcaViewDelegationInstalled)return;
-  window.__orcaViewDelegationInstalled=true;
-  document.addEventListener('click',function(ev){
-    const btn=ev.target.closest('button');
-    if(!btn)return;
-    const label=(btn.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
-    if(label!=='view')return;
-    const row=btn.closest('.row, .vessel-row, tr');
-    if(!row)return;
-    const idx=getVesselIndexFromRow(row);
-    if(idx<0)return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    openVesselSafeView(idx);
-  },true);
-}
+});
 
-
-try{installViewButtonDelegation();}catch(e){console.warn(e);}
-
-function openCase(i){openVesselSafeView(i);}
-
-function viewVessel(i){openVesselSafeView(i);}
-
-function openVessel(i){openVesselSafeView(i);}
-
-function showVessel(i){openVesselSafeView(i);}
 </script>
 <script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
 </body>
