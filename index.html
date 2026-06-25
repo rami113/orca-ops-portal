@@ -224,6 +224,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
 
 .recv-item{display:flex;align-items:center;gap:8px;background:#EAF8F2;color:#116B52;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:13px}
+.has-new-reply td{background:#EAF8F2 !important}
+.has-new-reply td:first-child{border-left:3px solid #1D9E75 !important}
+.new-reply-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1D9E75;margin-left:6px;vertical-align:middle;flex-shrink:0}
 .recv-item i{color:#1D9E75}
 
 </style>
@@ -720,19 +723,13 @@ async function syncSharedDatabase(){
     return;
   }
 
-  // If shared DB is reset/empty, DO NOT push local cache back into it.
-  // This prevents one user's stale browser from resurrecting deleted data for everyone.
-  if(sharedRaw.length===0){
-    vessels=[];
-    ibItems=[];
-    sv();
-    safeRenderAll();
-    return;
-  }
-
   // Normal sync: merge shared + local cache, then save the merged truth.
+  // If shared DB is empty but local has data, push local up (first user to sync wins).
   const localRaw=loadLocalVesselsForMerge();
-  const merged=mergeVesselLists(sharedRaw, localRaw);
+  if(sharedRaw.length===0&&localRaw.length===0){
+    vessels=[];ibItems=[];sv();safeRenderAll();return;
+  }
+  const merged=sharedRaw.length===0?localRaw.map(normalizeVessel):mergeVesselLists(sharedRaw, localRaw);
 
   // Only write back if merge added/updated something beyond shared.
   const sharedJson=JSON.stringify(sharedRaw.map(normalizeVessel));
@@ -1308,10 +1305,12 @@ function renderTable(){
     seedTimeline(vessels[idx]);
     const d=ds(v.lastContact);
     const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
-    return `<tr class="cl">
+    const hasNewReply=ibItems.some(m=>m.vi===idx||(m.vessel&&vessels.indexOf(m.vessel)===idx));
+    const newReplyDot=hasNewReply?`<span class="new-reply-dot" title="New unread reply"></span>`:'';
+    return `<tr class="cl${hasNewReply?' has-new-reply':''}">
       <td>
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
-          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
+          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}${newReplyDot}</strong>
           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
         </div>
       </td>
