@@ -723,35 +723,42 @@ async function syncSharedDatabase(){
     return;
   }
 
-  // Normal sync: merge shared + local cache, then save the merged truth.
-  // If shared DB is empty but local has data, push local up (first user to sync wins).
+  // Sync strategy:
+  // 1. Shared DB is the source of truth for all users.
+  // 2. Local cache is only used to merge in vessels that exist locally but NOT yet in shared.
+  //    (e.g. a vessel created offline before first sync)
+  // 3. We NEVER let a local vessel overwrite a shared vessel that has newer data.
   const localRaw=loadLocalVesselsForMerge();
+
   if(sharedRaw.length===0&&localRaw.length===0){
     vessels=[];ibItems=[];sv();safeRenderAll();return;
   }
-  const merged=sharedRaw.length===0?localRaw.map(normalizeVessel):mergeVesselLists(sharedRaw, localRaw);
 
-  // Only write back if merge added/updated something beyond shared.
-  const sharedJson=JSON.stringify(sharedRaw.map(normalizeVessel));
-  const mergedJson=JSON.stringify(merged.map(normalizeVessel));
-  if(sharedJson!==mergedJson){
+  // Find vessels in local that are completely absent from shared (new vessels not yet pushed)
+  const sharedKeys=new Set(sharedRaw.map(v=>vesselKey(v)).filter(Boolean));
+  const localOnlyVessels=localRaw.filter(v=>vesselKey(v)&&!sharedKeys.has(vesselKey(v)));
+
+  // Merge: shared is truth, add any local-only vessels on top
+  const merged=localOnlyVessels.length>0
+    ? [...sharedRaw.map(normalizeVessel), ...localOnlyVessels.map(normalizeVessel)]
+    : sharedRaw.map(normalizeVessel);
+
+  if(localOnlyVessels.length>0){
     const saved=await saveSharedVessels(merged);
     if(!saved){
-      alert('Sync merge could not be saved to Shared Database. Showing shared data only.');
+      alert('Could not push local vessels to Shared Database. Showing shared data only.');
       vessels=sharedRaw.map(normalizeVessel);
-      sv();
-      safeRenderAll();
-      return;
+      sv();safeRenderAll();return;
     }
   }
 
-  vessels=merged.map(normalizeVessel);
+  vessels=merged;
   sv();
   safeRenderAll();
 }
 function loadLocalVesselsForMerge(){
   try{
-    const raw=localStorage.getItem(LS)||localStorage.getItem('orca_vessels')||'[]';
+    const raw=localStorage.getItem(VKEY)||localStorage.getItem('orca_vessels')||'[]';
     const arr=JSON.parse(raw);
     return Array.isArray(arr)?arr:[];
   }catch(e){return [];}
@@ -1868,6 +1875,17 @@ async function runIbAnalysis(){
   document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
   document.getElementById('mib-fu').textContent=ibAna.followup_email||'';
   document.getElementById('mib-res').style.display='block';document.getElementById('mib-sbtn').style.display='inline-flex';
+  // Update vessel receivedItems & missingItems immediately so checklist reflects reality
+  if(curIb&&curIb.vi!=null&&vessels[curIb.vi]){
+    const vIdx=curIb.vi;
+    vessels[vIdx].receivedItems=[...new Map([...(vessels[vIdx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
+    vessels[vIdx].missingItems=ibAna.missing||[];
+    vessels[vIdx].status=ibAna.status;
+    vessels[vIdx].risk=ibAna.risk;
+    vessels[vIdx].progress=ibAna.progress;
+    saveVessels();
+    renderTable();updateMetrics();
+  }
 }
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
@@ -1899,6 +1917,17 @@ async function analyzeReply(){
   catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
   if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
   document.getElementById('a-load').style.display='none';
+  // Update vessel receivedItems immediately so checklist reflects reality
+  if(ana.vi!=null&&vessels[ana.vi]){
+    const vIdx=ana.vi;
+    vessels[vIdx].receivedItems=[...new Map([...(vessels[vIdx].receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
+    vessels[vIdx].missingItems=ana.missing||[];
+    vessels[vIdx].status=ana.status;
+    vessels[vIdx].risk=ana.risk;
+    vessels[vIdx].progress=ana.progress;
+    saveVessels();
+    renderTable();updateMetrics();
+  }
   document.getElementById('a-recv').innerHTML=(ana.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
   document.getElementById('a-stat').innerHTML=`<div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Status</div>${sb(ana.status)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Risk</div>${rb(ana.risk)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Progress</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div class="prog" style="width:100px"><div class="prog-f" style="width:${ana.progress}%"></div></div><span style="font-size:13px;font-weight:700">${ana.progress}%</span></div></div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Next action</div><span style="font-size:12px">${ana.nextAction||'—'}</span></div>${(ana.flags&&ana.flags.length)?ana.flags.map(f=>`<div class="flag-item"><i class="ti ti-flag"></i>${f}</div>`).join(''):''}`;
