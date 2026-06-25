@@ -250,6 +250,13 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <div id="app">
+  <div id="apikey-banner" style="background:#fff3cd;border-bottom:1px solid #f0d98c;padding:8px 1.5rem;display:flex;align-items:center;gap:10px;font-size:13px">
+    <i class="ti ti-key" style="color:#854F0B"></i>
+    <span style="color:#7a5200">Anthropic API key required for AI analysis:</span>
+    <input id="apikey-input" type="password" placeholder="sk-ant-..." style="flex:1;max-width:340px;padding:5px 10px;border:1px solid #f0d98c;border-radius:6px;font-size:13px;font-family:inherit"/>
+    <button class="btn btn-s" onclick="saveApiKey()" style="background:#854F0B;color:#fff;border-color:#854F0B">Save</button>
+    <button class="btn btn-s" onclick="document.getElementById('apikey-banner').style.display='none'" style="color:#854F0B">✕</button>
+  </div>
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:16px">
       <img src="logo.png" alt="Orca AI" style="height:28px" onerror="this.outerHTML='<span style=\'font-weight:800;color:#1D2E6B;font-size:15px\'>ORCA AI</span>'"/>
@@ -558,8 +565,15 @@ async function ensureSharedDb(){
     r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
     const d=await r.json();
     const val=d.values&&d.values[0]&&d.values[0][0];
-    if(!val)await saveSharedVessels([]);
-    else{try{JSON.parse(val);}catch(e){await saveSharedVessels([]);}}
+    // Only initialize with [] if the sheet cell is genuinely empty (never overwrite existing data)
+    if(!val){
+      await saveSharedVessels([]);
+    } else {
+      try{JSON.parse(val);}catch(e){
+        // Value exists but is corrupt — log and leave it, don't wipe
+        console.warn('Shared DB cell has non-JSON value, leaving as-is');
+      }
+    }
     sharedDbReady=true;
     return true;
   }catch(e){
@@ -583,6 +597,20 @@ async function loadSharedVessels(){
     console.error('Shared DB load failed',e);
     return null;
   }
+}
+function saveApiKey(){
+  const k=document.getElementById('apikey-input').value.trim();
+  if(!k){alert('Please enter your Anthropic API key');return;}
+  window.ANTHROPIC_API_KEY=k;
+  try{sessionStorage.setItem('orca_akey',k);}catch(e){}
+  document.getElementById('apikey-banner').style.display='none';
+  showSyncToast('API key saved for this session ✓');
+}
+function loadApiKey(){
+  try{
+    const k=sessionStorage.getItem('orca_akey');
+    if(k){window.ANTHROPIC_API_KEY=k;document.getElementById('apikey-banner').style.display='none';}
+  }catch(e){}
 }
 function safeRenderAll(){
   try{updateMetrics();}catch(e){console.warn('updateMetrics failed',e);}
@@ -852,6 +880,7 @@ async function handleToken(r){
   document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
   if(user.pic)document.getElementById('uav').src=user.pic;
   document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
+  loadApiKey();
   renderTable();updateMetrics();populateSel();
   fetchInbox();
 }
@@ -1867,8 +1896,8 @@ async function runIbAnalysis(){
   if(!curIb)return;
   const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
   document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items. Photos=pending review. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
-  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
+  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously confirmed items: ${(vessels[curIb.vi]&&vessels[curIb.vi].receivedItems||[]).join(", ")||"none"}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
+  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':window.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,messages:[{role:'user',content:prompt}]})});const dd=await r.json();if(dd.error){throw new Error(dd.error.message||'API error');}const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
@@ -1912,8 +1941,8 @@ async function analyzeReply(){
   if(!reply){alert("Please paste the captain's reply.");return;}
   const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
-  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
+  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
+  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':window.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,messages:[{role:'user',content:prompt}]})});const dd=await r.json();if(dd.error){throw new Error(dd.error.message||'API error');}const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
   catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
   if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
   document.getElementById('a-load').style.display='none';
@@ -2023,7 +2052,6 @@ function refreshAllViews(){
   updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
 }
 
-async 
 async function resetSharedDatabase(){
   if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
     alert('Super Admin only.');
