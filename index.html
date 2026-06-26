@@ -457,9 +457,29 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
 <!-- INBOX ANALYZE MODAL -->
 <div id="mod-ib" class="modal-bg" style="display:none">
-  <div class="modal" style="max-width:640px">
-    <div class="modal-t"><i class="ti ti-cpu" style="color:var(--navy)"></i> Reply — <span id="mib-v"></span></div>
+  <div class="modal" style="max-width:660px">
+    <div class="modal-t"><i class="ti ti-inbox" style="color:var(--navy)"></i> Reply — <span id="mib-v"></span></div>
     <div class="modal-s" id="mib-m"></div>
+
+    <!-- Status timeline panel -->
+    <div id="mib-stats" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:1rem;padding:12px;background:#f4f6fb;border-radius:8px;border:1px solid #dde3f0">
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">⏱ Since first email</div>
+        <div id="mib-stat-first" style="font-size:22px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">days ago</div>
+      </div>
+      <div style="text-align:center;border-left:1px solid #dde3f0;border-right:1px solid #dde3f0">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📨 Response time</div>
+        <div id="mib-stat-resp" style="font-size:22px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">days to reply</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📊 Readiness</div>
+        <div id="mib-stat-ready" style="font-size:22px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="mib-stat-status">—</div>
+      </div>
+    </div>
+
     <div class="sl" style="margin-bottom:8px">Captain's reply</div>
     <div id="mib-b" class="email-box" style="margin-bottom:1rem;max-height:150px"></div>
     <div id="mib-al" class="ai-load" style="display:none"><div class="spinner"></div> AI is analyzing...</div>
@@ -1736,10 +1756,36 @@ function renderInbox(){
 function openIbModal(i){
   curIb=ibItems[i];ibAna=null;
   if(!curIb||!curIb.vessel){alert('Reply item not found. Please click Check inbox again.');return;}
-  document.getElementById('mib-v').textContent=curIb.vessel.name;
+  const v=curIb.vessel; // FIX: was undefined before
+
+  // Populate header
+  document.getElementById('mib-v').textContent=v.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   document.getElementById('mib-b').textContent=curIb.body;
-  ibAna=normalizeAnalysisResult(v,curIb.body,ibAna);
+
+  // Populate status panel
+  // 1. Days since first email sent to captain
+  const firstSent=v.lastEmailDate||v.createdAt||v.lastContact||null;
+  const daysSinceFirst=firstSent?Math.floor((Date.now()-new Date(firstSent))/86400000):null;
+  document.getElementById('mib-stat-first').textContent=daysSinceFirst!==null?daysSinceFirst:'—';
+
+  // 2. Response time: days from last sent email to this reply
+  const replyDate=curIb.date?new Date(curIb.date).getTime():null;
+  const lastSent=v.lastEmailDate||v.lastContact||null;
+  const lastSentMs=lastSent?new Date(lastSent).getTime():null;
+  let respDays='—';
+  if(replyDate&&lastSentMs&&replyDate>lastSentMs){
+    respDays=Math.floor((replyDate-lastSentMs)/86400000);
+    if(respDays===0)respDays='<1';
+  }
+  document.getElementById('mib-stat-resp').textContent=respDays;
+
+  // 3. Readiness score + status
+  const score=typeof readinessScore==='function'?readinessScore(v):v.progress||0;
+  document.getElementById('mib-stat-ready').textContent=score+'%';
+  const statusLabels={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
+  document.getElementById('mib-stat-status').textContent=statusLabels[v.status]||v.status||'—';
+
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
   document.getElementById('mod-ib').style.display='flex';
