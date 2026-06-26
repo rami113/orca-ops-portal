@@ -1252,6 +1252,7 @@ function renderTable(){
         <div class="row-actions">
           <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i> View</button>
           <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze</button>
+          <button class="btn btn-s" title="Latest status" onclick="event.stopPropagation();openLatestStatus(${idx})" style="background:#f4f6fb;border-color:#c5cfe8;color:#1D2E6B"><i class="ti ti-report-analytics"></i> Status</button>
           ${adminDelete}
         </div>
       </td>
@@ -1629,10 +1630,15 @@ function bestVesselForInboxMessage(m){
   return byEmail[0]||null;
 }
 function openInboxReply(idx){
+  // VIEW REPLY - show only the captain's reply, no AI
   const item=(ibItems||[])[idx];
   if(!item){alert('Reply not found. Please click Check inbox again.');return;}
-  if(typeof openIbModal==='function'){openIbModal(idx);return;}
-  alert((item.subj||'Reply')+'\n\nFrom: '+(item.from||'')+'\n\n'+(item.body||''));
+  const v=item.vessel||{};
+  document.getElementById('view-reply-vessel').textContent=v.name||'Vessel';
+  document.getElementById('view-reply-from').textContent='From: '+(item.from||'')+'  ·  '+(item.date||'');
+  document.getElementById('view-reply-subj').textContent=item.subj||'';
+  document.getElementById('view-reply-body').textContent=item.body||'';
+  document.getElementById('mod-view-reply').style.display='flex';
 }
 function debugInboxMatches(){
   return (ibItems||[]).map((m,i)=>({i, subject:m.subj||m.subject, from:m.from, matched:m.vessel&&m.vessel.name}));
@@ -1852,6 +1858,49 @@ async function saveAndSend(){
 }
 
 // VESSEL DETAIL
+
+function openLatestStatus(idx){
+  const v=vessels[idx];if(!v)return;
+  document.getElementById('ls-vessel-name').textContent=v.name;
+
+  // Days since first email
+  const firstSent=v.lastEmailDate||v.createdAt||v.lastContact||null;
+  const daysSinceFirst=firstSent?Math.floor((Date.now()-new Date(firstSent))/86400000):null;
+  document.getElementById('ls-days-first').textContent=daysSinceFirst!==null?daysSinceFirst:'—';
+  document.getElementById('ls-date-first').textContent=firstSent?new Date(firstSent).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';
+
+  // Response time
+  const lastRecv=v.lastReceivedDate||null;
+  const lastSent=v.lastEmailDate||v.lastContact||null;
+  let respDays='—';
+  if(lastRecv&&lastSent){
+    const diff=Math.floor((new Date(lastRecv)-new Date(lastSent))/86400000);
+    respDays=diff<=0?'<1':String(diff);
+  }
+  document.getElementById('ls-resp-days').textContent=respDays;
+
+  // Readiness
+  const score=typeof readinessScore==='function'?readinessScore(v):v.progress||0;
+  document.getElementById('ls-readiness').textContent=score+'%';
+  const statusLabels={waiting:'Waiting for reply',followup:'Follow-up required',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
+  document.getElementById('ls-status-label').textContent=statusLabels[v.status]||v.status||'—';
+
+  // Received items
+  const recv=v.receivedItems||[];
+  const recvEl=document.getElementById('ls-received');
+  recvEl.innerHTML=recv.length
+    ?recv.map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0faf4;border-radius:6px;margin-bottom:5px;font-size:13px;font-weight:600;color:#1a7a3a"><i class="ti ti-circle-check"></i>${r}</div>`).join('')
+    :`<div style="font-size:13px;color:var(--faint);padding:6px">Nothing received yet.</div>`;
+
+  // Missing items
+  const miss=v.missingItems||REQUIRED_ITEMS;
+  const missEl=document.getElementById('ls-missing');
+  missEl.innerHTML=miss.length
+    ?miss.map(m=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff5f5;border-radius:6px;margin-bottom:5px;font-size:13px;color:#c0392b"><i class="ti ti-circle-x"></i>${m}</div>`).join('')
+    :`<div style="font-size:13px;color:#1a7a3a;padding:6px">✓ All items received!</div>`;
+
+  document.getElementById('mod-latest-status').style.display='flex';
+}
 function openV(idx){
   const v=vessels[idx];if(!v)return;
   cleanTimeline(v);
@@ -1870,11 +1919,12 @@ function openV(idx){
     const _done=REQUIRED_ITEMS.filter(i=>hasItem(recv,i));
     const _miss=REQUIRED_ITEMS.filter(i=>hasItem(miss,i));
     const _pend=REQUIRED_ITEMS.filter(i=>!hasItem(recv,i)&&!hasItem(miss,i));
-    cl.innerHTML=[..._done,..._pend,..._miss].map(item=>{
-      const done=hasItem(recv,item),mis=hasItem(miss,item);
-      const ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
-      return`<li style="${done?'font-weight:700;color:#1D2E6B':''}"><i class="ti ${ic}"></i>${item}</li>`;
-    }).join('');
+    // Received first (bold+green), then pending, then missing
+    cl.innerHTML=[
+      ..._done.map(item=>`<li style="font-weight:700;color:#1a7a3a;background:#f0faf4;border-radius:5px;padding:7px 8px;margin-bottom:3px"><i class="ti ti-circle-check ic-d" style="color:#1a7a3a"></i>${item} <span style="font-size:11px;font-weight:400;color:#1a7a3a;margin-left:4px">✓ Received</span></li>`),
+      ..._pend.map(item=>`<li style="color:var(--muted)"><i class="ti ti-circle ic-p"></i>${item}</li>`),
+      ..._miss.map(item=>`<li style="color:#c0392b"><i class="ti ti-circle-x ic-m" style="color:#c0392b"></i>${item}</li>`)
+    ].join('');
   }
   const ri=document.getElementById('vd-ri');
   if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
@@ -2102,6 +2152,61 @@ setInterval(async () => {
 
 </script>
 <script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
+
+<!-- VIEW REPLY modal - simple captain reply viewer -->
+<div id="mod-view-reply" class="modal-bg" style="display:none">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-t"><i class="ti ti-eye" style="color:var(--navy)"></i> Captain's Reply — <span id="view-reply-vessel"></span></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px" id="view-reply-from"></div>
+    <div style="font-size:13px;color:var(--navy);font-style:italic;margin-bottom:12px" id="view-reply-subj"></div>
+    <div id="view-reply-body" style="background:#f7f8fc;border:1px solid var(--border);border-radius:7px;padding:14px;font-size:13px;line-height:1.6;white-space:pre-wrap;max-height:350px;overflow-y:auto;font-family:inherit"></div>
+    <div class="modal-f" style="margin-top:16px">
+      <button class="btn" onclick="document.getElementById('mod-view-reply').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- LATEST STATUS modal -->
+<div id="mod-latest-status" class="modal-bg" style="display:none">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-t"><i class="ti ti-report-analytics" style="color:var(--navy)"></i> Latest Status — <span id="ls-vessel-name"></span></div>
+
+    <!-- Stats row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;padding:14px;background:#f4f6fb;border-radius:8px;border:1px solid #dde3f0">
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">⏱ Since first email</div>
+        <div id="ls-days-first" style="font-size:26px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="ls-date-first">—</div>
+      </div>
+      <div style="text-align:center;border-left:1px solid #dde3f0;border-right:1px solid #dde3f0">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📨 Response time</div>
+        <div id="ls-resp-days" style="font-size:26px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">days to reply</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📊 Readiness</div>
+        <div id="ls-readiness" style="font-size:26px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="ls-status-label">—</div>
+      </div>
+    </div>
+
+    <!-- Received items -->
+    <div style="margin-bottom:14px">
+      <div class="sl" style="margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em">✅ Received from captain</div>
+      <div id="ls-received"></div>
+    </div>
+
+    <!-- Missing items -->
+    <div style="margin-bottom:6px">
+      <div class="sl" style="margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em">⏳ Still missing</div>
+      <div id="ls-missing"></div>
+    </div>
+
+    <div class="modal-f" style="margin-top:16px">
+      <button class="btn" onclick="document.getElementById('mod-latest-status').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- Async confirm/alert modal - must be in real DOM -->
 <div id="orca-modal-overlay">
