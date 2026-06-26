@@ -596,8 +596,7 @@ async function loadSharedVessels(){
     return null;
   }
 }
-async 
-function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
+async function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
 function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
 function parseSharedPayload(raw){
   try{
@@ -667,6 +666,7 @@ async function saveVessels(){
   sv();
 }
 async function refreshSharedData(){
+  await new Promise(r=>setTimeout(r,0));
   await loadVessels();
   updateMetrics();
   renderTable();
@@ -1653,6 +1653,8 @@ function renderInlineInbox(){
 async function checkInbox(){
   const buttons=[document.getElementById('btn-chk'),document.getElementById('btn-chk-inbox-page')].filter(Boolean);
   buttons.forEach(b=>{b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';});
+  // Yield to browser so UI updates (spinner) before heavy work starts - fixes INP blocking
+  await new Promise(r=>setTimeout(r,0));
   await fetchInbox();
   window.showInlineInboxPanel=true;
   updateReceivedStatsFromInbox();
@@ -1699,7 +1701,11 @@ async function fetchInbox(){
       const vessel=bestVesselForInboxMessage(temp);
       if(vessel){
         const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
-        if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+        // Only show emails received AFTER the vessel was first created/contacted
+        const vesselCreated=new Date(vessel.createdAt||vessel.firstContact||vessel.lastContact||0).getTime();
+        const msgDate=new Date(date).getTime();
+        const isAfterVesselCreation=!vesselCreated||!msgDate||msgDate>=vesselCreated;
+        if(!logged&&isAfterVesselCreation)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
       }
     }
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
@@ -1868,7 +1874,6 @@ function refreshAllViews(){
   updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
 }
 
-async 
 async function resetSharedDatabase(){
   if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
     alert('Super Admin only.');
