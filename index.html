@@ -1282,7 +1282,7 @@ function renderTimeline(v){
   var events=(v.timeline||[]).slice().sort(function(a,b){return new Date(b.ts||0)-new Date(a.ts||0);});
   if(!events.length)return '<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>';
   // Show only actual emails (sent/reply), not AI analysis events
-  events=events.filter(function(e){return e.type==='sent'||e.type==='reply';});
+  events=events.filter(function(e){var t=(e.title||'').toLowerCase();return (e.type==='sent'||e.type==='reply')&&!t.includes('analyz')&&!t.includes('status')&&!t.includes('ai ')&&!t.includes('updated');});
   var rows=events.slice(0,20).map(function(e,i){
     var iconMap={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'};
     var icon=iconMap[e.type]||'ti-circle';
