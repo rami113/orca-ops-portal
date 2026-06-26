@@ -1394,17 +1394,6 @@ ${htmlBody}
 </td></tr>
 </table>
 
-<!-- Async confirm/alert modal -->
-<div id="orca-modal-overlay">
-  <div id="orca-modal-box">
-    <div id="orca-modal-title"></div>
-    <div id="orca-modal-msg"></div>
-    <div id="orca-modal-btns">
-      <button id="orca-modal-cancel" style="display:none">Cancel</button>
-      <button id="orca-modal-ok">OK</button>
-    </div>
-  </div>
-</div>
 </body></html>`;
 }
 function nextFollowupNumber(v){return Number(v.followupsSent||0)+1;}
@@ -2035,27 +2024,49 @@ function orcaConfirm(msg, title=''){
     cancel.addEventListener('click',onCancel);
   });
 }
+function trySilentSignIn(){
+  try{
+    if(typeof google==='undefined'||!google.accounts){
+      // Google script not ready yet - retry
+      setTimeout(trySilentSignIn, 300);
+      return;
+    }
+    if(!tc) initG();
+    if(localStorage.getItem('orca_google_consent_ok')==='1'){
+      setTimeout(()=>tc && tc.requestAccessToken({prompt:''}),100);
+    }
+  }catch(e){console.warn('Silent sign-in skipped',e);}
+}
 window.onload=()=>{
-  if(typeof google!=='undefined'&&google.accounts){
-    initG();
-    try{
-      if(localStorage.getItem('orca_google_consent_ok')==='1'){
-        setTimeout(()=>tc && tc.requestAccessToken({prompt:''}),250);
-      }
-    }catch(e){console.warn('Silent sign-in skipped',e);}
-  }
+  // Start trying after a short delay to let Google script load
+  setTimeout(trySilentSignIn, 200);
 };
 setInterval(async () => {
   if(token) {
+    await loadVessels();
     await fetchInbox();
     renderTable();
     updateMetrics();
+    renderInbox();
+    renderInlineInbox();
     const el=document.getElementById('last-refresh-label');
     if(el) el.textContent='Auto-checked: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
   }
-}, 10 * 60 * 1000);
+}, 2 * 60 * 1000);
 
 </script>
 <script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
+
+<!-- Async confirm/alert modal - must be in real DOM -->
+<div id="orca-modal-overlay">
+  <div id="orca-modal-box">
+    <div id="orca-modal-title"></div>
+    <div id="orca-modal-msg"></div>
+    <div id="orca-modal-btns">
+      <button id="orca-modal-cancel" style="display:none">Cancel</button>
+      <button id="orca-modal-ok">OK</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
