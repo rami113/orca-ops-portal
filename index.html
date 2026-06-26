@@ -1261,12 +1261,15 @@ function renderTimeline(v){
     const icon={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'}[e.type]||'ti-circle';
     const hasBody=e.body&&e.body.trim().length>0;
     const eid='tl-body-'+idx+'-'+Math.abs((e.ts||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0));
-    const bodyHtml=hasBody?`<div id="${eid}" style="display:none;margin-top:8px;padding:10px 12px;background:#f7f8fc;border-radius:6px;border:1px solid var(--border);font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--text);max-height:200px;overflow-y:auto">${e.body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`:'';
-    const toggle=hasBody?`<span onclick="const el=document.getElementById('${eid}');el.style.display=el.style.display==='none'?'block':'none';this.textContent=el.style.display==='none'?'▶ Show content':'▼ Hide'" style="font-size:11px;color:var(--navy);cursor:pointer;margin-left:8px;user-select:none">▶ Show content</span>`:'';
-    return `<div class="tl-row" style="${hasBody?'cursor:default':''}">
-      <div class="tl-dot"><i class="ti ${icon}"></i></div>
+    const bodyHtml=hasBody
+      ?`<div id="${eid}" style="display:none;margin-top:8px;padding:12px 14px;background:#f7f8fc;border-radius:7px;border:1px solid var(--border);font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--text);max-height:260px;overflow-y:auto">${e.body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`
+      :'';
+    const clickFn=hasBody?`onclick="const el=document.getElementById('${eid}');const open=el.style.display==='none';el.style.display=open?'block':'none';this.querySelector('.tl-arrow').textContent=open?'▼':'▶';"`:'' ;
+    const arrow=hasBody?`<span class="tl-arrow" style="font-size:10px;color:var(--navy);margin-left:6px">▶</span>`:'';
+    return `<div class="tl-row" style="${hasBody?'cursor:pointer;border-radius:7px;padding:8px 6px;margin:0 -6px;transition:background .12s':'padding:8px 0'}" ${clickFn} ${hasBody?'onmouseenter="this.style.background='#f4f6fb'" onmouseleave="this.style.background=''"':''}>
+      <div class="tl-dot" style="margin-top:2px"><i class="ti ${icon}"></i></div>
       <div style="flex:1;min-width:0">
-        <div><strong>${e.title||e.text||'Activity'}</strong>${toggle}</div>
+        <div style="display:flex;align-items:center"><strong>${e.title||e.text||'Activity'}</strong>${arrow}</div>
         <div><span>${fmtDT(e.ts||e.date)}${e.detail?' · '+e.detail:(e.by?' · '+e.by:'')}</span></div>
         ${bodyHtml}
       </div>
