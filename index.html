@@ -1067,6 +1067,8 @@ ORCA AI OPS`;
 function inferReceivedFromReply(reply){
   const s=normTxt(reply);
   const got=[];
+  // broad visual/attachment signals
+  const hasVisual=s.includes('photo')||s.includes('picture')||s.includes('image')||s.includes('location')||s.includes('attach')||s.includes('herewith')||s.includes('enclosed')||s.includes('please find')||s.includes('sending')||s.includes('sent')||s.includes('see below')||s.includes('find below');
   if(/\bga\b/.test(s)||s.includes('general arrangement')){
     if(s.includes('bridge')||s.includes('console'))got.push('Bridge Console GA');
     else got.push('Vessel GA');
@@ -1076,10 +1078,10 @@ function inferReceivedFromReply(reply){
   if(s.includes('port')&&s.includes('agent'))got.push('Next 2–3 upcoming port calls + corresponding agent details for each port');
   if(s.includes('cable')||s.includes('penetration'))got.push('Cable penetration');
   if(s.includes('vsat'))got.push('VSAT routing');
-  if(s.includes('power'))got.push('Power connection');
-  if(s.includes('monitor')&&(s.includes('photo')||s.includes('location')||s.includes('picture')))got.push('Proposed monitor location photos');
-  if((s.includes('seapod')||s.includes('camera'))&&(s.includes('photo')||s.includes('location')||s.includes('picture')))got.push('Proposed Seapod location photos');
-  if(s.includes('acknowledg')||s.includes('document'))got.push('Docs acknowledgement');
+  if(s.includes('power')&&(s.includes('connect')||s.includes('supply')||s.includes('cable')||s.includes('220')||s.includes('110')||s.includes('24v')||s.includes('volt')))got.push('Power connection');
+  if(s.includes('monitor')&&hasVisual)got.push('Proposed monitor location photos');
+  if((s.includes('seapod')||s.includes('sea pod')||s.includes('camera'))&&hasVisual)got.push('Proposed Seapod location photos');
+  if(s.includes('acknowledg')||s.includes('document')||(s.includes('confirm')&&s.includes('doc')))got.push('Docs acknowledgement');
   return [...new Set(got)];
 }
 
@@ -1983,36 +1985,43 @@ function openV(idx){
   const v=vessels[idx];if(!v)return;
   cleanTimeline(v);
   v.missingItems=derivedMissing(v);
-  const title=document.getElementById('vd-t');
-  if(title)title.innerHTML=`<i class="ti ti-ship"></i> ${v.name} <span style="font-weight:400;color:var(--faint);font-size:13px">${v.email}</span>`;
-  const st=document.getElementById('vd-s');if(st)st.innerHTML=sb(v.status);
+  window._mvIdx=idx;
+
+  // Populate modal header
+  document.getElementById('mv-name').textContent=v.name;
+  document.getElementById('mv-email').textContent=v.email||'';
+  document.getElementById('mv-status-badge').innerHTML=sb(v.status);
+
+  // Stats
+  const firstDate=v.createdAt||v.lastEmailDate||v.lastContact||null;
+  const daysActive=firstDate?Math.floor((Date.now()-new Date(firstDate))/86400000):0;
+  document.getElementById('mv-days-active').textContent=daysActive;
+  document.getElementById('mv-start-date').textContent=firstDate?new Date(firstDate).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}):'—';
+  document.getElementById('mv-sent').textContent=v.emailsSent||0;
+  document.getElementById('mv-recv-count').textContent=v.emailsReceived||0;
+  const score=readinessScore(v)||v.progress||0;
+  document.getElementById('mv-progress').textContent=score+'%';
+  const riskLabels={low:'Low risk',medium:'Medium risk',high:'High risk'};
+  document.getElementById('mv-risk-label').textContent=riskLabels[v.risk||'medium']||'—';
+  document.getElementById('mv-next-action').textContent=v.nextAction||'—';
+  document.getElementById('mv-prog-bar').style.width=score+'%';
+
+  // Received / Missing
+  const recv=v.receivedItems||[];
+  const miss=v.missingItems||REQUIRED_ITEMS;
+  document.getElementById('mv-received').innerHTML=recv.length
+    ?recv.map(r=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#f0faf4;border-radius:6px;margin-bottom:4px;font-size:13px;font-weight:600;color:#1a7a3a"><i class="ti ti-circle-check" style="margin-top:1px;flex-shrink:0"></i>${r}</div>`).join('')
+    :`<div style="font-size:13px;color:var(--faint);padding:6px 0">Nothing received yet.</div>`;
+  document.getElementById('mv-missing').innerHTML=miss.length
+    ?miss.map(m=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#fff5f5;border-radius:6px;margin-bottom:4px;font-size:13px;color:#c0392b"><i class="ti ti-circle-x" style="margin-top:1px;flex-shrink:0"></i>${m}</div>`).join('')
+    :`<div style="font-size:13px;color:#1a7a3a;padding:6px 0">✓ All items received!</div>`;
+
+  // Timeline
   seedTimeline(v);
-  const timelineEl=document.getElementById('vd-timeline');
-  if(timelineEl)timelineEl.innerHTML=`<h4>Case Timeline</h4>${renderTimeline(v)}`;
-  const p=document.getElementById('vd-p');if(p)p.textContent=(readinessScore(v)||v.progress||0)+'%';
-  const r=document.getElementById('vd-r');if(r)r.innerHTML=rb(v.risk||'medium');
-  const recv=v.receivedItems||[],miss=v.missingItems||[];
-  const cl=document.getElementById('vd-cl');
-  if(cl){
-    const _done=REQUIRED_ITEMS.filter(i=>hasItem(recv,i));
-    const _miss=REQUIRED_ITEMS.filter(i=>hasItem(miss,i));
-    const _pend=REQUIRED_ITEMS.filter(i=>!hasItem(recv,i)&&!hasItem(miss,i));
-    // Received first (bold+green), then pending, then missing
-    cl.innerHTML=[
-      ..._done.map(item=>`<li style="font-weight:700;color:#1a7a3a;background:#f0faf4;border-radius:5px;padding:7px 8px;margin-bottom:3px"><i class="ti ti-circle-check ic-d" style="color:#1a7a3a"></i>${item} <span style="font-size:11px;font-weight:400;color:#1a7a3a;margin-left:4px">✓ Received</span></li>`),
-      ..._pend.map(item=>`<li style="color:var(--muted)"><i class="ti ti-circle ic-p"></i>${item}</li>`),
-      ..._miss.map(item=>`<li style="color:#c0392b"><i class="ti ti-circle-x ic-m" style="color:#c0392b"></i>${item}</li>`)
-    ].join('');
-  }
-  const ri=document.getElementById('vd-ri');
-  if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
-  const mi=document.getElementById('vd-mi');
-  if(mi)mi.innerHTML=miss.length?miss.map(m=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${m}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No missing items.</span>';
-  const fup=document.getElementById('vd-fup');
-  if(fup)fup.innerHTML=v.lastFollowupPreview?`<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.55;margin:0;color:var(--text)">${v.lastFollowupPreview}</pre>`:'<span style="font-size:13px;color:var(--faint)">No follow-up sent yet.</span>';
-  const tlEl=document.getElementById('vd-tl');
-  if(tlEl)tlEl.innerHTML=renderTimeline(v);
-  showTab('vessel-detail');
+  const tl=document.getElementById('mv-timeline');
+  if(tl)tl.innerHTML=renderTimeline(v);
+
+  document.getElementById('mod-view').style.display='flex';
 }
 
 // ADMIN
@@ -2231,6 +2240,82 @@ setInterval(async () => {
 
 </script>
 <script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
+
+<!-- VIEW modal - full vessel analysis overview -->
+<div id="mod-view" class="modal-bg" style="display:none">
+  <div class="modal" style="max-width:720px;max-height:90vh;overflow-y:auto">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem">
+      <div>
+        <div style="font-size:18px;font-weight:800;color:var(--navy)" id="mv-name"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px" id="mv-email"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="mv-status-badge"></div>
+        <button class="btn" onclick="document.getElementById('mod-view').style.display='none'"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.2rem">
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">⏱ Days active</div>
+        <div id="mv-days-active" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="mv-start-date">—</div>
+      </div>
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📨 Emails sent</div>
+        <div id="mv-sent" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">to captain</div>
+      </div>
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📥 Replies</div>
+        <div id="mv-recv-count" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">from captain</div>
+      </div>
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📊 Readiness</div>
+        <div id="mv-progress" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="mv-risk-label">—</div>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div style="margin-bottom:1.2rem">
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+        <span style="font-size:12px;font-weight:600;color:var(--navy)">Installation readiness</span>
+        <span style="font-size:12px;color:var(--muted)" id="mv-next-action">—</span>
+      </div>
+      <div style="height:8px;background:#e8eaf0;border-radius:99px;overflow:hidden">
+        <div id="mv-prog-bar" style="height:100%;border-radius:99px;background:var(--navy);transition:width .4s"></div>
+      </div>
+    </div>
+
+    <!-- Checklist: received + missing side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.2rem">
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#1a7a3a;margin-bottom:8px">✅ Received from captain</div>
+        <div id="mv-received"></div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#c0392b;margin-bottom:8px">⏳ Still missing</div>
+        <div id="mv-missing"></div>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">📋 Communication history</div>
+      <div id="mv-timeline" style="max-height:180px;overflow-y:auto"></div>
+    </div>
+
+    <div class="modal-f" style="margin-top:1.2rem">
+      <button class="btn" onclick="document.getElementById('mod-view').style.display='none'">Close</button>
+      <button class="btn btn-p" id="mv-analyze-btn" onclick="document.getElementById('mod-view').style.display='none';openCaseAnalyze(window._mvIdx)"><i class="ti ti-cpu"></i> Analyze</button>
+    </div>
+  </div>
+</div>
 
 <!-- VIEW REPLY modal - simple captain reply viewer -->
 <div id="mod-view-reply" class="modal-bg" style="display:none">
