@@ -1887,6 +1887,8 @@ async function resetSharedDatabase(){
   if(!ok)return;
   const ok2=confirm('Final confirmation: reset the shared Google Sheet database now?');
   if(!ok2)return;
+  // Yield to browser before heavy work - prevents INP blocking
+  await new Promise(r=>setTimeout(r,0));
   try{
     const resetAt=new Date().toISOString();
     vessels=[];
@@ -1937,6 +1939,8 @@ async function migrateLocalToShared(){
 async function clearAll(){
   if(typeof isSuperAdmin==='function'&&!isSuperAdmin()){alert('Only Super Admin can reset the shared database.');return;}
   if(!confirm('Reset Shared Database? This will delete ALL vessel data for the entire team. Cannot be undone.'))return;
+  // Yield to browser before heavy work - prevents INP blocking
+  await new Promise(r=>setTimeout(r,0));
   vessels=[];
   if(typeof ibItems!=='undefined') ibItems=[];
   try{localStorage.removeItem('orca_v3');localStorage.removeItem('orca_v2');localStorage.removeItem('orca_v1');}catch(e){}
@@ -1944,14 +1948,17 @@ async function clearAll(){
     const FB_URL = typeof FB!=='undefined' ? FB : 'https://orca-ops-2b9bd-default-rtdb.firebaseio.com';
     await fetch(FB_URL+'/vessels.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'[]'});
   }catch(e){console.error('Firebase reset error:',e);}
+  await new Promise(r=>setTimeout(r,0));
   if(typeof updateMetrics==='function')updateMetrics();
   if(typeof renderTable==='function')renderTable();
   if(typeof populateSel==='function')populateSel();
   alert('✅ Shared database has been reset successfully.');
 }
-function clearAllHistory(){
+async function clearAllHistory(){
   if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
   if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
+  // Yield to browser before heavy work - prevents INP blocking
+  await new Promise(r=>setTimeout(r,0));
   try{
     localStorage.removeItem(VKEY);
     localStorage.removeItem(UKEY);
@@ -1961,6 +1968,8 @@ function clearAllHistory(){
   const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
   const list=document.getElementById('ib-list');if(list)list.innerHTML='';
   const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
+  // Yield again before re-renders
+  await new Promise(r=>setTimeout(r,0));
   updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
   alert('All local portal history was cleared.');
 }
