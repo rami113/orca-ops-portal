@@ -785,10 +785,16 @@ function initG(){
 }
 function signIn(){
   try{
-    if(!tc && typeof google!=='undefined' && google.accounts) initG();
+    if(typeof google==='undefined'||!google.accounts){
+      alert('Google sign-in is loading, please try again in a moment.');return;
+    }
+    // Always re-init to avoid stale token client state
+    initG();
     if(!tc){alert('Please wait, Google API loading...');return;}
     const alreadyApproved=localStorage.getItem('orca_google_consent_ok')==='1';
-    tc.requestAccessToken({prompt: alreadyApproved ? '' : 'consent'});
+    // Use 'select_account' when approved so FedCM doesn't block the manual click
+    // Use 'consent' on first time
+    tc.requestAccessToken({prompt: alreadyApproved ? 'select_account' : 'consent'});
   }catch(e){
     console.error(e);
     alert('Sign-in failed: '+(e.message||e));
@@ -1253,28 +1259,46 @@ function setKpiFilter(f){
   renderTable();
 }
 
+function tlToggle(eid,arid){
+  var el=document.getElementById(eid);
+  var ar=document.getElementById(arid);
+  if(!el||!ar)return;
+  var op=el.style.display==='none';
+  el.style.display=op?'block':'none';
+  ar.innerHTML=op?'&#9660;':'&#9658;';
+}
 function renderTimeline(v){
   seedTimeline(v);
-  const events=(v.timeline||[]).slice().sort((a,b)=>new Date(b.ts||0)-new Date(a.ts||0));
+  var events=(v.timeline||[]).slice().sort(function(a,b){return new Date(b.ts||0)-new Date(a.ts||0);});
   if(!events.length)return '<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>';
-  return events.slice(0,20).map((e,idx)=>{
-    const icon={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'}[e.type]||'ti-circle';
-    const hasBody=e.body&&e.body.trim().length>0;
-    const eid='tl-body-'+idx+'-'+Math.abs((e.ts||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0));
-    const bodyHtml=hasBody
-      ?`<div id="${eid}" style="display:none;margin-top:8px;padding:12px 14px;background:#f7f8fc;border-radius:7px;border:1px solid var(--border);font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--text);max-height:260px;overflow-y:auto">${e.body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`
-      :'';
-    const clickFn=hasBody?`onclick="const el=document.getElementById('${eid}');const open=el.style.display==='none';el.style.display=open?'block':'none';this.querySelector('.tl-arrow').textContent=open?'▼':'▶';"`:'' ;
-    const arrow=hasBody?`<span class="tl-arrow" style="font-size:10px;color:var(--navy);margin-left:6px">▶</span>`:'';
-    return `<div class="tl-row" style="${hasBody?'cursor:pointer;border-radius:7px;padding:8px 6px;margin:0 -6px;transition:background .12s':'padding:8px 0'}" ${clickFn} ${hasBody?'onmouseenter="this.style.background='#f4f6fb'" onmouseleave="this.style.background=''"':''}>
-      <div class="tl-dot" style="margin-top:2px"><i class="ti ${icon}"></i></div>
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center"><strong>${e.title||e.text||'Activity'}</strong>${arrow}</div>
-        <div><span>${fmtDT(e.ts||e.date)}${e.detail?' · '+e.detail:(e.by?' · '+e.by:'')}</span></div>
-        ${bodyHtml}
-      </div>
-    </div>`;
-  }).join('');
+  var rows=events.slice(0,20).map(function(e,i){
+    var iconMap={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'};
+    var icon=iconMap[e.type]||'ti-circle';
+    var hasBody=!!(e.body&&e.body.trim().length>0);
+    var eid='tlb'+i+'x'+(((e.ts||'').length*997+(e.title||'').length*31)>>>0);
+    var arid='ara'+eid;
+    var safeBody=hasBody?e.body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
+    var bodyDiv=hasBody?('<div id="'+eid+'" style="display:none;margin-top:8px;padding:12px 14px;background:#f7f8fc;border-radius:7px;border:1px solid #e0e0dc;font-size:12px;line-height:1.7;white-space:pre-wrap;color:#1a1a1a;max-height:260px;overflow-y:auto">'+safeBody+'</div>'):'';
+    var arrowSpan=hasBody?('<span id="'+arid+'" style="font-size:10px;color:#1D2E6B;margin-left:6px;user-select:none">&#9658;</span>'):'';
+    var rowStyle=hasBody?'cursor:pointer;border-radius:7px;padding:8px 6px;margin:0 -6px':'padding:8px 0';
+    var dataAttrs=hasBody?(' data-eid="'+eid+'" data-arid="'+arid+'"'):'';
+    return '<div class="tl-row'+(hasBody?' tl-clickable':'')+'" style="'+rowStyle+'"'+dataAttrs+'>'
+      +'<div class="tl-dot" style="margin-top:2px"><i class="ti '+icon+'"></i></div>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="display:flex;align-items:center"><strong>'+(e.title||e.text||'Activity')+'</strong>'+arrowSpan+'</div>'
+      +'<div><span>'+fmtDT(e.ts||e.date)+(e.detail?' \xb7 '+e.detail:(e.by?' \xb7 '+e.by:''))+'</span></div>'
+      +bodyDiv
+      +'</div></div>';
+  });
+  setTimeout(function(){
+    document.querySelectorAll('.tl-clickable:not([data-tl-bound])').forEach(function(row){
+      row.setAttribute('data-tl-bound','1');
+      row.addEventListener('click',function(){tlToggle(this.getAttribute('data-eid'),this.getAttribute('data-arid'));});
+      row.addEventListener('mouseenter',function(){this.style.background='#f4f6fb';});
+      row.addEventListener('mouseleave',function(){this.style.background='';});
+    });
+  },0);
+  return rows.join('');
 }
 
 function seedTimeline(v){
@@ -2306,17 +2330,18 @@ function trySilentSignIn(){
       setTimeout(trySilentSignIn,300);
       return;
     }
-    if(!tc) initG();
     const approved=localStorage.getItem('orca_google_consent_ok')==='1';
     const savedEmail=localStorage.getItem('orca_last_email')||'';
-    if(approved){
-      // hint= pre-selects the account so no "choose account" popup
+    if(approved&&savedEmail){
+      if(!tc) initG();
+      // login_hint silently selects known account; prompt:'' avoids popup
       tc.requestAccessToken({prompt:'', login_hint: savedEmail});
     }
   }catch(e){console.warn('Silent sign-in skipped',e);}
 }
 window.onload=()=>{
-  setTimeout(trySilentSignIn,200);
+  // Delay silent sign-in so Google script is fully ready
+  setTimeout(trySilentSignIn,800);
 };
 setInterval(async () => {
   if(token) {
