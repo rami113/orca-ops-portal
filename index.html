@@ -450,7 +450,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
           <button class="btn btn-d" onclick="clearAllCacheAndHistory()"><i class="ti ti-trash"></i> Clear Cache &amp; History</button>
-          <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button>
+          
         <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button>
         </div>
       </div>
@@ -1917,6 +1917,8 @@ async function runIbAnalysis(){
   const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items. Photos=pending review. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
+  // Always normalize: infer keywords override empty AI result
+  ibAna=normalizeAnalysisResult(v,curIb.body||'',ibAna);
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
