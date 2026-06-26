@@ -1108,21 +1108,34 @@ ORCA AI OPS`;
 function inferReceivedFromReply(reply){
   const s=normTxt(reply);
   const got=[];
-  // broad visual/attachment signals
+
+  // Signals that items are being provided (not just referenced)
   const hasVisual=s.includes('photo')||s.includes('picture')||s.includes('image')||s.includes('location')||s.includes('attach')||s.includes('herewith')||s.includes('enclosed')||s.includes('please find')||s.includes('sending')||s.includes('sent')||s.includes('see below')||s.includes('find below');
+  const hasProviding=hasVisual||s.includes('here are')||s.includes('here is')||s.includes('below')||s.includes('find the')||s.includes('sharing')||s.includes('providing')||s.includes('submitting')||s.includes('forwarding');
+
+  // GA documents
   if(/\bga\b/.test(s)||s.includes('general arrangement')){
     if(s.includes('bridge')||s.includes('console'))got.push('Bridge Console GA');
     else got.push('Vessel GA');
   }
   if(s.includes('vessel ga'))got.push('Vessel GA');
-  if(s.includes('bridge console ga'))got.push('Bridge Console GA');
-  if(s.includes('port')&&s.includes('agent'))got.push('Next 2–3 upcoming port calls + corresponding agent details for each port');
+  if(s.includes('bridge console ga')||s.includes('bridge console'))got.push('Bridge Console GA');
+
+  // Port / agent info
+  if(s.includes('port')&&s.includes('agent'))got.push('Next 2\u20133 upcoming port calls + corresponding agent details for each port');
+
+  // Technical items - always if mentioned (they wouldn't mention cable/vsat unless providing)
   if(s.includes('cable')||s.includes('penetration'))got.push('Cable penetration');
   if(s.includes('vsat'))got.push('VSAT routing');
   if(s.includes('power')&&(s.includes('connect')||s.includes('supply')||s.includes('cable')||s.includes('220')||s.includes('110')||s.includes('24v')||s.includes('volt')))got.push('Power connection');
-  if(s.includes('monitor')&&hasVisual)got.push('Proposed monitor location photos');
-  if((s.includes('seapod')||s.includes('sea pod')||s.includes('camera'))&&hasVisual)got.push('Proposed Seapod location photos');
+
+  // Photos - need providing signal OR explicit "photo" mention near item name
+  if(s.includes('monitor')&&(hasVisual||hasProviding))got.push('Proposed monitor location photos');
+  if((s.includes('seapod')||s.includes('sea pod')||s.includes('camera'))&&(hasVisual||hasProviding))got.push('Proposed Seapod location photos');
+
+  // Docs
   if(s.includes('acknowledg')||s.includes('document')||(s.includes('confirm')&&s.includes('doc')))got.push('Docs acknowledgement');
+
   return [...new Set(got)];
 }
 
@@ -1131,7 +1144,11 @@ function normalizeAnalysisResult(v,reply,analysis){
   const thanksOnly=isThanksOnlyReply(reply);
   analysis=analysis||{};
   let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
-  received=[...new Set([...received,...inferReceivedFromReply(reply)])];
+  // Always trust infer results - they are keyword-based and reliable
+  const inferred=inferReceivedFromReply(reply);
+  // If AI returned nothing but infer found items, use infer
+  if(received.length===0&&inferred.length>0) received=[...inferred];
+  else received=[...new Set([...received,...inferred])];
   let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
   if(thanksOnly && received.length===0){
     // Pure thanks with nothing detected - keep old missing, clear received
