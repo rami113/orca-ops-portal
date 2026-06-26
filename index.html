@@ -254,7 +254,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
       <nav class="nav-tabs">
         <button class="tab active" onclick="showTab('dashboard')"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
         <button class="tab" onclick="showTab('inbox')"><i class="ti ti-inbox"></i> Inbox<span class="ib-badge" id="ib-count" style="display:none">0</span></button>
-        <button class="tab" onclick="showTab('analyze')"><i class="ti ti-cpu"></i> Analyze Reply</button>
+
         <button class="tab" id="tab-admin" style="display:none" onclick="showTab('admin')"><i class="ti ti-settings"></i> Admin</button>
       </nav>
     </div>
@@ -469,6 +469,17 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
+const REQUIRED_ITEMS=[
+  'Vessel GA',
+  'Bridge Console GA',
+  'Next 2–3 upcoming port calls + corresponding agent details for each port',
+  'Cable penetration',
+  'VSAT routing',
+  'Power connection',
+  'Proposed monitor location photos',
+  'Proposed Seapod location photos',
+  'Docs acknowledgement'
+];
 console.log("ORCA v35.11 visible reset shared db loaded");
 window.ORCA_FIX_VERSION="v35.11";
 const GOOGLE_CLIENT_IDS={
@@ -934,19 +945,6 @@ async function openCaseAnalyze(i){
   }
 }
 
-
-
-const REQUIRED_ITEMS=[
-  'Vessel GA',
-  'Bridge Console GA',
-  'Next 2–3 upcoming port calls + corresponding agent details for each port',
-  'Cable penetration',
-  'VSAT routing',
-  'Power connection',
-  'Proposed monitor location photos',
-  'Proposed Seapod location photos',
-  'Docs acknowledgement'
-];
 function normTxt(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
 function isThanksOnlyReply(txt){
   const s=normTxt(txt).replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
@@ -1317,7 +1315,8 @@ async function sendAndSaveNew(){
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
   try{
     const htmlBody=buildHtmlEmail(draft,'ORCA AI OPS',d);
-    const ok=await sendGmail(e,'Orca AI Installation Coordination - '+v,htmlBody,true);
+    const cc=val('mcc')||'',bcc=val('mbcc')||'';
+    const ok=await sendGmail(e,'Orca AI Installation Coordination - '+v,htmlBody,true,cc,bcc);
     if(!ok)return;
     const now=new Date().toISOString();
     const nv={
@@ -1529,17 +1528,15 @@ function stripHtmlForText(s){
   return String(s||'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
 }
 
-async function sendGmail(to, subj, body, isHtml=false, cc='', bcc='') {
+async function sendGmail(to, subj, body, isHtml=false, cc="", bcc="") {
   if(!token){alert('Not authenticated.');return false;}
   const html = isHtml ? body : body.replace(/\n/g,'<br>');
   const boundary = 'orca_boundary_' + Date.now();
-  const mimeHeaders = [
+  const mime = [
     `From: ORCA AI OPS <${user.email}>`,
     `To: ${to}`,
-  ];
-  if(cc) mimeHeaders.push(`Cc: ${cc}`);
-  if(bcc) mimeHeaders.push(`Bcc: ${bcc}`);
-  const mime = [...mimeHeaders,
+    ...(cc?[`Cc: ${cc}`]:[]),
+    ...(bcc?[`Bcc: ${bcc}`]:[]),
     `Subject: ${subj}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -1659,9 +1656,14 @@ async function checkInbox(){
   await fetchInbox();
   window.showInlineInboxPanel=true;
   updateReceivedStatsFromInbox();
-  const _newCount=ibItems.length;
   buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
   renderInlineInbox();renderInbox();renderTable();updateMetrics();saveVessels();
+  // Confirmation toast
+  const _t=document.createElement('div');
+  _t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1D2E6B;color:#fff;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  const _cnt=typeof ibItems!=='undefined'?ibItems.length:0;
+  _t.innerHTML=_cnt>0?'\u{1F4EC} Inbox checked \u2014 '+_cnt+' new repl'+(_cnt===1?'y':'ies')+' found':'\u2705 Inbox checked \u2014 no new replies';
+  document.body.appendChild(_t);setTimeout(()=>_t.remove(),3500);
 }
 async function fetchInbox(){
   ibItems=[];
@@ -1798,10 +1800,16 @@ function openV(idx){
   const r=document.getElementById('vd-r');if(r)r.innerHTML=rb(v.risk||'medium');
   const recv=v.receivedItems||[],miss=v.missingItems||[];
   const cl=document.getElementById('vd-cl');
-  if(cl)cl.innerHTML=REQUIRED_ITEMS.map(item=>{
-    const done=hasItem(recv,item),mis=hasItem(miss,item),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
-    return`<li><i class="ti ${ic}"></i>${item}</li>`;
-  }).join('');
+  if(cl){
+    const _done=REQUIRED_ITEMS.filter(i=>hasItem(recv,i));
+    const _miss=REQUIRED_ITEMS.filter(i=>hasItem(miss,i));
+    const _pend=REQUIRED_ITEMS.filter(i=>!hasItem(recv,i)&&!hasItem(miss,i));
+    cl.innerHTML=[..._done,..._pend,..._miss].map(item=>{
+      const done=hasItem(recv,item),mis=hasItem(miss,item);
+      const ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
+      return`<li style="${done?'font-weight:700;color:#1D2E6B':''}"><i class="ti ${ic}"></i>${item}</li>`;
+    }).join('');
+  }
   const ri=document.getElementById('vd-ri');
   if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
   const mi=document.getElementById('vd-mi');
@@ -1922,25 +1930,34 @@ async function migrateLocalToShared(){
 }
 
 async function clearAll(){
-  if(!isSuperAdmin()){alert('Only Super Admin can clear all data.');return;}
+  if(typeof isSuperAdmin==='function'&&!isSuperAdmin()){alert('Only Super Admin can reset the shared database.');return;}
   if(!confirm('Reset Shared Database? This will delete ALL vessel data for the entire team. Cannot be undone.'))return;
-  vessels=[];ibItems=[];
-  try{localStorage.removeItem(VKEY);}catch(e){}
+  vessels=[];
+  if(typeof ibItems!=='undefined') ibItems=[];
+  try{localStorage.removeItem('orca_v3');localStorage.removeItem('orca_v2');localStorage.removeItem('orca_v1');}catch(e){}
   try{
-    await fetch(FB+'/vessels.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'[]'});
-    await fetch(FB+'/users.json',{method:'DELETE'});
+    const FB_URL = typeof FB!=='undefined' ? FB : 'https://orca-ops-2b9bd-default-rtdb.firebaseio.com';
+    await fetch(FB_URL+'/vessels.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'[]'});
   }catch(e){console.error('Firebase reset error:',e);}
-  updateMetrics();renderTable();populateSel();
+  if(typeof updateMetrics==='function')updateMetrics();
+  if(typeof renderTable==='function')renderTable();
+  if(typeof populateSel==='function')populateSel();
   alert('✅ Shared database has been reset successfully.');
 }
 function clearAllHistory(){
-  if(!confirm('Clear your local cache and history? This only affects your browser.')) return;
+  if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
+  if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
   try{
     localStorage.removeItem(VKEY);
     localStorage.removeItem(UKEY);
-    localStorage.removeItem('orca_inbox_seen');
+    sessionStorage.clear();
   }catch(e){}
-  alert('✅ Your local cache has been cleared.');
+  vessels=[];ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+  alert('All local portal history was cleared.');
 }
 
 window.onload=()=>{
