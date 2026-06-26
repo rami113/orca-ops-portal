@@ -451,7 +451,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
           <button class="btn btn-d" onclick="clearAllCacheAndHistory()"><i class="ti ti-trash"></i> Clear Cache &amp; History</button>
           
-        <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button>
+        <button id="btn-reset-db" class="btn btn-d" style="display:none" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button>
         </div>
       </div>
     </div>
@@ -2171,6 +2171,8 @@ function renderAdmin(){
   }).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
   const superOnly=document.getElementById('super-admin-actions');
   if(superOnly)superOnly.style.display=isSuperAdmin(user&&user.email)?'flex':'none';
+  const resetBtn=document.getElementById('btn-reset-db');
+  if(resetBtn)resetBtn.style.display=isSuperAdmin(user&&user.email)?'inline-flex':'none';
 }
 function resetInboxUi(){
   ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
