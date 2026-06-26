@@ -730,12 +730,22 @@ async function saveVessels(){
   sv();
 }
 async function refreshSharedData(){
+  // Show syncing state on button
+  const btn=document.querySelector('[onclick="refreshSharedData()"]');
+  const origHtml=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Syncing...';}
   await new Promise(r=>setTimeout(r,0));
   await loadVessels();
   updateMetrics();
   renderTable();
   populateSel();
   if(typeof renderAdmin==='function')renderAdmin();
+  // Restore button + show toast
+  if(btn){btn.disabled=false;btn.innerHTML=origHtml;}
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1D2E6B;color:#fff;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  t.textContent='✅ Sync complete — '+vessels.length+' vessel'+(vessels.length===1?'':'s')+' loaded';
+  document.body.appendChild(t);setTimeout(()=>t.remove(),3000);
 }
 
 function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
@@ -1290,14 +1300,6 @@ function renderTimeline(v){
       +bodyDiv
       +'</div></div>';
   });
-  setTimeout(function(){
-    document.querySelectorAll('.tl-clickable:not([data-tl-bound])').forEach(function(row){
-      row.setAttribute('data-tl-bound','1');
-      row.addEventListener('click',function(){tlToggle(this.getAttribute('data-eid'),this.getAttribute('data-arid'));});
-      row.addEventListener('mouseenter',function(){this.style.background='#f4f6fb';});
-      row.addEventListener('mouseleave',function(){this.style.background='';});
-    });
-  },0);
   return rows.join('');
 }
 
@@ -1383,7 +1385,7 @@ function renderTable(){
       <td>
         <div class="row-actions">
           <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i> View</button>
-          <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();openCaseAnalyze(${idx})"><i class="ti ti-robot"></i> Analyze</button>
+          <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){openCaseAnalyze(_i);},0)"><i class="ti ti-robot"></i> Analyze</button>
           <button class="btn btn-s" title="Latest status" onclick="event.stopPropagation();openLatestStatus(${idx})" style="background:#f4f6fb;border-color:#c5cfe8;color:#1D2E6B"><i class="ti ti-report-analytics"></i> Status</button>
           ${adminDelete}
         </div>
@@ -2120,6 +2122,15 @@ function openV(idx){
   if(tl)tl.innerHTML=renderTimeline(v);
 
   document.getElementById('mod-view').style.display='flex';
+  // Bind clickable rows after modal is visible
+  setTimeout(function(){
+    document.querySelectorAll('#mod-view .tl-clickable:not([data-tl-bound])').forEach(function(row){
+      row.setAttribute('data-tl-bound','1');
+      row.addEventListener('click',function(){tlToggle(this.getAttribute('data-eid'),this.getAttribute('data-arid'));});
+      row.addEventListener('mouseenter',function(){this.style.background='#f4f6fb';});
+      row.addEventListener('mouseleave',function(){this.style.background='';});
+    });
+  },50);
 }
 
 // ADMIN
