@@ -227,6 +227,17 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .recv-item{display:flex;align-items:center;gap:8px;background:#EAF8F2;color:#116B52;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:13px}
 .recv-item i{color:#1D9E75}
 
+
+/* ── Custom async confirm/alert modal ── */
+#orca-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;align-items:center;justify-content:center;}
+#orca-modal-overlay.show{display:flex;}
+#orca-modal-box{background:#fff;border-radius:10px;padding:28px 28px 20px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.22);font-family:inherit;}
+#orca-modal-title{font-size:16px;font-weight:700;margin-bottom:10px;color:#1D2E6B;}
+#orca-modal-msg{font-size:14px;color:#333;line-height:1.5;margin-bottom:20px;white-space:pre-wrap;}
+#orca-modal-btns{display:flex;gap:10px;justify-content:flex-end;}
+#orca-modal-btns button{padding:8px 20px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid #d0d0d0;}
+#orca-modal-ok{background:#1D2E6B;color:#fff;border-color:#1D2E6B;}
+#orca-modal-cancel{background:#fff;color:#333;}
 </style>
 </head>
 <body>
@@ -834,10 +845,12 @@ function assignVessel(i,email){
   addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
   saveVessels();renderTable();renderAdmin();
 }
-function deleteVessel(i){
-  if(!isAdmin()){alert('Only admins can delete cases.');return;}
+async function deleteVessel(i){
+  if(!isAdmin()){await orcaAlert('Only admins can delete cases.','Access Denied');return;}
   if(!vessels[i])return;
-  if(!confirm('Delete this case from the portal history?'))return;
+  const ok=await orcaConfirm('Delete this case from the portal history?','Delete Case');
+  if(!ok)return;
+  await new Promise(r=>setTimeout(r,0));
   vessels.splice(i,1);
   saveVessels();updateMetrics();renderTable();populateSel();renderAdmin();
 }
@@ -1380,6 +1393,18 @@ ${htmlBody}
 </table>
 </td></tr>
 </table>
+
+<!-- Async confirm/alert modal -->
+<div id="orca-modal-overlay">
+  <div id="orca-modal-box">
+    <div id="orca-modal-title"></div>
+    <div id="orca-modal-msg"></div>
+    <div id="orca-modal-btns">
+      <button id="orca-modal-cancel" style="display:none">Cancel</button>
+      <button id="orca-modal-ok">OK</button>
+    </div>
+  </div>
+</div>
 </body></html>`;
 }
 function nextFollowupNumber(v){return Number(v.followupsSent||0)+1;}
@@ -1876,16 +1901,16 @@ function refreshAllViews(){
 
 async function resetSharedDatabase(){
   if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
-    alert('Super Admin only.');
+    await orcaAlert('Super Admin only.','Access Denied');
     return;
   }
   if(typeof isAdmin==='function' && !isAdmin()){
-    alert('Admin only.');
+    await orcaAlert('Admin only.','Access Denied');
     return;
   }
-  const ok=confirm('This will delete ALL vessels from the shared database for EVERYONE. Continue?');
+  const ok=await orcaConfirm('This will delete ALL vessels from the shared database for EVERYONE. Continue?','⚠️ Reset Shared DB');
   if(!ok)return;
-  const ok2=confirm('Final confirmation: reset the shared Google Sheet database now?');
+  const ok2=await orcaConfirm('Final confirmation: reset the shared Google Sheet database now?','⚠️ Final Confirmation');
   if(!ok2)return;
   // Yield to browser before heavy work - prevents INP blocking
   await new Promise(r=>setTimeout(r,0));
@@ -1917,28 +1942,30 @@ async function resetSharedDatabase(){
     }
 
     if(typeof render==='function')render();
-    alert('Shared database reset successfully. Ask all users to Hard Refresh and click Sync.');
+    await orcaAlert('Shared database reset successfully. Ask all users to Hard Refresh and click Sync.','Done');
   }catch(e){
     console.error(e);
-    alert('Shared database reset failed. Check Google Sheet permission.');
+    await orcaAlert('Shared database reset failed. Check Google Sheet permission.','Error');
   }
 }
 
 async function migrateLocalToShared(){
-  if(!isSuperAdmin(user&&user.email)){alert('Super Admin only.');return;}
-  if(!hasSharedDb()){alert('Add SHARED_SHEET_ID in the HTML file first.');return;}
+  if(!isSuperAdmin(user&&user.email)){await orcaAlert('Super Admin only.','Access Denied');return;}
+  if(!hasSharedDb()){await orcaAlert('Add SHARED_SHEET_ID in the HTML file first.','Configuration Error');return;}
   const local=loadVesselsCompat().map(normalizeVessel);
-  if(!local.length){alert('No local vessels found on this browser.');return;}
-  if(!confirm(`Upload ${local.length} local vessels into the shared database? This will replace the current shared data.`))return;
+  if(!local.length){await orcaAlert('No local vessels found on this browser.','Nothing to Migrate');return;}
+  const _mig=await orcaConfirm(`Upload ${local.length} local vessels into the shared database? This will replace the current shared data.`,'Migrate Data');
+  if(!_mig)return;
   vessels=local;
   const ok=await saveSharedVessels(vessels);
-  if(ok){alert('Migration completed. Everyone should click Sync or refresh.');refreshSharedData();}
-  else alert('Migration failed. Check Sheet permissions.');
+  if(ok){await orcaAlert('Migration completed. Everyone should click Sync or refresh.','Done');refreshSharedData();}
+  else await orcaAlert('Migration failed. Check Sheet permissions.','Error');
 }
 
 async function clearAll(){
-  if(typeof isSuperAdmin==='function'&&!isSuperAdmin()){alert('Only Super Admin can reset the shared database.');return;}
-  if(!confirm('Reset Shared Database? This will delete ALL vessel data for the entire team. Cannot be undone.'))return;
+  if(typeof isSuperAdmin==='function'&&!isSuperAdmin()){await orcaAlert('Only Super Admin can reset the shared database.','Access Denied');return;}
+  const _ca=await orcaConfirm('Reset Shared Database? This will delete ALL vessel data for the entire team. Cannot be undone.','⚠️ Reset Database');
+  if(!_ca)return;
   // Yield to browser before heavy work - prevents INP blocking
   await new Promise(r=>setTimeout(r,0));
   vessels=[];
@@ -1952,11 +1979,12 @@ async function clearAll(){
   if(typeof updateMetrics==='function')updateMetrics();
   if(typeof renderTable==='function')renderTable();
   if(typeof populateSel==='function')populateSel();
-  alert('✅ Shared database has been reset successfully.');
+  await orcaAlert('✅ Shared database has been reset successfully.','Done');
 }
 async function clearAllHistory(){
-  if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
-  if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
+  if(!isSuperAdmin()){await orcaAlert('Only Super Admin can clear all history.','Access Denied');return;}
+  const _ch=await orcaConfirm('This will permanently delete ALL local portal history on this browser. Continue?','⚠️ Clear History');
+  if(!_ch)return;
   // Yield to browser before heavy work - prevents INP blocking
   await new Promise(r=>setTimeout(r,0));
   try{
@@ -1971,9 +1999,42 @@ async function clearAllHistory(){
   // Yield again before re-renders
   await new Promise(r=>setTimeout(r,0));
   updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
-  alert('All local portal history was cleared.');
+  await orcaAlert('All local portal history was cleared.','Done');
 }
 
+
+// ── Non-blocking async alert/confirm replacements ──
+function orcaAlert(msg, title=''){
+  return new Promise(resolve=>{
+    const overlay=document.getElementById('orca-modal-overlay');
+    document.getElementById('orca-modal-title').textContent=title||'Notice';
+    document.getElementById('orca-modal-msg').textContent=msg;
+    document.getElementById('orca-modal-cancel').style.display='none';
+    document.getElementById('orca-modal-ok').textContent='OK';
+    overlay.classList.add('show');
+    const ok=document.getElementById('orca-modal-ok');
+    const done=()=>{overlay.classList.remove('show');ok.removeEventListener('click',done);resolve();};
+    ok.addEventListener('click',done);
+  });
+}
+function orcaConfirm(msg, title=''){
+  return new Promise(resolve=>{
+    const overlay=document.getElementById('orca-modal-overlay');
+    document.getElementById('orca-modal-title').textContent=title||'Confirm';
+    document.getElementById('orca-modal-msg').textContent=msg;
+    const cancel=document.getElementById('orca-modal-cancel');
+    const ok=document.getElementById('orca-modal-ok');
+    cancel.style.display='inline-block';
+    cancel.textContent='Cancel';
+    ok.textContent='Confirm';
+    overlay.classList.add('show');
+    const cleanup=()=>overlay.classList.remove('show');
+    const onOk=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(true);};
+    const onCancel=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(false);};
+    ok.addEventListener('click',onOk);
+    cancel.addEventListener('click',onCancel);
+  });
+}
 window.onload=()=>{
   if(typeof google!=='undefined'&&google.accounts){
     initG();
