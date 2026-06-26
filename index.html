@@ -410,7 +410,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
             <div class="sl" style="margin-bottom:10px">Follow-up draft</div>
             <div id="a-fu" class="email-box" style="max-height:200px"></div>
-            <div style="margin-top:10px"><button class="btn btn-p" onclick="saveAndSend()"><i class="ti ti-send"></i> Save + send follow-up via Gmail</button></div>
+            <div style="margin-top:10px;display:flex;gap:10px;align-items:center"><button class="btn btn-p" onclick="saveAnalyzeOnly()"><i class="ti ti-device-floppy"></i> Save status</button><button class="btn btn-g" onclick="saveAndSend()"><i class="ti ti-send"></i> Send follow-up via Gmail</button></div>
           </div>
         </div>
       </div>
@@ -1905,6 +1905,23 @@ async function analyzeReply(){
   document.getElementById('a-stat').innerHTML=`<div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Status</div>${sb(ana.status)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Risk</div>${rb(ana.risk)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Progress</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div class="prog" style="width:100px"><div class="prog-f" style="width:${ana.progress}%"></div></div><span style="font-size:13px;font-weight:700">${ana.progress}%</span></div></div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Next action</div><span style="font-size:12px">${ana.nextAction||'—'}</span></div>${(ana.flags&&ana.flags.length)?ana.flags.map(f=>`<div class="flag-item"><i class="ti ti-flag"></i>${f}</div>`).join(''):''}`;
   document.getElementById('a-fu').textContent=ana.followup_email||'';
   document.getElementById('a-out').style.display='block';
+}
+async function saveAnalyzeOnly(){
+  // Save status update WITHOUT sending email
+  if(!ana)return;
+  const idx=ana.vi;
+  if(idx===null||idx===undefined||!vessels[idx]){await orcaAlert('No vessel selected.','Error');return;}
+  const v=vessels[idx];
+  vessels[idx]={...v,
+    status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,
+    missingItems:ana.missing||[],
+    receivedItems:[...new Map([...(v.receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()],
+    lastContact:new Date().toISOString()
+  };
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'ai','Status updated from reply',`Received: ${(ana.received||[]).join(', ')||'—'}`);
+  saveVessels();updateMetrics();renderTable();
+  await orcaAlert('Status saved successfully. No email was sent.','✅ Saved');
 }
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
