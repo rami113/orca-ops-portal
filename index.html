@@ -1389,9 +1389,8 @@ function renderTable(){
       </td>
       <td>
         <div class="row-actions">
-          <button class="btn btn-s" title="Open case" onclick="event.stopPropagation();openV(${idx})"><i class="ti ti-eye"></i> View</button>
+          <button class="btn btn-s" title="View & Status" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){openV(_i);},0)"><i class="ti ti-eye"></i> View</button>
           <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){openCaseAnalyze(_i);},0)"><i class="ti ti-robot"></i> Analyze</button>
-          <button class="btn btn-s" title="Latest status" onclick="event.stopPropagation();var _idx=${idx};setTimeout(function(){openLatestStatus(_idx);},0)" style="background:#f4f6fb;border-color:#c5cfe8;color:#1D2E6B"><i class="ti ti-report-analytics"></i> Status</button>
           ${adminDelete}
         </div>
       </td>
