@@ -449,9 +449,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
         <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
         <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-d" onclick="clearAll()"><i class="ti ti-trash"></i> Clear My Cache</button>
+          <button class="btn btn-d" onclick="clearAllCacheAndHistory()"><i class="ti ti-trash"></i> Clear Cache &amp; History</button>
           <button class="btn" onclick="migrateLocalToShared()"><i class="ti ti-database-import"></i> Migrate local to shared</button>
-        <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button><button class="btn btn-d" onclick="clearAllHistory()"><i class="ti ti-trash-x"></i> Clear My History</button>
+        <button class="btn btn-d" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button>
         </div>
       </div>
     </div>
@@ -1052,12 +1052,18 @@ function isThanksOnlyReply(txt){
   const s=normTxt(txt).replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
   if(!s)return true;
   const generic=[
-    'thanks','thank you','thank you very much','many thanks','noted','ok','okay','yes','received','roger',
+    'thanks','thank you','thank you very much','many thanks','noted','ok','okay','yes','roger',
     'will check','will look into this','i will look into this','we will check','noted with thanks',
     'thank you for your email','thanks for your email'
   ];
   if(generic.includes(s))return true;
-  const technical=['port','agent','eta','vessel ga','bridge','console','cable','penetration','vsat','power','monitor','photo','picture','seapod','camera','deck','docs','document','acknowledg'];
+  // Any attachment/file signal = NOT thanks-only
+  const technical=[
+    'port','agent','eta','vessel ga','bridge','console','cable','penetration','vsat','power',
+    'monitor','photo','picture','seapod','camera','deck','docs','document','acknowledg',
+    'attach','attached','herewith','enclosed','please find','find attached','sending','sent',
+    'see below','find below','image','file','drawing','plan','layout','general arrangement'
+  ];
   return !technical.some(k=>s.includes(k));
 }
 function itemKey(item){
@@ -1127,10 +1133,11 @@ function normalizeAnalysisResult(v,reply,analysis){
   let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
   received=[...new Set([...received,...inferReceivedFromReply(reply)])];
   let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
-  if(thanksOnly){
-    received=[];
+  if(thanksOnly && received.length===0){
+    // Pure thanks with nothing detected - keep old missing, clear received
     missing=oldMissing;
   }else{
+    // Has technical content OR AI/infer already found received items - trust them
     missing=REQUIRED_ITEMS.filter(item=>!hasItem(received,item) && (hasItem(oldMissing,item)||!oldMissing.length));
   }
   const complete=missing.length===0;
@@ -1156,10 +1163,12 @@ function cleanTimeline(v){
   });
 }
 
-function addTimeline(v,type,title,detail){
+function addTimeline(v,type,title,detail,body){
   if(!v)return;
   v.timeline=v.timeline||[];
-  v.timeline.unshift({ts:new Date().toISOString(),type,title,detail});
+  const entry={ts:new Date().toISOString(),type,title,detail};
+  if(body)entry.body=String(body).slice(0,3000);
+  v.timeline.unshift(entry);
   v.lastActivity=new Date().toISOString();
 }
 function fmtDT(d){
@@ -1231,11 +1240,19 @@ function renderTimeline(v){
   seedTimeline(v);
   const events=(v.timeline||[]).slice().sort((a,b)=>new Date(b.ts||0)-new Date(a.ts||0));
   if(!events.length)return '<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>';
-  return events.slice(0,20).map(e=>{
+  return events.slice(0,20).map((e,idx)=>{
     const icon={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'}[e.type]||'ti-circle';
-    return `<div class="tl-row">
+    const hasBody=e.body&&e.body.trim().length>0;
+    const eid='tl-body-'+idx+'-'+Math.abs((e.ts||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0));
+    const bodyHtml=hasBody?`<div id="${eid}" style="display:none;margin-top:8px;padding:10px 12px;background:#f7f8fc;border-radius:6px;border:1px solid var(--border);font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--text);max-height:200px;overflow-y:auto">${e.body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`:'';
+    const toggle=hasBody?`<span onclick="const el=document.getElementById('${eid}');el.style.display=el.style.display==='none'?'block':'none';this.textContent=el.style.display==='none'?'▶ Show content':'▼ Hide'" style="font-size:11px;color:var(--navy);cursor:pointer;margin-left:8px;user-select:none">▶ Show content</span>`:'';
+    return `<div class="tl-row" style="${hasBody?'cursor:default':''}">
       <div class="tl-dot"><i class="ti ${icon}"></i></div>
-      <div><strong>${e.title||e.text||'Activity'}</strong><br><span>${fmtDT(e.ts||e.date)}${e.detail?' · '+e.detail:(e.by?' · '+e.by:'')}</span></div>
+      <div style="flex:1;min-width:0">
+        <div><strong>${e.title||e.text||'Activity'}</strong>${toggle}</div>
+        <div><span>${fmtDT(e.ts||e.date)}${e.detail?' · '+e.detail:(e.by?' · '+e.by:'')}</span></div>
+        ${bodyHtml}
+      </div>
     </div>`;
   }).join('');
 }
@@ -1492,7 +1509,7 @@ function nextFollowupNumber(v){return Number(v.followupsSent||0)+1;}
 function saveFollowupMeta(v,body){
   v.followupsSent=nextFollowupNumber(v);
   v.lastFollowupPreview=String(body||'').slice(0,500);
-  addTimeline(v,'sent',`Follow-up #${v.followupsSent} sent`,String(body||'').split('\n').find(x=>x.trim().startsWith('•'))||'Missing items requested');
+  addTimeline(v,'sent',`Follow-up #${v.followupsSent} sent`,String(body||'').split('\n').find(x=>x.trim().startsWith('•'))||'Missing items requested',body);
 }
 
 function buildHtmlEmail(plainText, senderName, docsLink) {
@@ -1915,7 +1932,7 @@ async function sendIbFollowUp(){
   const idx=curIb.vi;
   vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...new Map([...(vessels[idx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
   cleanTimeline(vessels[idx]);
-  addTimeline(vessels[idx],'reply','Reply received from captain',curIb.from||v.email);
+  addTimeline(vessels[idx],'reply','Reply received from captain',curIb.from||v.email,curIb.body||'');
   saveFollowupMeta(vessels[idx],followBody);
   vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   saveVessels();updateMetrics();renderTable();
@@ -2169,6 +2186,25 @@ async function migrateLocalToShared(){
   else await orcaAlert('Migration failed. Check Sheet permissions.','Error');
 }
 
+async function clearAllCacheAndHistory(){
+  if(!isSuperAdmin()){await orcaAlert('Only Super Admin can clear cache and history.','Access Denied');return;}
+  const ok=await orcaConfirm('This will clear ALL local cache and history on this browser. Continue?','⚠️ Clear Cache & History');
+  if(!ok)return;
+  await new Promise(r=>setTimeout(r,0));
+  // Clear localStorage
+  try{
+    localStorage.removeItem(VKEY);localStorage.removeItem(UKEY);
+    localStorage.removeItem('orca_v3');localStorage.removeItem('orca_v2');localStorage.removeItem('orca_v1');
+    sessionStorage.clear();
+  }catch(e){}
+  vessels=[];ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
+  await new Promise(r=>setTimeout(r,0));
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+  await orcaAlert('Cache and history cleared successfully.','✅ Done');
+}
 async function clearAll(){
   if(typeof isSuperAdmin==='function'&&!isSuperAdmin()){await orcaAlert('Only Super Admin can reset the shared database.','Access Denied');return;}
   const _ca=await orcaConfirm('Reset Shared Database? This will delete ALL vessel data for the entire team. Cannot be undone.','⚠️ Reset Database');
