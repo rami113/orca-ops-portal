@@ -1213,6 +1213,8 @@ function fmtDT(d){
 function readinessScore(v){
   if(!v)return 0;
   if(v.status==='completed')return 100;
+  // All REQUIRED items received = 100%
+  if((v.missingItems||[]).length===0&&(v.receivedItems||[]).length>0)return 100;
   if(v.status==='scheduled')return Math.max(v.progress||0,90);
   if(v.status==='ready')return Math.max(v.progress||0,85);
   const received=[
@@ -1360,7 +1362,8 @@ function renderTable(){
     seedTimeline(vessels[idx]);
     const d=ds(v.lastContact);
     const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
-    return `<tr class="cl">
+    const _allDone=(v.missingItems||[]).length===0&&(v.receivedItems||[]).length>0;
+    return `<tr class="cl" style="${_allDone?'background:#f0faf4;border-left:3px solid #1a7a3a':''}">
       <td>
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
