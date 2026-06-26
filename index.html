@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v307779.0 build:1782391775-1236 -->
+<!-- ORCA OPS PORTAL v35.11 visible reset shared db -->
+<!-- ORCA OPS PORTAL v35.7 exact inbox matching -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -224,9 +225,6 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
 
 .recv-item{display:flex;align-items:center;gap:8px;background:#EAF8F2;color:#116B52;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:13px}
-.has-new-reply td{background:#EAF8F2 !important}
-.has-new-reply td:first-child{border-left:3px solid #1D9E75 !important}
-.new-reply-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1D9E75;margin-left:6px;vertical-align:middle;flex-shrink:0}
 .recv-item i{color:#1D9E75}
 
 </style>
@@ -250,14 +248,6 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <div id="app">
-  <div id="apikey-banner" style="background:#e8f5e9;border-bottom:1px solid #a5d6a7;padding:8px 1.5rem;display:flex;align-items:center;gap:10px;font-size:13px">
-    <i class="ti ti-brand-google" style="color:#1a6e2e"></i>
-    <span style="color:#1a6e2e;font-weight:500">Google Gemini API key required for AI analysis (free):</span>
-    <input id="apikey-input" type="password" placeholder="AIza..." style="flex:1;max-width:340px;padding:5px 10px;border:1px solid #a5d6a7;border-radius:6px;font-size:13px;font-family:inherit"/>
-    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-s" style="background:#1a6e2e;color:#fff;border-color:#1a6e2e;text-decoration:none">Get free key →</a>
-    <button class="btn btn-s" onclick="saveApiKey()" style="background:#1a6e2e;color:#fff;border-color:#1a6e2e">Save</button>
-    <button class="btn btn-s" onclick="document.getElementById('apikey-banner').style.display='none'" style="color:#1a6e2e">✕</button>
-  </div>
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:16px">
       <img src="logo.png" alt="Orca AI" style="height:28px" onerror="this.outerHTML='<span style=\'font-weight:800;color:#1D2E6B;font-size:15px\'>ORCA AI</span>'"/>
@@ -355,7 +345,6 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 
     <!-- ANALYZE -->
     <div id="view-analyze" class="view">
-      <div class="bc" onclick="showTab('dashboard')"><i class="ti ti-arrow-left"></i> Back to dashboard</div>
       <div class="panel">
         <div class="panel-title"><i class="ti ti-cpu"></i> Analyze vessel reply</div>
         <div class="fr"><label>Select vessel</label><select id="ra-sel" style="width:100%"><option value="">— Select vessel —</option></select></div>
@@ -437,6 +426,10 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
       <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd"/></div>
       
     </div>
+    <div class="fg">
+      <div class="fr"><label>CC (optional)</label><input id="mcc" type="email" placeholder="cc@orca-ai.io"/></div>
+      <div class="fr"><label>BCC (optional)</label><input id="mbcc" type="email" placeholder="bcc@orca-ai.io"/></div>
+    </div>
     <div class="fr"><label>Documents link</label><input id="md" placeholder="https://drive.google.com/..."/></div>
     <div id="mod-ep" style="display:none;margin-top:1rem">
       <div class="sl" style="margin-bottom:8px">Generated email draft</div>
@@ -476,8 +469,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 </div>
 
 <script>
-console.log("ORCA v39.0 build:1782391775");
-window.ORCA_FIX_VERSION="v39.0";
+console.log("ORCA v35.11 visible reset shared db loaded");
+window.ORCA_FIX_VERSION="v35.11";
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
@@ -494,8 +487,7 @@ const ADMIN_L2=[
   'israel@orca-ai.io',
   'jacob@orca-ai.io',
   'yotam.keret@orca-ai.io',
-  'yaron.y@orca-ai.io',
-  'leon.gutnik@orca-ai.io'
+  'yaron.y@orca-ai.io'
 ].map(e=>e.toLowerCase());
 
 const TEAM_USERS=[
@@ -504,8 +496,7 @@ const TEAM_USERS=[
   {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
   {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
   {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
-  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
-  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin L2'}
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'}
 ];
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
@@ -568,15 +559,8 @@ async function ensureSharedDb(){
     r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
     const d=await r.json();
     const val=d.values&&d.values[0]&&d.values[0][0];
-    // Only initialize with [] if the sheet cell is genuinely empty (never overwrite existing data)
-    if(!val){
-      await saveSharedVessels([]);
-    } else {
-      try{JSON.parse(val);}catch(e){
-        // Value exists but is corrupt — log and leave it, don't wipe
-        console.warn('Shared DB cell has non-JSON value, leaving as-is');
-      }
-    }
+    if(!val)await saveSharedVessels([]);
+    else{try{JSON.parse(val);}catch(e){await saveSharedVessels([]);}}
     sharedDbReady=true;
     return true;
   }catch(e){
@@ -601,27 +585,7 @@ async function loadSharedVessels(){
     return null;
   }
 }
-function saveApiKey(){
-  const k=document.getElementById('apikey-input').value.trim();
-  if(!k){alert('Please enter your Gemini API key');return;}
-  window.GEMINI_API_KEY=k;
-  try{localStorage.setItem('orca_akey',k);}catch(e){}
-  document.getElementById('apikey-banner').style.display='none';
-  showSyncToast('Gemini API key saved ✓');
-}
-function loadApiKey(){
-  try{
-    const k=localStorage.getItem('orca_akey');
-    if(k){window.GEMINI_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}
-  }catch(e){}
-}
-function safeRenderAll(){
-  try{updateMetrics();}catch(e){console.warn('updateMetrics failed',e);}
-  try{renderTable();}catch(e){console.warn('renderTable failed',e);}
-  try{populateSel();}catch(e){console.warn('populateSel failed',e);}
-  try{renderInbox();}catch(e){console.warn('renderInbox failed',e);}
-  try{renderInlineInbox();}catch(e){console.warn('renderInlineInbox failed',e);}
-}
+async 
 function localResetAt(){return localStorage.getItem('orca_shared_reset_at')||'';}
 function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
 function parseSharedPayload(raw){
@@ -670,132 +634,33 @@ async function saveSharedVessels(data){
 async function loadVessels(){
   const warn=document.getElementById('shared-db-warning');
   if(warn)warn.style.display=hasSharedDb()?'none':'block';
-
   if(hasSharedDb()){
     const ok=await ensureSharedDb();
     if(ok){
       const shared=await loadSharedVessels();
       if(Array.isArray(shared)){
         vessels=shared.map(normalizeVessel);
-        sv(); // local mirror only
         return;
       }
     }
-    vessels=[];
-    alert('Shared database could not be loaded. Local cache ignored to avoid showing stale data.');
-    return;
+    alert('Shared database could not be loaded. Check the Google Sheet ID and sharing permissions.');
   }
-
   lv();
 }
-
 async function saveVessels(){
-  if(hasSharedDb()&&token){
-    // Always read-merge-write so we never lose another user's vessels
-    let sharedRaw=[];
-    try{
-      const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
-      const d=await r.json();
-      const val=d.values&&d.values[0]&&d.values[0][0];
-      if(val){const p=JSON.parse(val);sharedRaw=Array.isArray(p)?p:(Array.isArray(p&&p.vessels)?p.vessels:[]);}
-    }catch(e){console.warn('saveVessels: could not read shared, saving local only',e);sv();return;}
-    const map=new Map();
-    sharedRaw.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
-    vessels.forEach(v=>{const k=vesselKey(v);if(k)map.set(k,normalizeVessel(v));});
-    const toSave=Array.from(map.values());
-    const ok=await saveSharedVessels(toSave);
-    if(ok){vessels=toSave;sv();return;}
-    console.warn('saveVessels: shared save failed, saving locally');
+  if(hasSharedDb()){
+    const ok=await saveSharedVessels(vessels);
+    if(ok)return;
+    alert('Shared database save failed. Changes were saved locally only.');
   }
   sv();
 }
-
-function vesselKey(v){
-  return String((v&&v.id)||(v&&v.name&&v.email?`${v.name}|${v.email}`:(v&&v.name)||'')).toLowerCase().trim();
-}
-function dateScore(v){
-  return new Date((v&&v.updatedAt)||(v&&v.lastActivity)||(v&&v.lastContact)||(v&&v.createdAt)||0).getTime()||0;
-}
-function mergeTimeline(a,b){
-  const out=[];
-  const seen=new Set();
-  [...(a||[]),...(b||[])].forEach(t=>{
-    const k=String((t&&t.msgId)||(t&&t.time)||(t&&t.date)||JSON.stringify(t));
-    if(!seen.has(k)){seen.add(k);out.push(t);}
-  });
-  return out.sort((x,y)=>(new Date(x.time||x.date||0))-(new Date(y.time||y.date||0)));
-}
-function mergeVesselRecord(shared, local){
-  if(!shared)return normalizeVessel(local);
-  if(!local)return normalizeVessel(shared);
-  const newer = dateScore(local)>dateScore(shared) ? local : shared;
-  const older = newer===local ? shared : local;
-  const merged = {...older, ...newer};
-  merged.timeline = mergeTimeline(shared.timeline, local.timeline);
-  merged.cc = merged.cc || shared.cc || local.cc || '';
-  merged.bcc = merged.bcc || shared.bcc || local.bcc || '';
-  merged.emailsSent = Math.max(Number(shared.emailsSent||0), Number(local.emailsSent||0));
-  merged.emailsReceived = Math.max(Number(shared.emailsReceived||0), Number(local.emailsReceived||0));
-  return normalizeVessel(merged);
-}
-function mergeVesselLists(sharedList, localList){
-  const map=new Map();
-  (sharedList||[]).forEach(v=>{const k=vesselKey(v); if(k)map.set(k, normalizeVessel(v));});
-  (localList||[]).forEach(v=>{
-    const k=vesselKey(v); if(!k)return;
-    map.set(k, mergeVesselRecord(map.get(k), v));
-  });
-  return Array.from(map.values()).sort((a,b)=>dateScore(b)-dateScore(a));
-}
-async function syncSharedDatabase(){
-  if(!hasSharedDb()||!token){lv();safeRenderAll();return;}
-
-  // SYNC = read from Sheet only, show everything that is there
-  // We do NOT merge with local memory here — that would overwrite others' data
-  let sharedRaw=[];
-  try{
-    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
-    const d=await r.json();
-    const val=d.values&&d.values[0]&&d.values[0][0];
-    if(val){
-      const p=JSON.parse(val);
-      sharedRaw=Array.isArray(p)?p:(Array.isArray(p&&p.vessels)?p.vessels:[]);
-    }
-  }catch(e){
-    showSyncToast('Sync failed: could not read sheet', false);
-    console.error('Sync read error',e);
-    return;
-  }
-
-  // Update local state from sheet — show ALL vessels from all users
-  vessels=sharedRaw.map(normalizeVessel);
-  sv();
-  safeRenderAll();
-  showSyncToast('Synced — '+vessels.length+' vessels', true);
-}
-function loadLocalVesselsForMerge(){
-  try{
-    const raw=localStorage.getItem(VKEY)||localStorage.getItem('orca_vessels')||'[]';
-    const arr=JSON.parse(raw);
-    return Array.isArray(arr)?arr:[];
-  }catch(e){return [];}
-}
-
 async function refreshSharedData(){
-  const btn=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Sync');
-  const old=btn?btn.innerHTML:'';
-  if(btn){btn.disabled=true;btn.textContent='⏳ Syncing...';}
-  try{
-    await syncSharedDatabase();
-    const count=(window.vessels||[]).length;
-    showSyncToast('✅ Shared database synchronized ('+count+' vessels)',true);
-    const el=document.getElementById('last-sync-label');
-    if(el) el.textContent='Last sync: '+new Date().toLocaleString();
-  }catch(e){
-    showSyncToast('❌ Sync failed',false);
-  }finally{
-    if(btn){btn.disabled=false;btn.innerHTML=old||'Sync';}
-  }
+  await loadVessels();
+  updateMetrics();
+  renderTable();
+  populateSel();
+  if(typeof renderAdmin==='function')renderAdmin();
 }
 
 function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
@@ -828,7 +693,6 @@ function normalizeVessel(v){
 }
 
 function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){console.error('save failed',e);}}
-function saveLocal(){sv();}
 function lu(){try{return JSON.parse(localStorage.getItem(UKEY)||'{}');}catch(e){return{};}}
 function su(u){const us=lu();us[u.email]={...u,ls:new Date().toISOString()};try{localStorage.setItem(UKEY,JSON.stringify(us));}catch(e){}}
 
@@ -869,7 +733,6 @@ async function handleToken(r){
   document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
   if(user.pic)document.getElementById('uav').src=user.pic;
   document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
-  loadApiKey();
   renderTable();updateMetrics();populateSel();
   fetchInbox();
 }
@@ -1255,12 +1118,6 @@ function filteredVessels(){
   if((window.dashKpiFilter||'')==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
   if((window.sortMode||'newest')==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
   else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
-  // Vessels with unread inbox replies always float to top
-  arr.sort((a,b)=>{
-    const aNew=ibItems.some(m=>m.vi===a.__i||(m.vessel&&vessels.indexOf(m.vessel)===a.__i))?1:0;
-    const bNew=ibItems.some(m=>m.vi===b.__i||(m.vessel&&vessels.indexOf(m.vessel)===b.__i))?1:0;
-    return bNew-aNew;
-  });
   return arr;
 }
 function setKpiFilter(f){
@@ -1336,14 +1193,11 @@ function renderTable(){
     seedTimeline(vessels[idx]);
     const d=ds(v.lastContact);
     const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
-    const hasNewReply=ibItems.some(m=>m.vi===idx||(m.vessel&&vessels.indexOf(m.vessel)===idx));
-    const newReplyDot=hasNewReply?`<span class="new-reply-dot" title="New unread reply"></span>`:'';
-    return `<tr class="cl${hasNewReply?' has-new-reply':''}">
+    return `<tr class="cl">
       <td>
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
-          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}${newReplyDot}</strong>
+          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
-          ${v.sentBy&&user&&v.sentBy.toLowerCase()!==user.email.toLowerCase()?`<span style="font-size:10px;color:var(--blue-t);background:var(--blue-l);border-radius:4px;padding:1px 5px">via ${v.sentBy.split('@')[0]}</span>`:''}
         </div>
       </td>
       <td>
@@ -1481,7 +1335,6 @@ async function sendAndSaveNew(){
       emailsSent:1,
       emailsReceived:0,
       assignedTo:(user&&user.email)||'rami@orca-ai.io',
-      sentBy:(user&&user.email)||'',
       nextAction:'Wait for master reply',
       receivedItems:[],
       missingItems:[...REQUIRED_ITEMS],
@@ -1528,8 +1381,6 @@ ${htmlBody}
 </table>
 </td></tr>
 </table>
-<!-- v38.2 build-1782390653 -->
-<!-- orca-ops-portal updated -->
 </body></html>`;
 }
 function nextFollowupNumber(v){return Number(v.followupsSent||0)+1;}
@@ -1563,7 +1414,7 @@ function buildHtmlEmail(plainText, senderName, docsLink) {
   <!-- GREETING -->
   <tr><td style="padding:32px 36px 0 36px;font-size:14px;color:#1a1a1a;line-height:1.75">
     <p style="margin:0 0 14px 0">Dear Master,</p>
-    <p style="margin:0 0 10px 0">We are the Operations team at Orca AI. We are preparing for the installation of the Orca AI system on board your vessel .</p>
+    <p style="margin:0 0 10px 0">We are the Operations team at Orca AI, currently preparing for the installation of the Orca AI system on board your vessel .</p>
     <p style="margin:0 0 10px 0">The Orca AI system is designed to enhance situational awareness on the bridge and support the Officer of the Watch alongside existing navigation systems such as radar and ECDIS.</p>
   </td></tr>
 
@@ -1678,13 +1529,17 @@ function stripHtmlForText(s){
   return String(s||'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
 }
 
-async function sendGmail(to, subj, body, isHtml=false) {
+async function sendGmail(to, subj, body, isHtml=false, cc='', bcc='') {
   if(!token){alert('Not authenticated.');return false;}
   const html = isHtml ? body : body.replace(/\n/g,'<br>');
   const boundary = 'orca_boundary_' + Date.now();
-  const mime = [
+  const mimeHeaders = [
     `From: ORCA AI OPS <${user.email}>`,
     `To: ${to}`,
+  ];
+  if(cc) mimeHeaders.push(`Cc: ${cc}`);
+  if(bcc) mimeHeaders.push(`Bcc: ${bcc}`);
+  const mime = [...mimeHeaders,
     `Subject: ${subj}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -1804,6 +1659,7 @@ async function checkInbox(){
   await fetchInbox();
   window.showInlineInboxPanel=true;
   updateReceivedStatsFromInbox();
+  const _newCount=ibItems.length;
   buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
   renderInlineInbox();renderInbox();renderTable();updateMetrics();saveVessels();
 }
@@ -1813,65 +1669,39 @@ async function fetchInbox(){
   if(badge){badge.textContent='0';badge.style.display='none';}
   if(!token||!vessels.length)return;
 
-  // Search per vessel: subject must contain vessel name, and only after the initial email was sent
-  // Only check inbox for vessels THIS user sent (replies come to the sender's inbox)
-  for(const vessel of vessels){
-    if(vessel.sentBy && user && user.email && vessel.sentBy.toLowerCase()!==user.email.toLowerCase())continue;
-    const vname=String(vessel.name||'').trim();
-    const vemail=String(vessel.email||'').trim().toLowerCase();
-    if(!vname)continue;
+  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean);
+  const emails=[...new Set((vessels||[]).map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
 
-    // Only fetch replies AFTER the initial email was sent to this vessel
-    const sentDate=vessel.lastEmailDate||vessel.createdAt||vessel.lastContact;
-    const afterClause=sentDate?` after:${Math.floor(new Date(sentDate).getTime()/1000)}`:'';
+  // Keep Gmail query reasonably broad, but matching below is strict and chooses the correct vessel.
+  const qParts=[];
+  names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
+  emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
+  const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
 
-    // Query: must have vessel name in subject AND come from the vessel email (or anyone, but subject must match)
-    const subjQuery=`subject:"${vname.replace(/"/g,'')}"${afterClause}`;
-    const emailQuery=vemail?`from:${vemail} subject:"${vname.replace(/"/g,'')}"${afterClause}`:'';
+  try{
+    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();if(!d.messages)return;
+    for(const msg of d.messages.slice(0,20)){
+      const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+      const dd=await dr.json();
+      const hdr=(dd.payload&&dd.payload.headers)||[];
+      const from=hdr.find(h=>h.name==='From')?.value||'';
+      const subj=hdr.find(h=>h.name==='Subject')?.value||'';
+      const date=hdr.find(h=>h.name==='Date')?.value||'';
+      const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
+      const body=dd.payload?eb(dd.payload):'';
+      const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
+      if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
 
-    const queries=[subjQuery];
-    if(emailQuery&&emailQuery!==subjQuery)queries.push(emailQuery);
-    const q=[...new Set(queries)].join(' OR ');
-
-    try{
-      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=10`,{headers:{Authorization:'Bearer '+token}});
-      const d=await r.json();
-      if(!d.messages)continue;
-
-      for(const msg of d.messages.slice(0,10)){
-        const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
-        const dd=await dr.json();
-        const hdr=(dd.payload&&dd.payload.headers)||[];
-        const from=hdr.find(h=>h.name==='From')?.value||'';
-        const subj=hdr.find(h=>h.name==='Subject')?.value||'';
-        const date=hdr.find(h=>h.name==='Date')?.value||'';
-        const internalDate=Number(dd.internalDate||0);
-        const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
-        const body=dd.payload?eb(dd.payload):'';
-        const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
-
-        // Skip outbound emails from our own user
-        if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
-
-        // Skip emails that arrived before the initial email was sent
-        if(sentDate&&internalDate&&internalDate<new Date(sentDate).getTime())continue;
-
-        // Subject must contain vessel name (case-insensitive)
-        if(!subj.toLowerCase().includes(vname.toLowerCase()))continue;
-
-        // Skip if already logged in timeline
+      const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
+      const vessel=bestVesselForInboxMessage(temp);
+      if(vessel){
         const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
-        if(logged)continue;
-
-        // Skip duplicates already in ibItems
-        if(ibItems.some(x=>x.msgId===msg.id))continue;
-
-        ibItems.push({msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi:vessels.indexOf(vessel)});
+        if(!logged)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
       }
-    }catch(e){console.error('fetchInbox vessel loop error',e);}
-  }
-
-  if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
+    }
+    if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
+  }catch(e){console.error(e);}
 }
 function renderInbox(){
   updateReceivedStatsFromInbox();
@@ -1887,7 +1717,6 @@ function openIbModal(i){
   document.getElementById('mib-v').textContent=curIb.vessel.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   document.getElementById('mib-b').textContent=curIb.body;
-  const v=curIb.vessel;
   ibAna=normalizeAnalysisResult(v,curIb.body,ibAna);
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
@@ -1897,33 +1726,14 @@ async function runIbAnalysis(){
   if(!curIb)return;
   const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
   document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously confirmed items: ${(vessels[curIb.vi]&&vessels[curIb.vi].receivedItems||[]).join(", ")||"none"}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
-  try{
-    if(!window.GEMINI_API_KEY){document.getElementById('apikey-banner').style.display='flex';throw new Error('No Gemini API key set');}
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:1500}})});
-    const dd=await r.json();
-    if(dd.error){throw new Error(dd.error.message||'Gemini API error');}
-    const raw=(dd.candidates&&dd.candidates[0]&&dd.candidates[0].content&&dd.candidates[0].content.parts&&dd.candidates[0].content.parts[0]&&dd.candidates[0].content.parts[0].text)||'';
-    const clean=raw.replace(/```json|```/g,'').trim();
-    ibAna=JSON.parse(clean);
-  }
+  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items. Photos=pending review. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
+  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
   document.getElementById('mib-fu').textContent=ibAna.followup_email||'';
   document.getElementById('mib-res').style.display='block';document.getElementById('mib-sbtn').style.display='inline-flex';
-  // Update vessel receivedItems & missingItems immediately so checklist reflects reality
-  if(curIb&&curIb.vi!=null&&vessels[curIb.vi]){
-    const vIdx=curIb.vi;
-    vessels[vIdx].receivedItems=[...new Map([...(vessels[vIdx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
-    vessels[vIdx].missingItems=ibAna.missing||[];
-    vessels[vIdx].status=ibAna.status;
-    vessels[vIdx].risk=ibAna.risk;
-    vessels[vIdx].progress=ibAna.progress;
-    saveVessels();
-    renderTable();updateMetrics();
-  }
 }
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
@@ -1950,30 +1760,11 @@ async function analyzeReply(){
   if(!reply){alert("Please paste the captain's reply.");return;}
   const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\n\nThe required items are EXACTLY:\n1. Vessel GA\n2. Bridge Console GA\n3. Next 2-3 upcoming port calls + corresponding agent details for each port\n4. Cable penetration\n5. VSAT routing\n6. Power connection\n7. Proposed monitor location photos\n8. Proposed Seapod location photos\n9. Docs acknowledgement\n\nRules:\n- received: list ONLY items from the required list above that the captain explicitly confirmed, sent, or attached\n- missing: list required items NOT yet confirmed\n- If reply is only thanks/ok/noted with no technical content: received=[], missing=all previously missing\n- Photos marked as 'will send' or 'pending' do NOT count as received\n- Use exact item names from the list above\n- status: waiting=no reply yet; followup=partial reply; ready=all items received; scheduled=date confirmed; completed=done\n- progress: 0=nothing, 25=1-2 items, 50=3-5 items, 75=6-8 items, 85=all received, 100=installed\n\nRespond ONLY with valid JSON, no markdown:\n{\"received\":[],\"missing\":[],\"status\":\"followup\",\"risk\":\"medium\",\"progress\":0,\"nextAction\":\"...\",\"flags\":[],\"followup_email\":\"Dear Master,\n\n...\n\nKind regards,\nORCA AI OPS\"}`;
-  try{
-    if(!window.GEMINI_API_KEY){document.getElementById('apikey-banner').style.display='flex';throw new Error('No Gemini API key set');}
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:1500}})});
-    const dd=await r.json();
-    if(dd.error){throw new Error(dd.error.message||'Gemini API error');}
-    const raw=(dd.candidates&&dd.candidates[0]&&dd.candidates[0].content&&dd.candidates[0].content.parts&&dd.candidates[0].content.parts[0]&&dd.candidates[0].content.parts[0].text)||'';
-    const clean=raw.replace(/```json|```/g,'').trim();
-    ana=JSON.parse(clean);ana.vi=idx!==''?parseInt(idx):null;
-  }
+  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
+  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
   catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
   if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
   document.getElementById('a-load').style.display='none';
-  // Update vessel receivedItems immediately so checklist reflects reality
-  if(ana.vi!=null&&vessels[ana.vi]){
-    const vIdx=ana.vi;
-    vessels[vIdx].receivedItems=[...new Map([...(vessels[vIdx].receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
-    vessels[vIdx].missingItems=ana.missing||[];
-    vessels[vIdx].status=ana.status;
-    vessels[vIdx].risk=ana.risk;
-    vessels[vIdx].progress=ana.progress;
-    saveVessels();
-    renderTable();updateMetrics();
-  }
   document.getElementById('a-recv').innerHTML=(ana.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
   document.getElementById('a-stat').innerHTML=`<div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Status</div>${sb(ana.status)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Risk</div>${rb(ana.risk)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Progress</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div class="prog" style="width:100px"><div class="prog-f" style="width:${ana.progress}%"></div></div><span style="font-size:13px;font-weight:700">${ana.progress}%</span></div></div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Next action</div><span style="font-size:12px">${ana.nextAction||'—'}</span></div>${(ana.flags&&ana.flags.length)?ana.flags.map(f=>`<div class="flag-item"><i class="ti ti-flag"></i>${f}</div>`).join(''):''}`;
@@ -2007,29 +1798,10 @@ function openV(idx){
   const r=document.getElementById('vd-r');if(r)r.innerHTML=rb(v.risk||'medium');
   const recv=v.receivedItems||[],miss=v.missingItems||[];
   const cl=document.getElementById('vd-cl');
-  if(cl){
-    const doneItems=REQUIRED_ITEMS.filter(item=>hasItem(recv,item));
-    const missingItems=REQUIRED_ITEMS.filter(item=>!hasItem(recv,item));
-    const allSorted=[...doneItems,...missingItems];
-    cl.innerHTML=allSorted.map(item=>{
-      const done=hasItem(recv,item);
-      const mis=hasItem(miss,item);
-      const ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
-      const style=done?'font-weight:700;color:#1D6B4A':'color:var(--muted)';
-      const bg=done?'background:#EAF8F2;border-radius:6px;padding:4px 8px;margin-bottom:3px':'padding:4px 8px;margin-bottom:3px';
-      return`<li style="${bg}"><i class="ti ${ic}"></i> <span style="${style}">${item}</span></li>`;
-    }).join('');
-    if(doneItems.length>0&&missingItems.length>0){
-      cl.innerHTML=
-        `<li style="padding:2px 8px;margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Received (${doneItems.length})</li>`+
-        doneItems.map(item=>`<li style="background:#EAF8F2;border-radius:6px;padding:5px 8px;margin-bottom:3px"><i class="ti ti-circle-check ic-d"></i> <span style="font-weight:700;color:#1D6B4A">${item}</span></li>`).join('')+
-        `<li style="padding:2px 8px;margin:6px 0 4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Still missing (${missingItems.length})</li>`+
-        missingItems.map(item=>{
-          const ic=hasItem(miss,item)?'ti-circle-x ic-m':'ti-circle ic-p';
-          return`<li style="padding:5px 8px;margin-bottom:3px"><i class="ti ${ic}"></i> <span style="color:var(--muted)">${item}</span></li>`;
-        }).join('');
-    }
-  }
+  if(cl)cl.innerHTML=REQUIRED_ITEMS.map(item=>{
+    const done=hasItem(recv,item),mis=hasItem(miss,item),ic=done?'ti-circle-check ic-d':mis?'ti-circle-x ic-m':'ti-circle ic-p';
+    return`<li><i class="ti ${ic}"></i>${item}</li>`;
+  }).join('');
   const ri=document.getElementById('vd-ri');
   if(ri)ri.innerHTML=recv.length?recv.map(r=>`<div class="recv-item"><i class="ti ti-circle-check"></i>${r}</div>`).join(''):'<span style="font-size:13px;color:var(--faint)">No received items yet.</span>';
   const mi=document.getElementById('vd-mi');
@@ -2088,6 +1860,7 @@ function refreshAllViews(){
   updateMetrics();renderTable();populateSel();renderAdmin();resetInboxUi();
 }
 
+async 
 async function resetSharedDatabase(){
   if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
     alert('Super Admin only.');
@@ -2137,53 +1910,40 @@ async function resetSharedDatabase(){
 }
 
 async function migrateLocalToShared(){
-  if(!isSuperAdmin()){alert('Super Admin only.');return;}
-  if(!confirm('Manually merge MY local cache into Shared Database? This is only for recovery/import.'))return;
-
-  const ok=await ensureSharedDb();
-  if(!ok){alert('Shared DB is not available.');return;}
-
-  const shared=await loadSharedVessels();
-  if(!Array.isArray(shared)){alert('Shared DB could not be loaded.');return;}
-
-  const localRaw=loadLocalVesselsForMerge();
-  const merged=mergeVesselLists(shared, localRaw);
-
-  const saved=await saveSharedVessels(merged);
-  if(!saved){alert('Migration failed.');return;}
-
-  vessels=merged;
-  sv();
-  safeRenderAll();
-  alert('Local cache merged into Shared Database.');
+  if(!isSuperAdmin(user&&user.email)){alert('Super Admin only.');return;}
+  if(!hasSharedDb()){alert('Add SHARED_SHEET_ID in the HTML file first.');return;}
+  const local=loadVesselsCompat().map(normalizeVessel);
+  if(!local.length){alert('No local vessels found on this browser.');return;}
+  if(!confirm(`Upload ${local.length} local vessels into the shared database? This will replace the current shared data.`))return;
+  vessels=local;
+  const ok=await saveSharedVessels(vessels);
+  if(ok){alert('Migration completed. Everyone should click Sync or refresh.');refreshSharedData();}
+  else alert('Migration failed. Check Sheet permissions.');
 }
 
-function clearAll(){
+async function clearAll(){
   if(!isSuperAdmin()){alert('Only Super Admin can clear all data.');return;}
-  if(!confirm('Clear all portal data? This cannot be undone.'))return;
-  try{localStorage.removeItem(VKEY);}catch(e){}
+  if(!confirm('Reset Shared Database? This will delete ALL vessel data for the entire team. Cannot be undone.'))return;
   vessels=[];ibItems=[];
-  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+  try{localStorage.removeItem(VKEY);}catch(e){}
+  try{
+    await fetch(FB+'/vessels.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'[]'});
+    await fetch(FB+'/users.json',{method:'DELETE'});
+  }catch(e){console.error('Firebase reset error:',e);}
+  updateMetrics();renderTable();populateSel();
+  alert('✅ Shared database has been reset successfully.');
 }
 function clearAllHistory(){
-  if(!isSuperAdmin()){alert('Only Super Admin can clear all history.');return;}
-  if(!confirm('This will permanently delete ALL local portal history on this browser. Continue?')) return;
+  if(!confirm('Clear your local cache and history? This only affects your browser.')) return;
   try{
     localStorage.removeItem(VKEY);
     localStorage.removeItem(UKEY);
-    sessionStorage.clear();
+    localStorage.removeItem('orca_inbox_seen');
   }catch(e){}
-  vessels=[];ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
-  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
-  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
-  const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
-  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
-  alert('All local portal history was cleared.');
+  alert('✅ Your local cache has been cleared.');
 }
 
 window.onload=()=>{
-  // Load API key immediately on page load
-  try{const k=localStorage.getItem('orca_akey');if(k){window.GEMINI_API_KEY=k;const b=document.getElementById('apikey-banner');if(b)b.style.display='none';}}catch(e){}
   if(typeof google!=='undefined'&&google.accounts){
     initG();
     try{
@@ -2203,83 +1963,7 @@ setInterval(async () => {
   }
 }, 10 * 60 * 1000);
 
-
-function debugSyncState(){
-  return {
-    version:window.ORCA_FIX_VERSION,
-    localCount:(loadLocalVesselsForMerge()||[]).length,
-    currentCount:(vessels||[]).length,
-    sharedSheetId:typeof SHARED_SHEET_ID==='undefined'?null:SHARED_SHEET_ID,
-    sharedDbReady:typeof sharedDbReady==='undefined'?null:sharedDbReady,
-    user:user&&user.email
-  };
-}
-
-
-function showSyncToast(msg, ok=true){
-  let t=document.getElementById('sync-toast');
-  if(!t){
-    t=document.createElement('div');
-    t.id='sync-toast';
-    t.style.cssText='position:fixed;bottom:24px;right:24px;padding:12px 18px;border-radius:8px;color:#fff;font:14px sans-serif;z-index:99999;display:none;';
-    document.body.appendChild(t);
-  }
-  t.style.background=ok?'#16a34a':'#dc2626';
-  t.textContent=msg;
-  t.style.display='block';
-  setTimeout(()=>t.style.display='none',2500);
-}
-
-
-function goBackToDashboard(){
-  try{
-    if(typeof showTab==='function'){showTab('dash');return;}
-    if(typeof showSection==='function'){showSection('dashboard');return;}
-    if(typeof showDashboard==='function'){showDashboard();return;}
-    const dash=document.getElementById('dash')||document.getElementById('dashboard')||document.querySelector('[data-view="dashboard"]');
-    const analyze=document.getElementById('analyze')||document.getElementById('analyze-reply')||document.querySelector('[data-view="analyze"]');
-    if(analyze)analyze.style.display='none';
-    if(dash)dash.style.display='';
-    location.hash='#dashboard';
-  }catch(e){
-    console.warn('Back to dashboard failed',e);
-    location.hash='#dashboard';
-  }
-}
-function installAnalyzeBackButton(){
-  const headings=[...document.querySelectorAll('h1,h2,h3,strong,b')];
-  const h=headings.find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
-  if(!h)return;
-  const card=h.closest('.card,.panel,section,div')||h.parentElement;
-  if(!card || card.querySelector('#btn-back-dashboard'))return;
-
-  const header=document.createElement('div');
-  header.style.cssText='display:flex;align-items:center;gap:12px;margin-bottom:18px;';
-  const back=document.createElement('button');
-  back.id='btn-back-dashboard';
-  back.type='button';
-  back.className='btn';
-  back.innerHTML='← Back to Dashboard';
-  back.style.cssText='border:1px solid #ddd;background:white;border-radius:8px;padding:9px 12px;cursor:pointer;';
-  back.onclick=goBackToDashboard;
-
-  h.parentNode.insertBefore(header,h);
-  header.appendChild(back);
-  header.appendChild(h);
-}
-document.addEventListener('DOMContentLoaded',installAnalyzeBackButton);
-setInterval(installAnalyzeBackButton,1000);
-document.addEventListener('keydown',function(e){
-  if(e.key==='Escape'){
-    const h=[...document.querySelectorAll('h1,h2,h3,strong,b')].find(x=>(x.textContent||'').trim().toLowerCase().includes('analyze vessel reply'));
-    if(h && h.offsetParent!==null)goBackToDashboard();
-  }
-});
-
 </script>
 <script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
 </body>
 </html>
-<!-- leon-gutnik-admin-l2 -->
-
-<!-- updated -->
