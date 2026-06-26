@@ -978,38 +978,73 @@ function openManualAnalyzeWithReply(i,replyText){
 async function openCaseAnalyze(i){
   const vessel=vessels[i];
   if(!vessel){alert('Vessel not found.');return;}
+  const loadDiv=document.createElement('div');
+  loadDiv.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99998;display:flex;align-items:center;justify-content:center';
+  loadDiv.innerHTML='<div style="background:#fff;border-radius:12px;padding:28px 36px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)"><div class="spinner" style="margin:0 auto 14px"></div><div style="font-size:14px;font-weight:600;color:#1D2E6B">Analyzing reply...</div></div>';
+  document.body.appendChild(loadDiv);
   try{
-    // Use existing inbox result first.
-    let existing=null;
+    let replyText='',replyFrom='',replyDate='';
     if(Array.isArray(ibItems)&&ibItems.length){
       const email=String(vessel.email||'').toLowerCase();
       const name=String(vessel.name||'').toLowerCase();
-      existing=ibItems.find(item=>{
+      const ex=ibItems.find(item=>{
         const from=String(item.fe||item.from||'').toLowerCase();
         const subj=String(item.subj||item.subject||'').toLowerCase();
         const body=String(item.body||item.snippet||'').toLowerCase();
-        return item.vi===i || item.vessel===vessel || (email&&from.includes(email)) || (name&&(subj.includes(name)||body.includes(name)));
+        return item.vi===i||item.vessel===vessel||(email&&from.includes(email))||(name&&(subj.includes(name)||body.includes(name)));
       });
+      if(ex&&ex.body){replyText=cleanCaptainReplyText(ex.body);replyFrom=ex.from||'';replyDate=ex.date||'';}
     }
-    if(existing&&existing.body){
-      openManualAnalyzeWithReply(i,cleanCaptainReplyText(existing.body));
-      return;
+    if(!replyText){
+      const latest=await fetchLatestReplyForVessel(vessel);
+      if(latest&&latest.body){replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';}
     }
-
-    // Search Gmail directly and paste latest reply.
-    const latest=await fetchLatestReplyForVessel(vessel);
-    if(latest&&latest.body){
-      ibItems.push(latest);
-      openManualAnalyzeWithReply(i,latest.body);
-      return;
-    }
-
-    // Last resort: open manual screen, but with clear instruction.
-    openManualAnalyzeWithReply(i,'');
+    if(!replyText){loadDiv.remove();openManualAnalyzeWithReply(i,'');return;}
+    // Run AI using same approach as runIbAnalysis
+    const mis=(vessel.missingItems||[]).join(', '),d=ds(vessel.lastContact);
+    // build prompt identical to runIbAnalysis but using replyText and vessel
+    const _tmpCurIb=curIb;const _tmpIbAna=ibAna;
+    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply'};
+    await runIbAnalysis();
+    // runIbAnalysis sets ibAna and opens mod-ib already
+    loadDiv.remove();
+    curIb=_tmpCurIb;
+    // Reopen with new data
+    openAnalyzeResultModal(i,replyText,replyFrom,replyDate,ibAna);
   }catch(err){
     console.error('openCaseAnalyze failed',err);
+    loadDiv.remove();
     openManualAnalyzeWithReply(i,'');
   }
+}
+
+function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
+  const v=vessels[idx];if(!v||!result)return;
+  curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply'};
+  ibAna=result;
+  document.getElementById('mib-v').textContent=v.name;
+  document.getElementById('mib-m').textContent=(replyFrom?'From: '+replyFrom+' · ':'')+( replyDate||'');
+  document.getElementById('mib-b').textContent=replyText;
+  const firstSent=v.lastEmailDate||v.createdAt||v.lastContact||null;
+  const dsf=firstSent?Math.floor((Date.now()-new Date(firstSent))/86400000):null;
+  document.getElementById('mib-stat-first').textContent=dsf!==null?dsf:'—';
+  const rMs=replyDate?new Date(replyDate).getTime():null;
+  const lMs=firstSent?new Date(firstSent).getTime():null;
+  let rd='—';
+  if(rMs&&lMs&&rMs>lMs){rd=Math.floor((rMs-lMs)/86400000);if(rd===0)rd='<1';}
+  document.getElementById('mib-stat-resp').textContent=rd;
+  const score=readinessScore(v)||v.progress||0;
+  document.getElementById('mib-stat-ready').textContent=score+'%';
+  const sL={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
+  document.getElementById('mib-stat-status').textContent=sL[v.status]||v.status||'—';
+  document.getElementById('mib-recv').innerHTML=(result.received||[]).map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+  document.getElementById('mib-miss').innerHTML=(result.missing||[]).map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+  document.getElementById('mib-fu').textContent=result.followup_email||'';
+  document.getElementById('mib-al').style.display='none';
+  document.getElementById('mib-res').style.display='block';
+  document.getElementById('mib-abtn').style.display='none';
+  document.getElementById('mib-sbtn').style.display='inline-flex';
+  document.getElementById('mod-ib').style.display='flex';
 }
 
 function normTxt(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
