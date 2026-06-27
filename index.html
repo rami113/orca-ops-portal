@@ -1550,8 +1550,8 @@ function renderTable(){
           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
           <div onclick="event.stopPropagation();editVesselFleet(${idx})" title="Click to set fleet" style="margin-top:4px;cursor:pointer">
             ${v.fleet
-              ? `<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">⛵ \${v.fleet}</span>`
-              : `<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>`}
+              ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
+              : '<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>'}
           </div>
         </div>
       </td>
