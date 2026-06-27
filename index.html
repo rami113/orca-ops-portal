@@ -329,7 +329,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
       </div>
       <div class="metrics-wrap"><div class="metrics">
         <div class="metric"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t">0</div><div class="metric-sub">being tracked</div></div>
-        <div class="metric"><div class="metric-label"><i class="ti ti-circle-check"></i> Ready</div><div class="metric-val" id="m-r">0</div><div class="metric-sub">ready for installation</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-circle-check" style="color:#1a7a3a"></i> Ready</div><div class="metric-val" id="m-r" style="color:#1a7a3a">0</div><div class="metric-sub">ready for installation</div></div>
         <div class="metric"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w">0</div><div class="metric-sub">under 3 days</div></div>
         <div class="metric"><div class="metric-label"><i class="ti ti-alert-triangle" style="color:#E24B4A"></i> Require attention</div><div class="metric-val" id="m-a" style="color:#E24B4A">0</div><div class="metric-sub">7+ days or blocker</div></div>
       </div></div>
@@ -1615,7 +1615,8 @@ function _renderTableImpl(){
 }
 function updateMetrics(){
   document.getElementById('m-t').textContent=vessels.length;
-  document.getElementById('m-r').textContent=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  const _rCount=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color=_rCount>0?'#1a7a3a':'#1a1a1a';}
   document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
   document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
 }
