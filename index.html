@@ -329,7 +329,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
       </div>
       <div class="metrics-wrap"><div class="metrics">
         <div class="metric"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t">0</div><div class="metric-sub">being tracked</div></div>
-        <div class="metric"><div class="metric-label"><i class="ti ti-circle-check" style="color:#1a7a3a"></i> Ready</div><div class="metric-val" id="m-r" style="color:#1a7a3a">0</div><div class="metric-sub">ready for installation</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-circle-check" style="color:#0a5c2a"></i> Ready</div><div class="metric-val" id="m-r" style="color:#0a5c2a">0</div><div class="metric-sub">ready for installation</div></div>
         <div class="metric"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w">0</div><div class="metric-sub">under 3 days</div></div>
         <div class="metric"><div class="metric-label"><i class="ti ti-alert-triangle" style="color:#E24B4A"></i> Require attention</div><div class="metric-val" id="m-a" style="color:#E24B4A">0</div><div class="metric-sub">7+ days or blocker</div></div>
       </div></div>
@@ -1573,7 +1573,7 @@ function _renderTableImpl(){
     const d=ds(v.lastContact);
     const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
     const _allDone=(v.missingItems||[]).length===0&&(v.receivedItems||[]).length>0;
-    return `<tr class="cl" style="${_allDone?'background:#f0faf4;border-left:3px solid #1a7a3a':''}">
+    return `<tr class="cl" style="${_allDone?'background:#f0faf4;border-left:3px solid #0a5c2a':''}">
       <td>
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
@@ -1616,7 +1616,7 @@ function _renderTableImpl(){
 function updateMetrics(){
   document.getElementById('m-t').textContent=vessels.length;
   const _rCount=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
-  const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color=_rCount>0?'#1a7a3a':'#1a1a1a';}
+  const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color=_rCount>0?'#0a5c2a':'#1a1a1a';}
   document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
   document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
 }
@@ -2344,7 +2344,7 @@ function openLatestStatus(idx){
   const recv=v.receivedItems||[];
   const recvEl=document.getElementById('ls-received');
   recvEl.innerHTML=recv.length
-    ?recv.map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0faf4;border-radius:6px;margin-bottom:5px;font-size:13px;font-weight:600;color:#1a7a3a"><i class="ti ti-circle-check"></i>${r}</div>`).join('')
+    ?recv.map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0faf4;border-radius:6px;margin-bottom:5px;font-size:13px;font-weight:600;color:#0a5c2a"><i class="ti ti-circle-check"></i>${r}</div>`).join('')
     :`<div style="font-size:13px;color:var(--faint);padding:6px">Nothing received yet.</div>`;
 
   // Missing items
@@ -2352,7 +2352,7 @@ function openLatestStatus(idx){
   const missEl=document.getElementById('ls-missing');
   missEl.innerHTML=miss.length
     ?miss.map(m=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff5f5;border-radius:6px;margin-bottom:5px;font-size:13px;color:#c0392b"><i class="ti ti-circle-x"></i>${m}</div>`).join('')
-    :`<div style="font-size:13px;color:#1a7a3a;padding:6px">✓ All items received!</div>`;
+    :`<div style="font-size:13px;color:#0a5c2a;padding:6px">✓ All items received!</div>`;
 
   document.getElementById('mod-latest-status').style.display='flex';
 }
@@ -2385,11 +2385,11 @@ function openV(idx){
   const recv=v.receivedItems||[];
   const miss=v.missingItems||REQUIRED_ITEMS;
   document.getElementById('mv-received').innerHTML=recv.length
-    ?recv.map(r=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#f0faf4;border-radius:6px;margin-bottom:4px;font-size:13px;font-weight:600;color:#1a7a3a"><i class="ti ti-circle-check" style="margin-top:1px;flex-shrink:0"></i>${r}</div>`).join('')
+    ?recv.map(r=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#f0faf4;border-radius:6px;margin-bottom:4px;font-size:13px;font-weight:600;color:#0a5c2a"><i class="ti ti-circle-check" style="margin-top:1px;flex-shrink:0"></i>${r}</div>`).join('')
     :`<div style="font-size:13px;color:var(--faint);padding:6px 0">Nothing received yet.</div>`;
   document.getElementById('mv-missing').innerHTML=miss.length
     ?miss.map(m=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#fff5f5;border-radius:6px;margin-bottom:4px;font-size:13px;color:#c0392b"><i class="ti ti-circle-x" style="margin-top:1px;flex-shrink:0"></i>${m}</div>`).join('')
-    :`<div style="font-size:13px;color:#1a7a3a;padding:6px 0">✓ All items received!</div>`;
+    :`<div style="font-size:13px;color:#0a5c2a;padding:6px 0">✓ All items received!</div>`;
 
   // Timeline
   seedTimeline(v);
@@ -2714,7 +2714,7 @@ setInterval(async () => {
     <!-- Checklist: received + missing side by side -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.2rem">
       <div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#1a7a3a;margin-bottom:8px">✅ Received from captain</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#0a5c2a;margin-bottom:8px">✅ Received from captain</div>
         <div id="mv-received"></div>
       </div>
       <div>
