@@ -2119,6 +2119,26 @@ function renderInbox(){
 }
 
 
+
+async function sendFromViewModal(){
+  const v=vessels[window._mvIdx];
+  if(!v){await orcaAlert('Vessel not found.','Error');return;}
+  const fuEl=document.getElementById('mv-followup-draft');
+  const body=fuEl&&fuEl.value.trim()?fuEl.value.trim():buildFollowupEmail(v,v.missingItems||[]);
+  const btn=document.querySelector('#mod-view .btn-g');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true);
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
+  if(!ok)return;
+  // Save to timeline and vessel
+  vessels[window._mvIdx].emailsSent=(vessels[window._mvIdx].emailsSent||0)+1;
+  vessels[window._mvIdx].lastEmailDate=new Date().toISOString();
+  vessels[window._mvIdx].lastContact=new Date().toISOString();
+  saveFollowupMeta(vessels[window._mvIdx],body);
+  saveVessels();updateMetrics();renderTable();
+  document.getElementById('mod-view').style.display='none';
+  await orcaAlert('Follow-up sent to '+v.email,'✅ Sent');
+}
 function openIbModalForVessel(idx){
   const v=vessels[idx];if(!v)return;
   const item=(ibItems||[]).find(function(it){
@@ -2366,6 +2386,12 @@ function openV(idx){
   seedTimeline(v);
   const tl=document.getElementById('mv-timeline');
   if(tl)tl.innerHTML=renderTimeline(v);
+
+  // Populate editable follow-up draft
+  const _mvMiss=v.missingItems||[];
+  const _mvDraft=buildFollowupEmail(v,_mvMiss);
+  const mvFu=document.getElementById('mv-followup-draft');
+  if(mvFu)mvFu.value=_mvDraft;
 
   document.getElementById('mod-view').style.display='flex';
   // Bind clickable rows after modal is visible
@@ -2682,14 +2708,20 @@ setInterval(async () => {
     </div>
 
     <!-- Timeline -->
-    <div>
+    <div style="margin-bottom:1.2rem">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">📋 Communication history</div>
-      <div id="mv-timeline" style="max-height:180px;overflow-y:auto"></div>
+      <div id="mv-timeline" style="max-height:160px;overflow-y:auto"></div>
     </div>
 
-    <div class="modal-f" style="margin-top:1.2rem">
+    <!-- Editable follow-up draft -->
+    <div style="margin-bottom:1.2rem">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--navy);margin-bottom:8px">✏️ Follow-up draft — edit before sending</div>
+      <textarea id="mv-followup-draft" style="width:100%;min-height:160px;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;box-sizing:border-box;color:var(--text)"></textarea>
+    </div>
+
+    <div class="modal-f" style="margin-top:0.5rem">
       <button class="btn" onclick="document.getElementById('mod-view').style.display='none'">Close</button>
-      <button class="btn btn-g" onclick="document.getElementById('mod-view').style.display='none';setTimeout(function(){openIbModalForVessel(window._mvIdx);},0)" style="font-size:13px"><i class="ti ti-send"></i> Send this update to the captain</button>
+      <button class="btn btn-g" onclick="sendFromViewModal()" style="font-size:13px"><i class="ti ti-send"></i> Send this update to the captain</button>
     </div>
   </div>
 </div>
