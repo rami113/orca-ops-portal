@@ -1302,13 +1302,23 @@ function trafficLight(v){
 function filteredVessels(){
   let arr=vessels.map((v,i)=>({...v,__i:i}));
   const q=String(window.dashSearch||'').trim().toLowerCase();
-  if(q)arr=arr.filter(v=>[v.name,v.email,v.owner,v.assignedTo,v.docs,v.company,v.imo].some(x=>String(x||'').toLowerCase().includes(q)));
+  if(q)arr=arr.filter(v=>[v.name,v.email,v.owner,v.fleet,v.assignedTo,v.docs,v.company,v.imo].some(x=>String(x||'').toLowerCase().includes(q)));
   if(window.dashStatus)arr=arr.filter(v=>v.status===window.dashStatus);
   if((window.dashKpiFilter||'')==='ready')arr=arr.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
   if((window.dashKpiFilter||'')==='waiting')arr=arr.filter(v=>v.status==='waiting');
   if((window.dashKpiFilter||'')==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  // Fleet filter
+  const fltFleet=document.getElementById('flt-fleet')?.value||'';
+  if(fltFleet)arr=arr.filter(v=>(v.fleet||'')===fltFleet);
   if((window.sortMode||'newest')==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
   else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
+  // Update fleet dropdown options dynamically
+  const fleetSel=document.getElementById('flt-fleet');
+  if(fleetSel){
+    const allFleets=[...new Set(vessels.map(v=>v.fleet||'').filter(Boolean))].sort();
+    const cur=fltFleet;
+    fleetSel.innerHTML='<option value="">All fleets</option>'+allFleets.map(f=>'<option value="'+f+'"'+(f===cur?' selected':'')+'>'+f+'</option>').join('');
+  }
   return arr;
 }
 function setKpiFilter(f){
@@ -1431,10 +1441,8 @@ function renderTable(){
       </td>
       <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
       <td>
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:nowrap">
-          <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;min-width:0;flex:1">${userOptions(v.assignedTo)}</select>
-          <button class="btn btn-s" title="Transfer ownership" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){transferOwnership(_i);},0)" style="padding:4px 7px;font-size:11px;white-space:nowrap;flex-shrink:0"><i class="ti ti-arrows-exchange"></i></button>
-        </div>
+        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;width:100%">${userOptions(v.assignedTo)}</select>
+        <button class="btn btn-s" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){transferOwnership(_i);},0)" style="margin-top:4px;font-size:11px;width:100%;justify-content:center"><i class="ti ti-arrows-exchange" style="margin-right:4px"></i> Transfer</button>
       </td>
       <td>
         <div class="row-actions">
@@ -1545,6 +1553,7 @@ async function sendAndSaveNew(){
       name:v,
       email:e,
       owner:o,
+      fleet:val('mfleet'),
       docs:d,
       status:'waiting',
       progress:0,
