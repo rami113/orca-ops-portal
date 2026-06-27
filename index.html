@@ -335,9 +335,16 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           <div style="font-size:15px;font-weight:700">All vessels</div>
           <div style="display:flex;gap:8px;align-items:center">
             <button class="btn btn-s" onclick="refreshSharedData()"><i class="ti ti-database"></i> Sync</button><button class="btn btn-s" id="btn-chk" onclick="checkInbox()"><i class="ti ti-refresh"></i> Check inbox</button><span style="font-size:11px;color:var(--faint);margin-left:4px" id="last-refresh-label"></span>
-            <select id="flt-fleet" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
-              <option value="">All fleets</option>
-            </select>
+            <div style="position:relative;display:inline-block">
+              <button id="btn-fleet-filter" onclick="toggleFleetPicker()" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit"><i class="ti ti-ship" style="font-size:13px"></i> <span id="fleet-filter-label">All fleets</span> <i class="ti ti-chevron-down" style="font-size:11px"></i></button>
+              <div id="fleet-picker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:1000;min-width:200px;padding:8px 0">
+                <div style="padding:6px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Filter by fleet</div>
+                <div id="fleet-picker-list" style="max-height:200px;overflow-y:auto"></div>
+                <div style="border-top:1px solid var(--border);margin-top:4px;padding:6px 12px">
+                  <button onclick="clearFleetFilter()" style="font-size:12px;color:var(--navy);background:none;border:none;cursor:pointer;padding:0">Clear filter</button>
+                </div>
+              </div>
+            </div>
             <select id="flt" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
               <option value="">All statuses</option>
               <option value="waiting">Waiting for reply</option>
@@ -470,11 +477,17 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <div class="fg">
       <div class="fr"><label>Vessel name *</label><input id="mv" placeholder="MV Ocean Star"/></div>
       <div class="fr"><label>Master email *</label><input id="me" type="email" placeholder="master@vessel.com"/></div>
-      <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd" oninput="updateFleetDatalist()"/></div>
-      <div class="fr"><label>Fleet</label>
-        <input id="mfleet" placeholder="e.g. Pacific Fleet" list="fleet-datalist"/>
-        <datalist id="fleet-datalist"></datalist>
+      <div class="fr" style="flex-direction:column;gap:0">
+        <label style="margin-bottom:6px">Owner / Fleet</label>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <select id="mfleet" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--rs);font-size:14px;font-family:inherit;background:var(--white)" onchange="handleFleetSelect(this.value)">
+            <option value="">— Select fleet —</option>
+          </select>
+          <input id="mfleet-new" placeholder="Or type new fleet name..." style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--rs);font-size:14px;font-family:inherit" oninput="handleFleetInput(this.value)"/>
+        </div>
+        <div id="mfleet-val" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
       </div>
+      <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd"/></div>
       
     </div>
     <div class="fg">
@@ -923,6 +936,95 @@ function assignVessel(i,email){
   saveVessels();renderTable();renderAdmin();
 }
 
+
+// ── Fleet management ──
+window._selectedFleets=new Set();
+
+function getAllFleets(){
+  return [...new Set(vessels.map(v=>v.fleet||'').filter(Boolean))].sort();
+}
+
+function toggleFleetPicker(){
+  const p=document.getElementById('fleet-picker');
+  if(!p)return;
+  if(p.style.display==='none'){
+    buildFleetPicker();
+    p.style.display='block';
+    // close on outside click
+    setTimeout(()=>document.addEventListener('click',closeFleetPickerOutside),0);
+  } else {
+    p.style.display='none';
+  }
+}
+function closeFleetPickerOutside(e){
+  const p=document.getElementById('fleet-picker');
+  const b=document.getElementById('btn-fleet-filter');
+  if(p&&!p.contains(e.target)&&e.target!==b&&!b?.contains(e.target)){
+    p.style.display='none';
+    document.removeEventListener('click',closeFleetPickerOutside);
+  }
+}
+function buildFleetPicker(){
+  const list=document.getElementById('fleet-picker-list');
+  if(!list)return;
+  const fleets=getAllFleets();
+  if(!fleets.length){list.innerHTML='<div style="padding:8px 12px;font-size:12px;color:var(--muted)">No fleets yet</div>';return;}
+  list.innerHTML=fleets.map(f=>{
+    const checked=window._selectedFleets.has(f);
+    return '<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px">'
+      +'<input type="checkbox" class="fleet-cb" data-fleet="'+f+'" '+(checked?'checked':'')+'style="width:14px;height:14px;cursor:pointer"> '+f+'</label>';
+  }).join('');
+  list.querySelectorAll('.fleet-cb').forEach(function(cb){
+    cb.addEventListener('change',function(){toggleFleetSelection(this.getAttribute('data-fleet'),this.checked);});
+  });
+}
+function toggleFleetSelection(fleet,checked){
+  if(checked)window._selectedFleets.add(fleet);
+  else window._selectedFleets.delete(fleet);
+  updateFleetFilterLabel();
+  renderTable();
+}
+function clearFleetFilter(){
+  window._selectedFleets.clear();
+  updateFleetFilterLabel();
+  document.getElementById('fleet-picker').style.display='none';
+  document.removeEventListener('click',closeFleetPickerOutside);
+  renderTable();
+}
+function updateFleetFilterLabel(){
+  const lbl=document.getElementById('fleet-filter-label');
+  if(!lbl)return;
+  const n=window._selectedFleets.size;
+  lbl.textContent=n===0?'All fleets':n===1?[...window._selectedFleets][0]:n+' fleets';
+}
+function openModalWithFleetList(){
+  // Populate fleet dropdown in Start modal
+  const sel=document.getElementById('mfleet');
+  if(!sel)return;
+  const fleets=getAllFleets();
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— Select fleet —</option>'+fleets.map(f=>'<option value="'+f+'"'+(f===cur?' selected':'')+'>'+f+'</option>').join('');
+  document.getElementById('mfleet-new').value='';
+  document.getElementById('mfleet-val').textContent='';
+}
+function handleFleetSelect(val){
+  if(val){
+    document.getElementById('mfleet-new').value='';
+    document.getElementById('mfleet-val').textContent='Selected: '+val;
+  }
+}
+function handleFleetInput(val){
+  if(val.trim()){
+    document.getElementById('mfleet').value='';
+    document.getElementById('mfleet-val').textContent=val.trim()?'New fleet: '+val.trim():'';
+  }
+}
+function getSelectedFleet(){
+  const newVal=document.getElementById('mfleet-new')?.value.trim();
+  const selVal=document.getElementById('mfleet')?.value;
+  return newVal||selVal||'';
+}
+
 function updateFleetDatalist(){
   const dl=document.getElementById('fleet-datalist');
   if(!dl)return;
@@ -1308,17 +1410,10 @@ function filteredVessels(){
   if((window.dashKpiFilter||'')==='waiting')arr=arr.filter(v=>v.status==='waiting');
   if((window.dashKpiFilter||'')==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
   // Fleet filter
-  const fltFleet=document.getElementById('flt-fleet')?.value||'';
-  if(fltFleet)arr=arr.filter(v=>(v.fleet||'')===fltFleet);
+  if(window._selectedFleets&&window._selectedFleets.size>0)arr=arr.filter(v=>window._selectedFleets.has(v.fleet||''));
   if((window.sortMode||'newest')==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
   else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
-  // Update fleet dropdown options dynamically
-  const fleetSel=document.getElementById('flt-fleet');
-  if(fleetSel){
-    const allFleets=[...new Set(vessels.map(v=>v.fleet||'').filter(Boolean))].sort();
-    const cur=fltFleet;
-    fleetSel.innerHTML='<option value="">All fleets</option>'+allFleets.map(f=>'<option value="'+f+'"'+(f===cur?' selected':'')+'>'+f+'</option>').join('');
-  }
+
   return arr;
 }
 function setKpiFilter(f){
@@ -1441,13 +1536,13 @@ function renderTable(){
       </td>
       <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
       <td>
-        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;width:100%">${userOptions(v.assignedTo)}</select>
-        <button class="btn btn-s" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){transferOwnership(_i);},0)" style="margin-top:4px;font-size:11px;width:100%;justify-content:center"><i class="ti ti-arrows-exchange" style="margin-right:4px"></i> Transfer</button>
+        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
       </td>
       <td>
         <div class="row-actions">
           <button class="btn btn-s" title="View & Status" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){openV(_i);},0)"><i class="ti ti-eye"></i> View</button>
           <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){openCaseAnalyze(_i);},0)"><i class="ti ti-robot"></i> Analyze</button>
+          <button class="btn btn-s" title="Transfer ownership" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){transferOwnership(_i);},0)" style="font-size:11px"><i class="ti ti-arrows-exchange"></i> Transfer</button>
           ${adminDelete}
         </div>
       </td>
@@ -1467,7 +1562,8 @@ function val(id){const el=document.getElementById(id);return el&&typeof el.value
 function setVal(id,value){const el=document.getElementById(id);if(el&&typeof el.value==='string')el.value=value;}
 function show(id,display){const el=document.getElementById(id);if(el)el.style.display=display;}
 function txt(id,value){const el=document.getElementById(id);if(el)el.textContent=value;}
-function openStart(){show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','mo','md'].forEach(id=>setVal(id,''));}
+function openStart(){
+  openModalWithFleetList();show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','mo','md'].forEach(id=>setVal(id,''));}
 
 async function genEmail(){
   const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
@@ -1553,7 +1649,7 @@ async function sendAndSaveNew(){
       name:v,
       email:e,
       owner:o,
-      fleet:val('mfleet'),
+      fleet:getSelectedFleet(),
       docs:d,
       status:'waiting',
       progress:0,
