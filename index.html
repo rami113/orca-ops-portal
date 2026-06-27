@@ -1554,6 +1554,9 @@ function getVesselEmpty(){
 }
 
 function renderTable(){
+  setTimeout(_renderTableImpl, 0);
+}
+function _renderTableImpl(){
   const tb=getVesselTbody(),empty=getVesselEmpty();
   if(!tb){console.warn('Vessel table body not found');return;}
   const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==window.dashSearch)searchEl.value=window.dashSearch||'';
