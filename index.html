@@ -1464,7 +1464,8 @@ function filteredVessels(){
   if((window.dashKpiFilter||'')==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
   // Fleet filter
   if(window._selectedFleets&&window._selectedFleets.size>0)arr=arr.filter(v=>window._selectedFleets.has(v.fleet||''));
-  if((window.sortMode||'newest')==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
+  const _sortMode=document.getElementById('sort-vessels')?.value||'newest';
+  if(_sortMode==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
   else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
 
   return arr;
