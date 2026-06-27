@@ -1155,6 +1155,11 @@ async function readGmailMessage(id){
 }
 
 function openManualAnalyzeWithReply(i,replyText){
+  // If called from dashboard context (no reply found), show inline message instead of navigating
+  if(!replyText){
+    orcaAlert('No captain reply was found for this vessel. Please check inbox first.','No reply found');
+    return;
+  }
   showTab('analyze');
   setTimeout(()=>{
     const sel=document.getElementById('ra-sel');
@@ -1162,7 +1167,7 @@ function openManualAnalyzeWithReply(i,replyText){
     if(sel)sel.value=String(i);
     if(txt){
       txt.value=replyText||'';
-      txt.placeholder=replyText?'':'No captain reply was found automatically. Paste the captain reply here.';
+      txt.placeholder='';
       txt.focus();
     }
   },50);
@@ -1284,15 +1289,29 @@ function derivedMissing(v){
 }
 function buildFollowupEmail(v,missing){
   const m=(missing&&missing.length?missing:REQUIRED_ITEMS);
+  const received=v.receivedItems||[];
+
+  // Acknowledge what was received
+  const ackLines=received.length
+    ? 'Thank you for providing the following:\n'+received.map(x=>'• '+x).join('\n')+'\n\n'
+    : '';
+
+  // Still missing section
+  const missingLines=m.map(x=>'• '+x).join('\n');
+
+  // Dynamic closing — only mention voyage/port if still missing
+  const needsPorts=m.some(x=>/port|voyage|agent/i.test(x));
+  const closing=needsPorts
+    ? 'Once the voyage schedule, upcoming ports, agent details and technical information are reviewed, Orca AI will identify the most suitable installation opportunity.'
+    : 'Once we receive the above, we will be able to finalize the installation coordination.';
+
   return `Dear Master,
 
-Thank you for your reply regarding ${v.name}.
+${ackLines}To complete the installation coordination, we still require the following information:
 
-To complete the installation coordination, we still require the following information:
+${missingLines}
 
-${m.map(x=>'• '+x).join('\n')}
-
-Once the voyage schedule, upcoming ports, agent details and technical information are reviewed, Orca AI will identify the most suitable installation opportunity.
+${closing}
 
 Kind regards,
 ORCA AI OPS`;
@@ -2099,7 +2118,6 @@ function renderInbox(){
 
 function openIbModalForVessel(idx){
   const v=vessels[idx];if(!v)return;
-  // Find inbox item for this vessel
   const item=(ibItems||[]).find(function(it){
     return it.vi===idx||it.vessel===v||(v.email&&String(it.fe||it.from||'').toLowerCase().includes(v.email.toLowerCase()));
   });
@@ -2107,7 +2125,8 @@ function openIbModalForVessel(idx){
     const i=(ibItems||[]).indexOf(item);
     openIbModalSend(i);
   } else {
-    openCaseAnalyze(idx);
+    // Try to auto-analyze from Gmail without navigating away
+    setTimeout(function(){openCaseAnalyze(idx);},0);
   }
 }
 function openIbModal(i){
