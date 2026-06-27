@@ -53,10 +53,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .hero p{font-size:13px;color:rgba(255,255,255,.7);line-height:1.6}
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem}
 .metrics-wrap{background:linear-gradient(135deg,#f0f3fb 0%,#e6ecf8 100%);border-radius:16px;padding:20px;margin-bottom:1.5rem}
-.metric{background:var(--white);border-radius:12px;border:none;padding:18px 22px;box-shadow:0 1px 6px rgba(29,46,107,.07);transition:all .2s;position:relative;overflow:hidden}
+.metric{background:var(--white);border-radius:12px;border:none;padding:18px 22px;box-shadow:0 1px 6px rgba(29,46,107,.07);transition:all .2s;position:relative;overflow:hidden;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .metric::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#1D2E6B,#3a56b5);opacity:0;transition:opacity .2s}
 .metric:hover{box-shadow:0 6px 20px rgba(29,46,107,.13);transform:translateY(-2px)}.metric:hover::before{opacity:1}
-.metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;align-items:center;gap:5px;font-weight:700}
+.metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:700}
 .metric-val{font-size:28px;font-weight:700;letter-spacing:-.01em;line-height:1}.metric-sub{font-size:11px;color:var(--faint);margin-top:6px;font-weight:500}
 .panel{background:var(--white);border-radius:var(--r);border:1px solid var(--border);padding:1.25rem;margin-bottom:1rem}
 .panel-title{font-size:14px;font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
