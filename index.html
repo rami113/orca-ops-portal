@@ -335,6 +335,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
           <div style="font-size:15px;font-weight:700">All vessels</div>
           <div style="display:flex;gap:8px;align-items:center">
             <button class="btn btn-s" onclick="refreshSharedData()"><i class="ti ti-database"></i> Sync</button><button class="btn btn-s" id="btn-chk" onclick="checkInbox()"><i class="ti ti-refresh"></i> Check inbox</button><span style="font-size:11px;color:var(--faint);margin-left:4px" id="last-refresh-label"></span>
+            <select id="flt-fleet" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+              <option value="">All fleets</option>
+            </select>
             <select id="flt" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
               <option value="">All statuses</option>
               <option value="waiting">Waiting for reply</option>
@@ -467,7 +470,11 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
     <div class="fg">
       <div class="fr"><label>Vessel name *</label><input id="mv" placeholder="MV Ocean Star"/></div>
       <div class="fr"><label>Master email *</label><input id="me" type="email" placeholder="master@vessel.com"/></div>
-      <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd"/></div>
+      <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd" oninput="updateFleetDatalist()"/></div>
+      <div class="fr"><label>Fleet</label>
+        <input id="mfleet" placeholder="e.g. Pacific Fleet" list="fleet-datalist"/>
+        <datalist id="fleet-datalist"></datalist>
+      </div>
       
     </div>
     <div class="fg">
@@ -914,6 +921,44 @@ function assignVessel(i,email){
   vessels[i].assignedTo=email;
   addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
   saveVessels();renderTable();renderAdmin();
+}
+
+function updateFleetDatalist(){
+  const dl=document.getElementById('fleet-datalist');
+  if(!dl)return;
+  const fleets=[...new Set(vessels.map(v=>v.fleet||'').filter(Boolean))].sort();
+  dl.innerHTML=fleets.map(f=>`<option value="${f}">`).join('');
+}
+
+async function transferOwnership(idx){
+  const v=vessels[idx];if(!v)return;
+  const TEAM=['rami@orca-ai.io','amir.m@orca-ai.io','israel@orca-ai.io','jacob@orca-ai.io','yaron.y@orca-ai.io','yotam.keret@orca-ai.io'];
+  const current=v.assignedTo||'Unassigned';
+  const options=TEAM.filter(u=>u!==current);
+  // Build a simple pick list via orcaConfirm style
+  const overlay=document.getElementById('orca-modal-overlay');
+  document.getElementById('orca-modal-title').textContent='Transfer Ownership — '+v.name;
+  document.getElementById('orca-modal-msg').innerHTML='<div style="margin-bottom:8px">Currently: <strong>'+current+'</strong></div>'
+    +'<select id="transfer-sel" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px">'
+    +'<option value="">— Select new owner —</option>'
+    +options.map(u=>`<option value="${u}">${u}</option>`).join('')
+    +'</select>';
+  document.getElementById('orca-modal-cancel').style.display='inline-block';
+  document.getElementById('orca-modal-cancel').textContent='Cancel';
+  document.getElementById('orca-modal-ok').textContent='Transfer';
+  overlay.classList.add('show');
+  const result=await new Promise(resolve=>{
+    const ok=document.getElementById('orca-modal-ok');
+    const cancel=document.getElementById('orca-modal-cancel');
+    const cleanup=()=>overlay.classList.remove('show');
+    const onOk=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(document.getElementById('transfer-sel')?.value||'');};
+    const onCancel=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve('');};
+    ok.addEventListener('click',onOk);cancel.addEventListener('click',onCancel);
+  });
+  if(!result)return;
+  vessels[idx].assignedTo=result;
+  saveVessels();renderTable();
+  await orcaAlert('Ownership transferred to '+result,'✅ Done');
 }
 async function deleteVessel(i){
   if(!isAdmin()){await orcaAlert('Only admins can delete cases.','Access Denied');return;}
@@ -1368,6 +1413,7 @@ function renderTable(){
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
+          ${v.fleet?`<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:1px 6px;margin-top:3px;display:inline-block;font-weight:600">${v.fleet}</span>`:''}
         </div>
       </td>
       <td>
@@ -1385,7 +1431,10 @@ function renderTable(){
       </td>
       <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
       <td>
-        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:nowrap">
+          <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;min-width:0;flex:1">${userOptions(v.assignedTo)}</select>
+          <button class="btn btn-s" title="Transfer ownership" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){transferOwnership(_i);},0)" style="padding:4px 7px;font-size:11px;white-space:nowrap;flex-shrink:0"><i class="ti ti-arrows-exchange"></i></button>
+        </div>
       </td>
       <td>
         <div class="row-actions">
