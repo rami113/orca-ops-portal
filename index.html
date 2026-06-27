@@ -542,7 +542,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <div><div class="sl" style="margin-bottom:6px">Still missing</div><div class="miss-list" id="mib-miss"></div></div>
       </div>
       <div class="sl" style="margin-bottom:8px">Follow-up draft</div>
-      <div id="mib-fu" class="email-box" style="max-height:150px;margin-bottom:1rem"></div>
+      <textarea id="mib-fu" style="width:100%;min-height:180px;max-height:300px;padding:12px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;box-sizing:border-box;margin-bottom:1rem;color:var(--text)"></textarea>
     </div>
     <div class="modal-f">
       <button class="btn" onclick="document.getElementById('mod-ib').style.display='none'">Close</button>
@@ -1237,7 +1237,10 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
   document.getElementById('mib-stat-status').textContent=sL[v.status]||v.status||'—';
   document.getElementById('mib-recv').innerHTML=(result.received||[]).map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=(result.missing||[]).map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-  document.getElementById('mib-fu').textContent=result.followup_email||'';
+  // Rebuild followup with correct received/missing
+  const _recvM=[...new Map([...(v.receivedItems||[]),...(result.received||[])].map(x=>[itemKey(x),x])).values()];
+  result.followup_email=buildFollowupEmail({...v,receivedItems:_recvM},result.missing||[]);
+  document.getElementById('mib-fu').value=result.followup_email||'';
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-res').style.display='block';
   document.getElementById('mib-abtn').style.display='none';
@@ -2184,10 +2187,15 @@ async function runIbAnalysis(){
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   // Always normalize: infer keywords override empty AI result
   ibAna=normalizeAnalysisResult(v,curIb.body||'',ibAna);
+  // Rebuild followup email based on actual missing items (not AI guess)
+  // Update vessel receivedItems before building email
+  const _recvMerged=[...new Map([...(v.receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
+  const _vForEmail={...v,receivedItems:_recvMerged};
+  ibAna.followup_email=buildFollowupEmail(_vForEmail,ibAna.missing||[]);
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
-  document.getElementById('mib-fu').textContent=ibAna.followup_email||'';
+  document.getElementById('mib-fu').value=ibAna.followup_email||'';
   document.getElementById('mib-res').style.display='block';
 
   // ANALYZE saves vessel status immediately - without sending email
@@ -2210,7 +2218,9 @@ async function runIbAnalysis(){
 }
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
-  const v=curIb.vessel,followBody=(ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel));
+  // Read edited text from textarea - user may have modified it
+  const fuEl=document.getElementById('mib-fu');
+  const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
   const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);
   if(!ok)return;
   const idx=curIb.vi;
@@ -2221,10 +2231,10 @@ async function sendIbFollowUp(){
   vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   saveVessels();updateMetrics();renderTable();
   document.getElementById('mod-ib').style.display='none';
-  ibItems.splice(ibItems.indexOf(curIb),1);
+  ibItems=ibItems.filter(function(it){return it!==curIb;});
   const badge=document.getElementById('ib-count');
   if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else badge.style.display='none';
-  renderInbox();
+  renderInbox();renderInlineInbox();
 }
 
 // ANALYZE (manual)
