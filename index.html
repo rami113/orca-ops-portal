@@ -52,10 +52,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .hero h1{font-size:24px;font-weight:700;color:#fff;margin-bottom:6px}
 .hero p{font-size:13px;color:rgba(255,255,255,.7);line-height:1.6}
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem}
-.metric{background:var(--white);border-radius:var(--r);border:1px solid var(--border);padding:20px 24px;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:all .18s}
-.metric:hover{box-shadow:0 6px 20px rgba(29,46,107,.13);transform:translateY(-2px);border-color:#c5cfe8}
-.metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;align-items:center;gap:5px;font-weight:600}
-.metric-val{font-size:40px;font-weight:800;letter-spacing:-.02em;line-height:1}.metric-sub{font-size:12px;color:var(--faint);margin-top:6px}
+.metric{background:var(--white);border-radius:14px;border:none;padding:24px 28px;box-shadow:0 2px 12px rgba(29,46,107,.08),0 1px 3px rgba(0,0,0,.04);transition:all .2s;position:relative;overflow:hidden}
+.metric::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#1D2E6B,#3a56b5);opacity:0;transition:opacity .2s}
+.metric:hover{box-shadow:0 8px 28px rgba(29,46,107,.15);transform:translateY(-3px)}.metric:hover::before{opacity:1}
+.metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;display:flex;align-items:center;gap:6px;font-weight:700}
+.metric-val{font-size:48px;font-weight:900;letter-spacing:-.03em;line-height:1}.metric-sub{font-size:12px;color:var(--faint);margin-top:8px;font-weight:500}
 .panel{background:var(--white);border-radius:var(--r);border:1px solid var(--border);padding:1.25rem;margin-bottom:1rem}
 .panel-title{font-size:14px;font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
 .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
