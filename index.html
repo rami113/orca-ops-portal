@@ -2389,7 +2389,14 @@ function openV(idx){
 
   // Populate editable follow-up draft
   const _mvMiss=v.missingItems||[];
-  const _mvDraft=buildFollowupEmail(v,_mvMiss);
+  const _mvRecv=v.receivedItems||[];
+  let _mvDraft;
+  if(_mvMiss.length===0&&_mvRecv.length>0){
+    // All items received - send a completion confirmation
+    _mvDraft='Dear Master,\n\nThank you for providing all the required information for '+v.name+'.\n\nWe now have everything needed to proceed with the installation coordination:\n'+_mvRecv.map(x=>'• '+x).join('\n')+'\n\nOur team will be in touch shortly to confirm the installation schedule.\n\nKind regards,\nORCA AI OPS';
+  } else {
+    _mvDraft=buildFollowupEmail(v,_mvMiss);
+  }
   const mvFu=document.getElementById('mv-followup-draft');
   if(mvFu)mvFu.value=_mvDraft;
 
