@@ -487,7 +487,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         </div>
         <div id="mfleet-val" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
       </div>
-      <div class="fr"><label>Owner / company</label><input id="mo" placeholder="Sea Shipping Ltd"/></div>
+
       
     </div>
     <div class="fg">
@@ -1032,6 +1032,36 @@ function updateFleetDatalist(){
   dl.innerHTML=fleets.map(f=>`<option value="${f}">`).join('');
 }
 
+
+async function editVesselFleet(idx){
+  const v=vessels[idx];if(!v)return;
+  const fleets=getAllFleets();
+  const overlay=document.getElementById('orca-modal-overlay');
+  document.getElementById('orca-modal-title').textContent='Set Fleet — '+v.name;
+  const opts=fleets.map(f=>'<option value="'+f+'"'+(f===v.fleet?' selected':'')+'>'+f+'</option>').join('');
+  document.getElementById('orca-modal-msg').innerHTML=
+    '<div style="margin-bottom:8px"><select id="ef-sel" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px"><option value="">— Select existing fleet —</option>'+opts+'</select></div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:6px;text-align:center">— or type new —</div>'
+    +'<input id="ef-new" placeholder="New fleet name..." style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;box-sizing:border-box" value=""/>';
+  document.getElementById('orca-modal-cancel').style.display='inline-block';
+  document.getElementById('orca-modal-cancel').textContent='Cancel';
+  document.getElementById('orca-modal-ok').textContent='Save';
+  overlay.classList.add('show');
+  const result=await new Promise(resolve=>{
+    const ok=document.getElementById('orca-modal-ok');
+    const cancel=document.getElementById('orca-modal-cancel');
+    const cleanup=()=>overlay.classList.remove('show');
+    const onOk=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);
+      const nv=document.getElementById('ef-new')?.value.trim();
+      const sv=document.getElementById('ef-sel')?.value;
+      resolve(nv||sv||'');};
+    const onCancel=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(null);};
+    ok.addEventListener('click',onOk);cancel.addEventListener('click',onCancel);
+  });
+  if(result===null)return;
+  vessels[idx].fleet=result;
+  saveVessels();renderTable();
+}
 async function transferOwnership(idx){
   const v=vessels[idx];if(!v)return;
   const TEAM=['rami@orca-ai.io','amir.m@orca-ai.io','israel@orca-ai.io','jacob@orca-ai.io','yaron.y@orca-ai.io','yotam.keret@orca-ai.io'];
@@ -1518,7 +1548,11 @@ function renderTable(){
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
-          ${v.fleet?`<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:1px 6px;margin-top:3px;display:inline-block;font-weight:600">${v.fleet}</span>`:''}
+          <div onclick="event.stopPropagation();editVesselFleet(${idx})" title="Click to set fleet" style="margin-top:4px;cursor:pointer">
+            ${v.fleet
+              ? `<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">⛵ \${v.fleet}</span>`
+              : `<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>`}
+          </div>
         </div>
       </td>
       <td>
