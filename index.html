@@ -56,7 +56,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .metric{background:var(--white);border-radius:12px;border:none;padding:18px 22px;box-shadow:0 1px 6px rgba(29,46,107,.07);transition:all .2s;position:relative;overflow:hidden;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .metric::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#1D2E6B,#3a56b5);opacity:0;transition:opacity .2s}
 .metric:hover{box-shadow:0 6px 20px rgba(29,46,107,.13);transform:translateY(-2px)}.metric:hover::before{opacity:1}
-.metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:700}
+.metric-label{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700}
 .metric-val{font-size:28px;font-weight:700;letter-spacing:-.01em;line-height:1}.metric-sub{font-size:11px;color:var(--faint);margin-top:6px;font-weight:500}
 .panel{background:var(--white);border-radius:var(--r);border:1px solid var(--border);padding:1.25rem;margin-bottom:1rem}
 .panel-title{font-size:14px;font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
@@ -328,9 +328,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
         <button class="btn btn-g" onclick="openStart()"><i class="ti ti-rocket"></i> Start Coordination</button>
       </div>
       <div class="metrics-wrap"><div class="metrics">
-        <div class="metric"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t">0</div><div class="metric-sub">being tracked</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t" style="color:#1D2E6B">0</div><div class="metric-sub">being tracked</div></div>
         <div class="metric"><div class="metric-label"><i class="ti ti-circle-check" style="color:#0a5c2a"></i> Ready</div><div class="metric-val" id="m-r" style="color:#0a5c2a">0</div><div class="metric-sub">ready for installation</div></div>
-        <div class="metric"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w">0</div><div class="metric-sub">under 3 days</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w" style="color:#1D2E6B">0</div><div class="metric-sub">under 3 days</div></div>
         <div class="metric"><div class="metric-label"><i class="ti ti-alert-triangle" style="color:#E24B4A"></i> Require attention</div><div class="metric-val" id="m-a" style="color:#E24B4A">0</div><div class="metric-sub">7+ days or blocker</div></div>
       </div></div>
       <div class="panel">
@@ -1616,9 +1616,12 @@ function _renderTableImpl(){
 function updateMetrics(){
   document.getElementById('m-t').textContent=vessels.length;
   const _rCount=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
-  const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color=_rCount>0?'#0a5c2a':'#1a1a1a';}
+  const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color='#0a5c2a';}
+  const _atEl=document.getElementById('m-a');
+  const _atCount=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+  if(_atEl){_atEl.textContent=_atCount;_atEl.style.color=_atCount>0?'#E24B4A':'#1D2E6B';}
   document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
-  document.getElementById('m-a').textContent=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+
 }
 function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
