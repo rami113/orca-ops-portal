@@ -760,7 +760,18 @@ async function loadVessels(){
 }
 async function saveVessels(){
   if(hasSharedDb()){
-    const ok=await saveSharedVessels(vessels);
+    // Merge with current Sheet data before saving to avoid overwriting other users' vessels
+    let merged=vessels;
+    try{
+      const current=await loadSharedVessels();
+      if(Array.isArray(current)&&current.length){
+        // Keep vessels from Sheet that are NOT in our local array (other users' vessels)
+        const myIds=new Set(vessels.map(v=>v.id||v.name));
+        const others=current.filter(v=>!myIds.has(v.id||v.name));
+        merged=[...vessels,...others];
+      }
+    }catch(e){console.warn('merge read failed',e);}
+    const ok=await saveSharedVessels(merged);
     if(ok)return;
     console.error('Shared DB save failed');
     const lbl2=document.getElementById('last-refresh-label');
