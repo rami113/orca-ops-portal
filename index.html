@@ -738,23 +738,29 @@ async function saveSharedVessels(data){
 async function loadVessels(){
   const warn=document.getElementById('shared-db-warning');
   if(warn)warn.style.display=hasSharedDb()?'none':'block';
+  const lbl=document.getElementById('last-refresh-label');
   if(hasSharedDb()){
+    if(lbl)lbl.textContent='🔄 Loading shared database...';
     const ok=await ensureSharedDb();
     if(ok){
       const shared=await loadSharedVessels();
       if(Array.isArray(shared)){
         vessels=shared.map(normalizeVessel);
+        if(lbl)lbl.textContent='✅ Shared DB loaded — '+vessels.length+' vessels';
+        console.log('[loadVessels] Loaded',vessels.length,'vessels from Sheet');
         return;
       }
     }
-    // Sheets access failed — likely missing spreadsheets scope
-    // Try to request consent
+    // Sheets access failed
+    console.error('[loadVessels] Sheets failed — falling back to localStorage');
+    if(lbl)lbl.textContent='⚠️ Sheet access failed — using local data';
     if(tc){
-      console.warn('Sheets access failed — requesting re-consent for spreadsheets scope');
       tc.requestAccessToken({prompt:'consent'});
+      if(lbl)lbl.textContent='⚠️ Re-authorizing Google access...';
     }
-    const lbl=document.getElementById('last-refresh-label');
-    if(lbl)lbl.textContent='⚠️ Re-authorizing Google access...';
+  } else {
+    console.warn('[loadVessels] No Sheet configured — using localStorage');
+    if(lbl)lbl.textContent='⚠️ No shared database configured';
   }
   lv();
 }
@@ -771,8 +777,9 @@ async function saveVessels(){
         merged=[...vessels,...others];
       }
     }catch(e){console.warn('merge read failed',e);}
+    console.log('[saveVessels] Saving',merged.length,'vessels to Sheet');
     const ok=await saveSharedVessels(merged);
-    if(ok)return;
+    if(ok){console.log('[saveVessels] Saved OK');return;}
     console.error('Shared DB save failed');
     const lbl2=document.getElementById('last-refresh-label');
     if(lbl2)lbl2.textContent='⚠️ Save failed — check Google Sheets access';
