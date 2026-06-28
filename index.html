@@ -877,13 +877,20 @@ async function handleToken(r){
   // Save session token
   saveSession(token, user);
   scheduleTokenRefresh();
-  // Gmail access check
+  // Check Gmail + Sheets access
   try{
     const gmailTest = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:'Bearer '+token}});
     if(!gmailTest.ok){
       const label = document.getElementById('last-refresh-label');
-      if(label) label.textContent = '⚠️ Gmail inbox access not granted for this account';
+      if(label) label.textContent = '⚠️ Gmail access not granted';
       console.warn('Gmail scope not granted');
+    }
+    // Check Sheets access
+    const sheetsTest = await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+SHARED_SHEET_ID+'?fields=spreadsheetId',{headers:{Authorization:'Bearer '+token}});
+    if(!sheetsTest.ok){
+      console.warn('Sheets scope not granted - will request consent');
+      // Force re-consent to get spreadsheets scope
+      if(tc) tc.requestAccessToken({prompt:'consent'});
     }
   }catch(e){}
   applyUserRole();
@@ -1810,6 +1817,7 @@ async function sendAndSaveNew(){
       risk:'medium',
       lastContact:now,
       lastEmailDate:now,
+      firstEmailDate:now,
       lastActivity:now,
       emailsSent:1,
       emailsReceived:0,
@@ -2190,7 +2198,12 @@ async function sheetsInboxSave(item){
       headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
       body:JSON.stringify({values:[row]})
     });
-  }catch(e){console.warn('sheetsInboxSave failed',e);}
+  }catch(e){
+    console.error('sheetsInboxSave failed - check Sheets scope',e);
+    // Show warning in UI
+    const lbl=document.getElementById('last-refresh-label');
+    if(lbl)lbl.textContent='⚠️ Could not save reply to shared sheet: '+( e?.message||e);
+  }
 }
 
 async function sheetsInboxLoad(){
@@ -2279,9 +2292,11 @@ async function fetchInbox(){
       const vessel=bestVesselForInboxMessage(temp);
       if(vessel){
         const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
-        const vesselCreated=new Date(vessel.createdAt||vessel.firstContact||vessel.lastContact||0).getTime();
+        // Use firstEmailDate as the strict cutoff — only show replies AFTER first email was sent
+        const firstSent=vessel.firstEmailDate||vessel.lastEmailDate||vessel.createdAt||null;
+        const vesselCutoff=firstSent?new Date(firstSent).getTime():0;
         const msgDate=new Date(date).getTime();
-        const isAfterVesselCreation=!vesselCreated||!msgDate||msgDate>=vesselCreated;
+        const isAfterVesselCreation=!vesselCutoff||!msgDate||msgDate>=vesselCutoff;
         const alreadyInItems=(ibItems||[]).some(i=>i.msgId===msg.id);
         if(!logged&&isAfterVesselCreation&&!alreadyInItems){
           const vi=vessels.indexOf(vessel);
@@ -2861,8 +2876,8 @@ function trySilentSignIn(){
         document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
         if(user.pic)document.getElementById('uav').src=user.pic;
         document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
-        renderTable();updateMetrics();populateSel();fetchInbox();
-        mergeSharedInbox();
+        renderTable();updateMetrics();populateSel();
+        sheetsInboxInit().then(()=>fetchInbox()).then(()=>mergeSharedInbox());
         scheduleTokenRefresh();
       });
       return;
