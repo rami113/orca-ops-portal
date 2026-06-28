@@ -594,7 +594,10 @@ const TEAM_USERS=[
   {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
   {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
   {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
-  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'}
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
+  {email:'timothy@orca-ai.io',name:'Timothy',role:'User L2'},
+  {email:'opsrep2@orca-ai.io',name:'Ops Rep 2',role:'User L2'},
+  {email:'opsrep1@orca-ai.io',name:'Ops Rep 1',role:'User L2'}
 ];
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
@@ -1067,7 +1070,7 @@ async function editVesselFleet(idx){
 }
 async function transferOwnership(idx){
   const v=vessels[idx];if(!v)return;
-  const TEAM=['rami@orca-ai.io','amir.m@orca-ai.io','israel@orca-ai.io','jacob@orca-ai.io','yaron.y@orca-ai.io','yotam.keret@orca-ai.io'];
+  const TEAM=TEAM_USERS.map(u=>u.email);
   const current=v.assignedTo||'Unassigned';
   const options=TEAM.filter(u=>u!==current);
   // Build a simple pick list via orcaConfirm style
@@ -1091,9 +1094,20 @@ async function transferOwnership(idx){
     ok.addEventListener('click',onOk);cancel.addEventListener('click',onCancel);
   });
   if(!result)return;
+  const prevOwner=vessels[idx].assignedTo||'Unassigned';
   vessels[idx].assignedTo=result;
+  vessels[idx].lastTransferTo=result;
+  vessels[idx].lastTransferAt=new Date().toISOString();
+  addTimeline(vessels[idx],'assignment','Transferred to '+result,'From: '+prevOwner);
   saveVessels();renderTable();
-  await orcaAlert('Ownership transferred to '+result,'✅ Done');
+  // Send notification email to new owner
+  if(token&&result.includes('@')){
+    const vname=vessels[idx].name||'vessel';
+    const newOwnerName=TEAM_USERS.find(u=>u.email===result)?.name||result;
+    const notifBody='Dear '+newOwnerName+',\n\nYou have been assigned as the new owner of vessel: '+vname+'.\n\nPrevious owner: '+prevOwner+'\n\nPlease log in to the Orca AI Installation Coordinator portal to review the case.\n\nKind regards,\nORCA AI OPS';
+    await sendGmail(result,'[ORCA AI] Vessel ownership transferred: '+vname,notifBody,false).catch(()=>{});
+  }
+  await orcaAlert('Ownership transferred to '+result+'.\nA notification email has been sent.','✅ Transfer Complete');
 }
 async function deleteVessel(i){
   if(!isAdmin()){await orcaAlert('Only admins can delete cases.','Access Denied');return;}
@@ -1582,6 +1596,9 @@ function _renderTableImpl(){
             ${v.fleet
               ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
               : '<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>'}
+          ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
+              ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px">&#8644; Transferred to '+v.lastTransferTo.split('@')[0]+'</span>'
+              : ''}
           </div>
         </div>
       </td>
