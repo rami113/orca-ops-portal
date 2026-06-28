@@ -2244,9 +2244,15 @@ async function mergeSharedInbox(){
   const shared=await sheetsInboxLoad();
   if(!shared.length)return;
   const existingIds=new Set((ibItems||[]).map(i=>i.msgId));
+  const myEmail=normEmail(user?.email||'');
   let added=0;
   for(const item of shared){
     if(existingIds.has(item.msgId))continue;
+    // Only show items where THIS user owns the vessel (or saved by this user)
+    const v=item.vessel;
+    const isMyVessel=v&&(normEmail(v.assignedTo||'')=== myEmail||normEmail(v.email||'')===myEmail);
+    const iSavedIt=normEmail(item.savedBy||'')===myEmail;
+    if(!isMyVessel&&!iSavedIt)continue;
     ibItems.push(item);
     added++;
   }
