@@ -877,6 +877,15 @@ async function handleToken(r){
   // Save session token
   saveSession(token, user);
   scheduleTokenRefresh();
+  // Gmail access check
+  try{
+    const gmailTest = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:'Bearer '+token}});
+    if(!gmailTest.ok){
+      const label = document.getElementById('last-refresh-label');
+      if(label) label.textContent = '⚠️ Gmail inbox access not granted for this account';
+      console.warn('Gmail scope not granted');
+    }
+  }catch(e){}
   applyUserRole();
   su(user); await loadVessels();
   document.getElementById('auth-screen').style.display='none';
@@ -1140,7 +1149,7 @@ async function transferOwnership(idx){
   vessels[idx].assignedTo=result;
   vessels[idx].lastTransferTo=result;
   vessels[idx].lastTransferAt=new Date().toISOString();
-  addTimeline(vessels[idx],'assignment','Transferred to '+result,'From: '+prevOwner);
+  addTimeline(vessels[idx],'assignment','Ownership transferred','From: '+prevOwner+' → To: '+result);
   saveVessels();renderTable();
   // Send notification email to new owner
   if(token&&result.includes('@')){
@@ -1426,11 +1435,20 @@ function normalizeAnalysisResult(v,reply,analysis){
   const thanksOnly=isThanksOnlyReply(reply);
   analysis=analysis||{};
   let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
-  // Always trust infer results - they are keyword-based and reliable
   const inferred=inferReceivedFromReply(reply);
-  // If AI returned nothing but infer found items, use infer
-  if(received.length===0&&inferred.length>0) received=[...inferred];
-  else received=[...new Set([...received,...inferred])];
+  const s_rep=normTxt(reply);
+  const hasAnyAttachSignal=s_rep.includes('attach')||s_rep.includes('herewith')||
+    s_rep.includes('enclosed')||s_rep.includes('please find')||s_rep.includes('here are')||
+    s_rep.includes('here is')||s_rep.includes('find below')||s_rep.includes('see below')||
+    s_rep.includes('ga')||s_rep.includes('general arrangement');
+  // If no attachment signal AND infer found nothing → AI is hallucinating, reject its received[]
+  if(!hasAnyAttachSignal&&inferred.length===0){
+    received=[];
+  } else if(inferred.length>0){
+    // Infer is more reliable than AI for specific items
+    received=[...new Set([...inferred])];
+  }
+  // else: use AI received (hasAttachSignal but infer missed something)
   let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
   if(thanksOnly && received.length===0){
     // Pure thanks with nothing detected - keep old missing, clear received
@@ -1462,11 +1480,12 @@ function cleanTimeline(v){
   });
 }
 
-function addTimeline(v,type,title,detail,body){
+function addTimeline(v,type,title,detail,body,msgId){
   if(!v)return;
   v.timeline=v.timeline||[];
   const entry={ts:new Date().toISOString(),type,title,detail};
   if(body)entry.body=String(body).slice(0,3000);
+  if(msgId)entry.msgId=msgId;
   v.timeline.unshift(entry);
   v.lastActivity=new Date().toISOString();
 }
@@ -2225,7 +2244,7 @@ async function mergeSharedInbox(){
   }
 }
 async function fetchInbox(){
-  ibItems=[];
+  if(!ibItems) ibItems=[];
   const badge=document.getElementById('ib-count');
   if(badge){badge.textContent='0';badge.style.display='none';}
   if(!token||!vessels.length)return;
@@ -2260,17 +2279,36 @@ async function fetchInbox(){
       const vessel=bestVesselForInboxMessage(temp);
       if(vessel){
         const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
-        // Only show emails received AFTER the vessel was first created/contacted
         const vesselCreated=new Date(vessel.createdAt||vessel.firstContact||vessel.lastContact||0).getTime();
         const msgDate=new Date(date).getTime();
         const isAfterVesselCreation=!vesselCreated||!msgDate||msgDate>=vesselCreated;
-        if(!logged&&isAfterVesselCreation)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
+        const alreadyInItems=(ibItems||[]).some(i=>i.msgId===msg.id);
+        if(!logged&&isAfterVesselCreation&&!alreadyInItems){
+          const vi=vessels.indexOf(vessel);
+          const item={...temp,vessel,vi};
+          // Save to shared Sheet so ALL users can see this reply
+          sheetsInboxSave(item);
+          // Update vessel received stats
+          vessels[vi].emailsReceived=(vessels[vi].emailsReceived||0)+1;
+          vessels[vi].lastReceivedDate=new Date(date||Date.now()).toISOString();
+          vessels[vi].lastActivity=new Date().toISOString();
+          // Document on vessel timeline
+          addTimeline(vessels[vi],'reply','Captain replied',temp.from,temp.body.substring(0,300),msg.id);
+          ibItems.push(item);
+        }
       }
     }
+    // Save vessel stats updates to shared Sheet
+    saveVessels();
     // Merge inbox items from other team members via Google Sheets
     mergeSharedInbox();
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
-  }catch(e){console.error(e);}
+  }catch(e){
+    console.error('fetchInbox error', e);
+    const msg = e?.message || (e?.status ? 'API error ' + e.status : 'Unknown error');
+    const label = document.getElementById('last-refresh-label');
+    if(label) label.textContent = '⚠️ Inbox error: ' + msg;
+  }
 }
 function renderInbox(){
   updateReceivedStatsFromInbox();
@@ -2824,6 +2862,7 @@ function trySilentSignIn(){
         if(user.pic)document.getElementById('uav').src=user.pic;
         document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
         renderTable();updateMetrics();populateSel();fetchInbox();
+        mergeSharedInbox();
         scheduleTokenRefresh();
       });
       return;
