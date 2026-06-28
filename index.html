@@ -803,6 +803,7 @@ function loadVesselsCompat(){
   return [];
 }
 function normalizeVessel(v){
+  if(!v.firstEmailDate&&v.lastEmailDate)v.firstEmailDate=v.lastEmailDate;
   v.status=v.status||'waiting';
   if(v.status==='new')v.status='waiting';
   if(v.status==='escalated')v.status='followup';
@@ -1550,14 +1551,7 @@ function readinessBar(v){
     <span>${s}%</span>
   </div>`;
 }
-function trafficLight(v){
-  const d=ds(v.lastContact);
-  let c='green',label='On track';
-  if(v.risk==='high'||d>=7){c='red';label='Attention';}
-  else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
-  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
-  return `<span class="traffic traffic-only" title="${label}"><span class="tl-light tl-${c}"></span><span>${label}</span></span>`;
-}
+
 function filteredVessels(){
   let arr=vessels.map((v,i)=>({...v,__i:i}));
   const q=String(window.dashSearch||'').trim().toLowerCase();
@@ -2303,8 +2297,9 @@ async function fetchInbox(){
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
       const body=dd.payload?eb(dd.payload):'';
       const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
-      // Skip emails sent by the logged-in user (we want captain replies only)
-      if(user&&user.email&&fe===normEmail(user.email))continue;
+      // Skip emails FROM any team member (we want captain replies only)
+      const _teamEmails=TEAM_USERS.map(u=>normEmail(u.email));
+      if(_teamEmails.includes(fe))continue;
 
       const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
       const vessel=bestVesselForInboxMessage(temp);
