@@ -650,15 +650,18 @@ function sharedDbUrl(range){
 async function ensureSharedDb(){
   if(!hasSharedDb()||!token){sharedDbReady=false;return false;}
   try{
-    let r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
-    if(r.status===404 || r.status===400){
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}:batchUpdate`,{
-        method:'POST',
-        headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-        body:JSON.stringify({requests:[{addSheet:{properties:{title:SHARED_SHEET_NAME}}}]})
-      });
+    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    if(r.status===403){
+      console.error('Sheets 403 - no permission. Requesting re-consent.');
+      const lbl=document.getElementById('last-refresh-label');
+      if(lbl)lbl.textContent='⚠️ Google Sheets access denied - re-authorizing...';
+      if(tc)tc.requestAccessToken({prompt:'consent'});
+      sharedDbReady=false;return false;
     }
-    r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok){
+      console.error('Sheets error',r.status);
+      sharedDbReady=false;return false;
+    }
     const d=await r.json();
     const val=d.values&&d.values[0]&&d.values[0][0];
     if(!val)await saveSharedVessels([]);
