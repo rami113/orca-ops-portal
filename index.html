@@ -2088,10 +2088,11 @@ function inboxMsgText(m){
 }
 function inboxNameHit(m,v){
   const n=inboxNorm(v&&v.name);
-  if(!n)return false;
+  if(!n||n.length<3)return false;
   const s=inboxNorm(m&&(m.subj||m.subject));
-  const t=inboxMsgText(m);
-  return s.includes(n)||t.includes(n);
+  // Must match on subject line AND subject must look like an Orca coordination email
+  const isOrcaSubject=s.includes('orca')||s.includes('installation coordination')||s.includes('installation co');
+  return isOrcaSubject && s.includes(n);
 }
 function bestVesselForInboxMessage(m){
   const list=(vessels||[]).filter(v=>v&&String(v.name||'').trim());
@@ -2239,8 +2240,8 @@ async function sheetsInboxLoad(){
     const rows=(d.values||[]).slice(1); // skip header
     return rows.map(row=>{
       const vesselName=row[6]||'';
-      const vi=parseInt(row[7])||0;
-      const v=vessels[vi]||vessels.find(_v=>_v.name===vesselName)||null;
+      // Match by name only - vi index differs per user
+      const v=vessels.find(_v=>(_v.name||'').toLowerCase()===(vesselName||'').toLowerCase())||null;
       if(!v)return null;
       return {msgId:row[0],from:row[1],fe:row[2],subj:row[3],date:row[4],body:row[5],vessel:v,vi:vessels.indexOf(v)};
     }).filter(Boolean);
@@ -2268,15 +2269,20 @@ async function mergeSharedInbox(){
   const shared=await sheetsInboxLoad();
   if(!shared.length)return;
   const existingIds=new Set((ibItems||[]).map(i=>i.msgId));
-  const myEmail=normEmail(user?.email||'');
   let added=0;
   for(const item of shared){
     if(existingIds.has(item.msgId))continue;
-    // Only show items where THIS user owns the vessel (or saved by this user)
-    const v=item.vessel;
-    const isMyVessel=v&&(normEmail(v.assignedTo||'')=== myEmail||normEmail(v.email||'')===myEmail);
-    const iSavedIt=normEmail(item.savedBy||'')===myEmail;
-    if(!isMyVessel&&!iSavedIt)continue;
+    // Validate: vessel must exist in portal
+    if(!item.vessel)continue;
+    // Validate: reply must be after first portal email (no old emails)
+    const firstSent=item.vessel.firstEmailDate||item.vessel.lastEmailDate||null;
+    if(firstSent&&item.date&&new Date(item.date)<new Date(firstSent))continue;
+    // Validate: subject must be an Orca coordination email
+    const subj=(item.subj||'').toLowerCase();
+    if(!subj.includes('orca')&&!subj.includes('installation coordination'))continue;
+    // Skip if already in timeline
+    const alreadyLogged=item.vessel?.timeline?.some(t=>t.msgId===item.msgId);
+    if(alreadyLogged)continue;
     ibItems.push(item);
     added++;
   }
@@ -2292,15 +2298,12 @@ async function fetchInbox(){
   if(badge){badge.textContent='0';badge.style.display='none';}
   if(!token||!vessels.length)return;
 
-  const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean);
   const emails=[...new Set((vessels||[]).map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
-
-  // Search: vessel names/emails + replies to any team member
+  // Search ONLY by captain email — no vessel names to avoid false matches
+  if(!emails.length)return;
   const qParts=[];
-  names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
-  emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
-
-  const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
+  emails.slice(0,15).forEach(e=>qParts.push('from:'+e));
+  const q=qParts.join(' OR ');
 
   try{
     const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=25`,{headers:{Authorization:'Bearer '+token}});
