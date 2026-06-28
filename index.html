@@ -597,7 +597,8 @@ const TEAM_USERS=[
   {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
   {email:'timothy@orca-ai.io',name:'Timothy',role:'User L2'},
   {email:'opsrep2@orca-ai.io',name:'Ops Rep 2',role:'User L2'},
-  {email:'opsrep1@orca-ai.io',name:'Ops Rep 1',role:'User L2'}
+  {email:'opsrep1@orca-ai.io',name:'Ops Rep 1',role:'User L2'},
+  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'User L2'}
 ];
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
@@ -1342,8 +1343,8 @@ function inferReceivedFromReply(reply){
   const got=[];
 
   // Signals that items are being provided (not just referenced)
-  const hasVisual=s.includes('photo')||s.includes('picture')||s.includes('image')||s.includes('location')||s.includes('attach')||s.includes('herewith')||s.includes('enclosed')||s.includes('please find')||s.includes('sending')||s.includes('sent')||s.includes('see below')||s.includes('find below');
-  const hasProviding=hasVisual||s.includes('here are')||s.includes('here is')||s.includes('below')||s.includes('find the')||s.includes('sharing')||s.includes('providing')||s.includes('submitting')||s.includes('forwarding');
+  const hasVisual=s.includes('photo')||s.includes('picture')||s.includes('image')||s.includes('attach')||s.includes('herewith')||s.includes('enclosed')||s.includes('please find')||s.includes('see below')||s.includes('find below')||s.includes('find attached')||s.includes('here are')||s.includes('here is the');
+  const hasProviding=hasVisual||s.includes('find the')||s.includes('sharing')||s.includes('providing')||s.includes('submitting')||s.includes('forwarding');
 
   // GA documents
   if(/\bga\b/.test(s)||s.includes('general arrangement')){
@@ -2231,7 +2232,19 @@ async function runIbAnalysis(){
   if(!curIb)return;
   const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
   document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items. Photos=pending review. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
+  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${curIb.body}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. CRITICAL RULES:
+- Only mark an item as received if the captain EXPLICITLY mentions sending/attaching it (e.g. "attached", "here is", "find enclosed", "GA attached", "photos below")
+- If the captain says "X is done" or "X is ready" WITHOUT attaching/sending it, do NOT mark it as received - it just means they will send it later
+- "Bridge Console GA is done" = NOT received, they haven't sent it yet
+- "Bridge Console GA attached" = received
+- Be VERY conservative: when in doubt, do NOT mark as received
+- received[] should only contain items the captain actually provided in THIS email Photos=pending review. CRITICAL RULES:
+- Only mark an item as received if the captain EXPLICITLY mentions sending/attaching it (e.g. "attached", "here is", "find enclosed", "GA attached", "photos below")
+- If the captain says "X is done" or "X is ready" WITHOUT attaching/sending it, do NOT mark it as received - it just means they will send it later
+- "Bridge Console GA is done" = NOT received, they haven't sent it yet
+- "Bridge Console GA attached" = received
+- Be VERY conservative: when in doubt, do NOT mark as received
+- received[] should only contain items the captain actually provided in THIS email`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   // Always normalize: infer keywords override empty AI result
@@ -2292,7 +2305,13 @@ async function analyzeReply(){
   if(!reply){alert("Please paste the captain's reply.");return;}
   const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
-  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. If the reply is only thanks/yes/ok/noted and contains no technical details, set received=[] and keep all previously missing items.`;
+  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. CRITICAL RULES:
+- Only mark an item as received if the captain EXPLICITLY mentions sending/attaching it (e.g. "attached", "here is", "find enclosed", "GA attached", "photos below")
+- If the captain says "X is done" or "X is ready" WITHOUT attaching/sending it, do NOT mark it as received - it just means they will send it later
+- "Bridge Console GA is done" = NOT received, they haven't sent it yet
+- "Bridge Console GA attached" = received
+- Be VERY conservative: when in doubt, do NOT mark as received
+- received[] should only contain items the captain actually provided in THIS email`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
   catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
   if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
