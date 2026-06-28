@@ -837,14 +837,46 @@ function signIn(){
     alert('Sign-in failed: '+(e.message||e));
   }
 }
+// ── Session token helpers ──
+function saveSession(accessToken, userObj){
+  try{
+    const expiry=Date.now()+(55*60*1000); // 55 min (token lives 60)
+    const sess={token:accessToken,user:userObj,expiry};
+    sessionStorage.setItem('orca_session',JSON.stringify(sess));
+    localStorage.setItem('orca_google_consent_ok','1');
+    localStorage.setItem('orca_last_email',userObj.email||'');
+  }catch(e){}
+}
+function loadSession(){
+  try{
+    const raw=sessionStorage.getItem('orca_session');
+    if(!raw)return null;
+    const sess=JSON.parse(raw);
+    if(!sess||Date.now()>sess.expiry){sessionStorage.removeItem('orca_session');return null;}
+    return sess;
+  }catch(e){return null;}
+}
+function clearSession(){
+  try{sessionStorage.removeItem('orca_session');}catch(e){}
+}
+function scheduleTokenRefresh(){
+  // Auto-refresh token 5 min before expiry
+  setTimeout(async()=>{
+    if(!tc)return;
+    const savedEmail=localStorage.getItem('orca_last_email')||'';
+    tc.requestAccessToken({prompt:'',login_hint:savedEmail});
+  }, 50*60*1000); // 50 min
+}
+
 async function handleToken(r){
   if(r.error){console.error(r);alert('Google sign-in failed: '+(r.error_description||r.error));return;}
   token=r.access_token;
-  try{localStorage.setItem('orca_google_consent_ok','1');}catch(e){}
   const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}});
   const p=await res.json();
   user={email:normEmail(p.email),name:p.name||p.email,pic:p.picture||''};
-  try{localStorage.setItem('orca_last_email',p.email||'');}catch(e){}
+  // Save session token
+  saveSession(token, user);
+  scheduleTokenRefresh();
   applyUserRole();
   su(user); await loadVessels();
   document.getElementById('auth-screen').style.display='none';
@@ -855,7 +887,15 @@ async function handleToken(r){
   renderTable();updateMetrics();populateSel();
   fetchInbox();
 }
-function signOut(){if(token)google.accounts.oauth2.revoke(token,()=>{});token=null;user=null;vessels=[];document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
+function signOut(){
+  if(token)google.accounts.oauth2.revoke(token,()=>{});
+  token=null;user=null;vessels=[];
+  clearSession();
+  localStorage.removeItem('orca_google_consent_ok');
+  localStorage.removeItem('orca_last_email');
+  document.getElementById('app').style.display='none';
+  document.getElementById('auth-screen').style.display='flex';
+}
 
 function showTab(t){
   if(t==='admin' && !isAdmin(user&&user.email)){
@@ -2104,6 +2144,57 @@ async function checkInbox(){
   _t.innerHTML=_cnt>0?'\u{1F4EC} Inbox checked \u2014 '+_cnt+' new repl'+(_cnt===1?'y':'ies')+' found':'\u2705 Inbox checked \u2014 no new replies';
   document.body.appendChild(_t);setTimeout(()=>_t.remove(),3500);
 }
+
+// ── Firebase shared inbox ──
+const FBDB='https://orca-ops-2b9bd-default-rtdb.firebaseio.com';
+
+async function fbSaveInboxItem(item){
+  // Save inbox reply to Firebase so all team members can see it
+  try{
+    const key='ib_'+item.msgId;
+    const payload={...item,vessel:undefined,vi:item.vi,vesselName:item.vessel?.name||'',savedAt:new Date().toISOString(),savedBy:user?.email||''};
+    await fetch(FBDB+'/inbox/'+key+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  }catch(e){console.warn('fbSaveInboxItem failed',e);}
+}
+
+async function fbLoadInboxItems(){
+  // Load inbox replies saved by other team members
+  try{
+    const r=await fetch(FBDB+'/inbox.json');
+    if(!r.ok)return [];
+    const data=await r.json();
+    if(!data)return [];
+    return Object.values(data).filter(Boolean);
+  }catch(e){console.warn('fbLoadInboxItems failed',e);return [];}
+}
+
+async function fbDeleteInboxItem(msgId){
+  try{
+    await fetch(FBDB+'/inbox/ib_'+msgId+'.json',{method:'DELETE'});
+  }catch(e){}
+}
+
+async function mergeSharedInbox(){
+  // Merge Firebase inbox items with local ibItems
+  const shared=await fbLoadInboxItems();
+  if(!shared.length)return;
+  const existingIds=new Set((ibItems||[]).map(i=>i.msgId));
+  let added=0;
+  for(const item of shared){
+    if(existingIds.has(item.msgId))continue;
+    // Match to vessel
+    const v=vessels.find((_v,i)=>i===item.vi)||vessels.find(_v=>_v.name===item.vesselName);
+    if(!v)continue;
+    const vi=vessels.indexOf(v);
+    ibItems.push({...item,vessel:v,vi});
+    added++;
+  }
+  if(added>0){
+    renderInlineInbox();renderInbox();
+    const badge=document.getElementById('ib-count');
+    if(badge){badge.textContent=ibItems.length;badge.style.display=ibItems.length?'inline':'none';}
+  }
+}
 async function fetchInbox(){
   ibItems=[];
   const badge=document.getElementById('ib-count');
@@ -2113,10 +2204,13 @@ async function fetchInbox(){
   const names=(vessels||[]).map(v=>String(v.name||'').trim()).filter(Boolean);
   const emails=[...new Set((vessels||[]).map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
 
-  // Keep Gmail query reasonably broad, but matching below is strict and chooses the correct vessel.
+  // Search: vessel names/emails + replies to any team member
   const qParts=[];
   names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
   emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
+  // Also catch replies addressed to any team member (captain replies to Leon, Yotam, etc.)
+  const teamEmails=TEAM_USERS.map(u=>u.email).filter(e=>e!==user?.email);
+  teamEmails.forEach(e=>qParts.push(`to:${e}`));
   const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
 
   try{
@@ -2132,7 +2226,9 @@ async function fetchInbox(){
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
       const body=dd.payload?eb(dd.payload):'';
       const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
-      if(user&&user.email&&fe===String(user.email).toLowerCase())continue;
+      // Skip emails FROM team members (we want captain replies only)
+      const teamEmails2=TEAM_USERS.map(u=>normEmail(u.email));
+      if(teamEmails2.includes(fe))continue;
 
       const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
       const vessel=bestVesselForInboxMessage(temp);
@@ -2145,6 +2241,8 @@ async function fetchInbox(){
         if(!logged&&isAfterVesselCreation)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
       }
     }
+    // Merge with Firebase shared inbox (from other team members)
+    mergeSharedInbox();
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
 }
@@ -2686,6 +2784,25 @@ function orcaConfirm(msg, title=''){
 }
 function trySilentSignIn(){
   try{
+    // 1. Try to restore from sessionStorage first (instant, no network)
+    const sess=loadSession();
+    if(sess&&sess.token&&sess.user){
+      token=sess.token;
+      user=sess.user;
+      applyUserRole();
+      su&&su(user);
+      loadVessels().then(()=>{
+        document.getElementById('auth-screen').style.display='none';
+        document.getElementById('app').style.display='block';
+        document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
+        if(user.pic)document.getElementById('uav').src=user.pic;
+        document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
+        renderTable();updateMetrics();populateSel();fetchInbox();
+        scheduleTokenRefresh();
+      });
+      return;
+    }
+    // 2. Try silent OAuth refresh
     if(typeof google==='undefined'||!google.accounts){
       setTimeout(trySilentSignIn,300);
       return;
@@ -2694,14 +2811,12 @@ function trySilentSignIn(){
     const savedEmail=localStorage.getItem('orca_last_email')||'';
     if(approved&&savedEmail){
       if(!tc) initG();
-      // login_hint silently selects known account; prompt:'' avoids popup
       tc.requestAccessToken({prompt:'', login_hint: savedEmail});
     }
   }catch(e){console.warn('Silent sign-in skipped',e);}
 }
 window.onload=()=>{
-  // Delay silent sign-in so Google script is fully ready
-  setTimeout(trySilentSignIn,800);
+  setTimeout(trySilentSignIn,200);
 };
 setInterval(async () => {
   if(token) {
