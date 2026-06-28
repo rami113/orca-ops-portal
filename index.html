@@ -744,7 +744,14 @@ async function loadVessels(){
         return;
       }
     }
-    alert('Shared database could not be loaded. Check the Google Sheet ID and sharing permissions.');
+    // Sheets access failed — likely missing spreadsheets scope
+    // Try to request consent
+    if(tc){
+      console.warn('Sheets access failed — requesting re-consent for spreadsheets scope');
+      tc.requestAccessToken({prompt:'consent'});
+    }
+    const lbl=document.getElementById('last-refresh-label');
+    if(lbl)lbl.textContent='⚠️ Re-authorizing Google access...';
   }
   lv();
 }
@@ -752,7 +759,9 @@ async function saveVessels(){
   if(hasSharedDb()){
     const ok=await saveSharedVessels(vessels);
     if(ok)return;
-    alert('Shared database save failed. Changes were saved locally only.');
+    console.error('Shared DB save failed');
+    const lbl2=document.getElementById('last-refresh-label');
+    if(lbl2)lbl2.textContent='⚠️ Save failed — check Google Sheets access';
   }
   sv();
 }
