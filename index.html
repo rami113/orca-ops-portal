@@ -2266,7 +2266,7 @@ async function runIbAnalysis(){
     vessels[_idx]={...vessels[_idx],
       status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,
       missingItems:ibAna.missing||[],
-      receivedItems:[...new Map([...(vessels[_idx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()],
+      receivedItems:REQUIRED_ITEMS.filter(item=>!(ibAna.missing||[]).some(m=>itemKey(m)===itemKey(item))),
       lastContact:new Date().toISOString()
     };
     cleanTimeline(vessels[_idx]);
@@ -2286,7 +2286,7 @@ async function sendIbFollowUp(){
   const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);
   if(!ok)return;
   const idx=curIb.vi;
-  vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:[...new Map([...(vessels[idx].receivedItems||[]),...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
+  vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],receivedItems:REQUIRED_ITEMS.filter(item=>!(ibAna.missing||[]).some(m=>itemKey(m)===itemKey(item))),lastContact:new Date().toISOString()};
   cleanTimeline(vessels[idx]);
   addTimeline(vessels[idx],'reply','Reply received from captain',curIb.from||v.email,curIb.body||'');
   saveFollowupMeta(vessels[idx],followBody);
@@ -2331,7 +2331,7 @@ async function saveAnalyzeOnly(){
   vessels[idx]={...v,
     status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,
     missingItems:ana.missing||[],
-    receivedItems:[...new Map([...(v.receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()],
+    receivedItems:REQUIRED_ITEMS.filter(item=>!(ana.missing||[]).some(m=>itemKey(m)===itemKey(item))),
     lastContact:new Date().toISOString()
   };
   cleanTimeline(vessels[idx]);
@@ -2343,7 +2343,7 @@ async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
   const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
   const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);if(!ok)return;
-  vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:[...new Map([...(v.receivedItems||[]),...(ana.received||[])].map(x=>[itemKey(x),x])).values()],lastContact:new Date().toISOString()};
+  vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],receivedItems:REQUIRED_ITEMS.filter(item=>!(ana.missing||[]).some(m=>itemKey(m)===itemKey(item))),lastContact:new Date().toISOString()};
   cleanTimeline(vessels[idx]);
   addTimeline(vessels[idx],'ai','Reply analyzed by AI',v.email);
   saveFollowupMeta(vessels[idx],followBody);
