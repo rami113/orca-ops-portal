@@ -885,6 +885,7 @@ async function handleToken(r){
   if(user.pic)document.getElementById('uav').src=user.pic;
   document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
   renderTable();updateMetrics();populateSel();
+  sheetsInboxInit();
   fetchInbox();
 }
 function signOut(){
@@ -2145,48 +2146,76 @@ async function checkInbox(){
   document.body.appendChild(_t);setTimeout(()=>_t.remove(),3500);
 }
 
-// ── Firebase shared inbox ──
-const FBDB='https://orca-ops-2b9bd-default-rtdb.firebaseio.com';
 
-async function fbSaveInboxItem(item){
-  // Save inbox reply to Firebase so all team members can see it
+// ── Google Sheets shared inbox ──
+const INBOX_SHEET_NAME='inbox';
+const INBOX_SHEET_URL=`https://sheets.googleapis.com/v4/spreadsheets/1Aveudwg5B8D-XrO04L33WibwtzWEaMVhLfDOMyNb3Y4/values/${encodeURIComponent(INBOX_SHEET_NAME)}`;
+
+async function sheetsInboxSave(item){
+  if(!token||!hasSharedDb())return;
   try{
-    const key='ib_'+item.msgId;
-    const payload={...item,vessel:undefined,vi:item.vi,vesselName:item.vessel?.name||'',savedAt:new Date().toISOString(),savedBy:user?.email||''};
-    await fetch(FBDB+'/inbox/'+key+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  }catch(e){console.warn('fbSaveInboxItem failed',e);}
+    const row=[
+      item.msgId||'',
+      item.from||'',
+      item.fe||'',
+      item.subj||'',
+      item.date||'',
+      (item.body||'').substring(0,1000),
+      item.vessel?.name||'',
+      String(item.vi??''),
+      new Date().toISOString(),
+      user?.email||''
+    ];
+    await fetch(INBOX_SHEET_URL+'!A1:append?valueInputOption=RAW',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({values:[row]})
+    });
+  }catch(e){console.warn('sheetsInboxSave failed',e);}
 }
 
-async function fbLoadInboxItems(){
-  // Load inbox replies saved by other team members
+async function sheetsInboxLoad(){
+  if(!token||!hasSharedDb())return [];
   try{
-    const r=await fetch(FBDB+'/inbox.json');
+    const r=await fetch(INBOX_SHEET_URL+'!A:J',{headers:{'Authorization':'Bearer '+token}});
     if(!r.ok)return [];
-    const data=await r.json();
-    if(!data)return [];
-    return Object.values(data).filter(Boolean);
-  }catch(e){console.warn('fbLoadInboxItems failed',e);return [];}
+    const d=await r.json();
+    const rows=(d.values||[]).slice(1); // skip header
+    return rows.map(row=>{
+      const vesselName=row[6]||'';
+      const vi=parseInt(row[7])||0;
+      const v=vessels[vi]||vessels.find(_v=>_v.name===vesselName)||null;
+      if(!v)return null;
+      return {msgId:row[0],from:row[1],fe:row[2],subj:row[3],date:row[4],body:row[5],vessel:v,vi:vessels.indexOf(v)};
+    }).filter(Boolean);
+  }catch(e){console.warn('sheetsInboxLoad failed',e);return [];}
 }
 
-async function fbDeleteInboxItem(msgId){
+async function sheetsInboxInit(){
+  // Ensure inbox sheet exists with headers
+  if(!token||!hasSharedDb())return;
   try{
-    await fetch(FBDB+'/inbox/ib_'+msgId+'.json',{method:'DELETE'});
+    const r=await fetch(INBOX_SHEET_URL+'!A1',{headers:{'Authorization':'Bearer '+token}});
+    const d=await r.json();
+    if(!d.values){
+      // Create header row
+      await fetch(INBOX_SHEET_URL+'!A1:append?valueInputOption=RAW',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({values:[['msgId','from','fe','subj','date','body','vesselName','vi','savedAt','savedBy']]})
+      });
+    }
   }catch(e){}
 }
 
 async function mergeSharedInbox(){
-  // Merge Firebase inbox items with local ibItems
-  const shared=await fbLoadInboxItems();
+  const shared=await sheetsInboxLoad();
   if(!shared.length)return;
   const existingIds=new Set((ibItems||[]).map(i=>i.msgId));
   let added=0;
   for(const item of shared){
     if(existingIds.has(item.msgId))continue;
-    // Match to vessel
-    const v=vessels.find((_v,i)=>i===item.vi)||vessels.find(_v=>_v.name===item.vesselName);
-    if(!v)continue;
-    const vi=vessels.indexOf(v);
-    ibItems.push({...item,vessel:v,vi});
+    ibItems.push(item);
     added++;
   }
   if(added>0){
@@ -2208,9 +2237,7 @@ async function fetchInbox(){
   const qParts=[];
   names.slice(0,20).forEach(n=>qParts.push(`"${n.replace(/"/g,'')}"`));
   emails.slice(0,10).forEach(e=>qParts.push(`from:${e}`));
-  // Also catch replies addressed to any team member (captain replies to Leon, Yotam, etc.)
-  const teamEmails=TEAM_USERS.map(u=>u.email).filter(e=>e!==user?.email);
-  teamEmails.forEach(e=>qParts.push(`to:${e}`));
+
   const q=qParts.length?qParts.join(' OR '):'newer_than:30d orca';
 
   try{
@@ -2226,9 +2253,8 @@ async function fetchInbox(){
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
       const body=dd.payload?eb(dd.payload):'';
       const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
-      // Skip emails FROM team members (we want captain replies only)
-      const teamEmails2=TEAM_USERS.map(u=>normEmail(u.email));
-      if(teamEmails2.includes(fe))continue;
+      // Skip emails sent by the logged-in user (we want captain replies only)
+      if(user&&user.email&&fe===normEmail(user.email))continue;
 
       const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
       const vessel=bestVesselForInboxMessage(temp);
@@ -2241,7 +2267,7 @@ async function fetchInbox(){
         if(!logged&&isAfterVesselCreation)ibItems.push({...temp,vessel,vi:vessels.indexOf(vessel)});
       }
     }
-    // Merge with Firebase shared inbox (from other team members)
+    // Merge inbox items from other team members via Google Sheets
     mergeSharedInbox();
     if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
   }catch(e){console.error(e);}
