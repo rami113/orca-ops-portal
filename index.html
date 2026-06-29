@@ -1477,15 +1477,15 @@ function normalizeAnalysisResult(v,reply,analysis){
   const s_rep=normTxt(reply);
   const hasAnyAttachSignal=s_rep.includes('attach')||s_rep.includes('herewith')||
     s_rep.includes('enclosed')||s_rep.includes('please find')||s_rep.includes('here are')||
-    s_rep.includes('here is')||s_rep.includes('find below')||s_rep.includes('see below')||
-    s_rep.includes('ga')||s_rep.includes('general arrangement');
-  // If no attachment signal AND infer found nothing → AI is hallucinating, reject its received[]
-  if(!hasAnyAttachSignal&&inferred.length===0){
-    received=[];
-  } else if(inferred.length>0){
-    // Infer is more reliable than AI for specific items
+    s_rep.includes('find below')||s_rep.includes('see below');
+  // Always use infer result — it is keyword-based and reliable
+  // If infer found nothing AND no clear attach signal → reject AI hallucination
+  if(inferred.length>0){
     received=[...new Set([...inferred])];
+  } else if(!hasAnyAttachSignal){
+    received=[];
   }
+  // else: has attach signal but infer missed — keep AI received but only for items with attach keywords
   // else: use AI received (hasAttachSignal but infer missed something)
   let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
   if(thanksOnly && received.length===0){
