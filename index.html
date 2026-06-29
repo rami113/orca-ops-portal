@@ -2214,7 +2214,7 @@ async function sheetsInboxSave(item){
       item.date||'',
       (item.body||'').substring(0,1000),
       item.vessel?.name||'',
-      String(item.vi??''),
+      '',
       new Date().toISOString(),
       user?.email||''
     ];
@@ -2274,19 +2274,12 @@ async function mergeSharedInbox(){
     if(existingIds.has(item.msgId))continue;
     // Validate: vessel must exist in portal
     if(!item.vessel)continue;
-    // Validate: captain email matches a vessel in the portal
-    const captainEmail=normEmail(item.fe||'');
-    const vesselMatch=vessels.find(v=>normEmail(v.email||'')===captainEmail);
-    if(!vesselMatch)continue;
-    // Validate: reply must be after first portal email
-    const firstSent=item.vessel.firstEmailDate||item.vessel.lastEmailDate||null;
-    if(firstSent&&item.date&&new Date(item.date)<new Date(firstSent))continue;
     // Validate: subject must be an Orca coordination email
     const subj=(item.subj||'').toLowerCase();
     if(!subj.includes('orca')&&!subj.includes('installation coordination'))continue;
-    // Skip if already in timeline
-    const alreadyLogged=item.vessel?.timeline?.some(t=>t.msgId===item.msgId);
-    if(alreadyLogged)continue;
+    // Validate: reply must be after first portal email
+    const firstSent=item.vessel.firstEmailDate||item.vessel.lastEmailDate||null;
+    if(firstSent&&item.date&&new Date(item.date)<new Date(firstSent))continue;
     ibItems.push(item);
     added++;
   }
