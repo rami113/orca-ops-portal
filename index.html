@@ -2315,9 +2315,8 @@ async function fetchInbox(){
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
       const body=dd.payload?eb(dd.payload):'';
       const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
-      // Skip emails FROM any team member (we want captain replies only)
-      const _teamEmails=TEAM_USERS.map(u=>normEmail(u.email));
-      if(_teamEmails.includes(fe))continue;
+      // Skip only the logged-in user's OWN sent emails (not replies from other team members)
+      if(fe===normEmail(user?.email||''))continue;
 
       const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
       const vessel=bestVesselForInboxMessage(temp);
