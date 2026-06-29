@@ -1475,17 +1475,9 @@ function normalizeAnalysisResult(v,reply,analysis){
   let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
   const inferred=inferReceivedFromReply(reply);
   const s_rep=normTxt(reply);
-  const hasAnyAttachSignal=s_rep.includes('attach')||s_rep.includes('herewith')||
-    s_rep.includes('enclosed')||s_rep.includes('please find')||s_rep.includes('here are')||
-    s_rep.includes('find below')||s_rep.includes('see below');
-  // Always use infer result — it is keyword-based and reliable
-  // If infer found nothing AND no clear attach signal → reject AI hallucination
-  if(inferred.length>0){
-    received=[...new Set([...inferred])];
-  } else if(!hasAnyAttachSignal){
-    received=[];
-  }
-  // else: has attach signal but infer missed — keep AI received but only for items with attach keywords
+  // ALWAYS use inferReceivedFromReply — ignore AI received[] completely
+  // AI hallucinates too often; keyword matching is reliable
+  received=[...inferred];
   // else: use AI received (hasAttachSignal but infer missed something)
   let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
   if(thanksOnly && received.length===0){
@@ -2269,11 +2261,15 @@ async function mergeSharedInbox(){
   const shared=await sheetsInboxLoad();
   if(!shared.length)return;
   const existingIds=new Set((ibItems||[]).map(i=>i.msgId));
+  const myEmail=normEmail(user?.email||'');
   let added=0;
   for(const item of shared){
     if(existingIds.has(item.msgId))continue;
     // Validate: vessel must exist in portal
     if(!item.vessel)continue;
+    // Only show replies for vessels assigned to current user
+    const assignedTo=normEmail(item.vessel.assignedTo||'');
+    if(assignedTo!==myEmail)continue;
     // Validate: subject must be an Orca coordination email
     const subj=(item.subj||'').toLowerCase();
     if(!subj.includes('orca')&&!subj.includes('installation coordination'))continue;
