@@ -2315,8 +2315,9 @@ async function fetchInbox(){
       const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
       const body=dd.payload?eb(dd.payload):'';
       const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
-      // Skip only the logged-in user's OWN sent emails (not replies from other team members)
-      if(fe===normEmail(user?.email||''))continue;
+      // Skip emails that are clearly outgoing (have our portal subject but are NOT replies)
+      const isOurOutgoing=subj.toLowerCase().startsWith('orca ai installation coordination')&&!subj.toLowerCase().startsWith('re:');
+      if(isOurOutgoing)continue;
 
       const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
       const vessel=bestVesselForInboxMessage(temp);
