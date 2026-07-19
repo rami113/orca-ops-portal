@@ -645,12 +645,15 @@ async function deleteVessel(i){
 
 function cleanCaptainReplyText(txt){
   let s=String(txt||'').replace(/\r/g,'').trim();
-  // Remove Gmail quoted history — try regex first, then line-by-line fallback
-  s=s.split(/\nOn .+ wrote:/i)[0];
+  // Remove Gmail quoted history — "On DATE, NAME wrote:" pattern
+  // Must handle: at start of text, after newline, multiline (date can wrap)
+  s=s.split(/(?:^|\n)On .{5,100}wrote:/i)[0];
+  // Also catch "---------- Forwarded message ---------" and "________________________________"
+  s=s.split(/\n[-_]{5,}/)[0];
   // Line-by-line fallback: cut at first line starting with > (handles any encoding)
   const lines=s.split('\n');
   const qIdx=lines.findIndex(l=>l.trimStart().startsWith('>'));
-  if(qIdx>0)s=lines.slice(0,qIdx).join('\n');
+  if(qIdx>=0)s=lines.slice(0,qIdx).join('\n');
   s=s.replace(/\[image:[^\]]+\]/gi,'').trim();
   return s;
 }
@@ -2090,6 +2093,9 @@ async function mergeSharedInbox(){
 // This replaces the old subject+email search approach which caused cross-contamination.
 async function fetchInboxByThreads(){
   if(!token||!vessels.length)return;
+  // Purge any previously stored ibItems that are just quoted chains (empty body, no attachments)
+  // These sneak in from before the fix or from the shared sheet
+  ibItems=(ibItems||[]).filter(it=>(it.body&&it.body.trim())||( Array.isArray(it.attachments)&&it.attachments.length));
   const myEmail=normEmail(user&&user.email);
   const _isSuper=isSuperAdmin(myEmail);
   const myVessels=_isSuper?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')===myEmail);
