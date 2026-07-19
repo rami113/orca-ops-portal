@@ -794,6 +794,17 @@ function autoTagFromFilename(filename){
   return '';
 }
 
+// Restore saved tags from vessel.attachmentTags onto an attachments array
+// Called whenever attachments are shown in a modal — ensures tags persist across re-opens
+function restoreAttachmentTags(attachments, vesselIdx){
+  const v=vessels[parseInt(vesselIdx)];
+  if(!v||!v.attachmentTags||!Array.isArray(attachments))return attachments;
+  attachments.forEach(a=>{
+    if(v.attachmentTags[a.attachmentId])a.tag=v.attachmentTags[a.attachmentId];
+  });
+  return attachments;
+}
+
 // Fetch base64 data for an attachment on demand (called on Download/Preview click)
 async function fetchAttachmentData(msgId,attachmentId){
   if(!token)return null;
@@ -1015,8 +1026,8 @@ async function openCaseAnalyze(i){
       if(ex){
         if(ex.body)replyText=cleanCaptainReplyText(ex.body);
         replyFrom=ex.from||'';replyDate=ex.date||'';
-        // Attachments already accumulated on the ibItem — use directly, no re-accumulation
-        replyAtts=ex.attachments||[];
+        // Restore saved tags from vessel.attachmentTags before showing in modal
+        replyAtts=restoreAttachmentTags(ex.attachments||[],i);
       }
     }
     if(!replyText){
@@ -1039,7 +1050,7 @@ async function openCaseAnalyze(i){
 function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   const v=vessels[idx];if(!v||!result)return;
   // atts passed explicitly from openCaseAnalyze; fallback to curIb.attachments if called from elsewhere
-  const _atts=atts||(curIb&&curIb.attachments)||[];
+  const _atts=restoreAttachmentTags(atts||(curIb&&curIb.attachments)||[],idx);
   curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:_atts};
   ibAna=result;
   document.getElementById('mib-v').textContent=v.name;
@@ -2318,6 +2329,8 @@ async function sendFromViewModal(){
   if(!raw||!raw.vessel){alert('Reply item not found. Please click Check inbox again.');return;}
   // Clean body before storing — strips quoted chain so AI only sees captain's actual words
   curIb={...raw,body:cleanCaptainReplyText(raw.body||'')};
+  // Restore saved tags from vessel.attachmentTags immediately on modal open
+  curIb.attachments=restoreAttachmentTags(curIb.attachments||[],raw.vi);
   ibAna=null;
   const v=curIb.vessel;
 
