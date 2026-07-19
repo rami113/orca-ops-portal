@@ -791,7 +791,8 @@ function onAttachTag(sel,attachmentId,vesselIdx){
   const tag=sel.value;const idx=parseInt(vesselIdx);
   if(isNaN(idx)||!vessels[idx])return;
   const v=vessels[idx];
-  // Persist tag on the ibItem
+  // Persist tag on curIb and ibItems
+  if(curIb&&Array.isArray(curIb.attachments))curIb.attachments.forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});
   (ibItems||[]).forEach(it=>{(it.attachments||[]).forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});});
   if(tag){
     const prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
@@ -799,6 +800,16 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     vessels[idx]={...v,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
     saveVessels();updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
+    // Update ibAna and refresh Received/Missing panels in the open modal
+    if(ibAna){
+      const _allRec=[...new Map([...(ibAna.received||[]),tag].map(x=>[itemKey(x),x])).values()];
+      ibAna.received=_allRec;
+      ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_allRec,r));
+      const recvEl=document.getElementById('mib-recv');
+      const missEl=document.getElementById('mib-miss');
+      if(recvEl)recvEl.innerHTML=_allRec.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+      if(missEl)missEl.innerHTML=ibAna.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+    }
   } else {
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
   }
@@ -929,21 +940,17 @@ async function openCaseAnalyze(i){
     let replyText='',replyFrom='',replyDate='',replyAtts=[];
     if(Array.isArray(ibItems)&&ibItems.length){
       const email=String(vessel.email||'').toLowerCase();
-      // Get ALL ibItems for this vessel, sorted newest first
-      const vesselItems=ibItems
-        .filter(item=>{
-          const from=String(item.fe||item.from||'').toLowerCase();
-          return item.vi===i||item.vessel===vessel||(email&&from.includes(email));
-        })
-        .sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));
-      // Use most recent reply for text
-      const latest=vesselItems[0];
-      if(latest&&latest.body){replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';}
-      // Accumulate ALL attachments across ALL replies for this vessel
-      const seen=new Set();
-      vesselItems.forEach(it=>(it.attachments||[]).forEach(a=>{
-        if(!seen.has(a.attachmentId)){seen.add(a.attachmentId);replyAtts.push(a);}
-      }));
+      // Find the single ibItem for this vessel (one per vessel since our fix)
+      const ex=ibItems.find(item=>{
+        const from=String(item.fe||item.from||'').toLowerCase();
+        return item.vi===i||item.vessel===vessel||(email&&from.includes(email));
+      });
+      if(ex){
+        if(ex.body)replyText=cleanCaptainReplyText(ex.body);
+        replyFrom=ex.from||'';replyDate=ex.date||'';
+        // Attachments already accumulated on the ibItem — use directly, no re-accumulation
+        replyAtts=ex.attachments||[];
+      }
     }
     if(!replyText){
       const latest=await fetchLatestReplyForVessel(vessel);
@@ -2312,6 +2319,13 @@ async function runIbAnalysis(){
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   // Always normalize: infer keywords override empty AI result — use cleaned body only
   ibAna=normalizeAnalysisResult(v,cleanedBody,ibAna);
+  // Merge in items detected from attachment filenames (auto-tagged files)
+  const _attRec=(curIb.attachments||[]).map(a=>a.tag||autoTagFromFilename(a.filename)).filter(Boolean);
+  if(_attRec.length){
+    const _merged=[...new Map([...(ibAna.received||[]),..._attRec].map(x=>[itemKey(x),x])).values()];
+    ibAna.received=_merged;
+    ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_merged,r));
+  }
   // Rebuild followup email using ONLY current reply's received items for the
   // "thank you" section — never merge with stale stored receivedItems.
   // The "still require" section uses ibAna.missing which is now computed from
