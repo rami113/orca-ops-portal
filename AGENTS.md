@@ -151,6 +151,35 @@ Used for deduplication — any item string maps to one of these keys:
 - Captain replies are identified by: `from` header does NOT contain `"ORCA AI OPS"`.
 - Never add inbox items without a matching vessel in the `vessels` array.
 - `sheetsInboxSave()` writes new replies to the shared inbox sheet for cross-user visibility.
+- **Known limitation:** Vessels created before `gmailThreadId` was introduced have no
+  thread ID stored and will NOT receive inbox reply matching. Only vessels created through
+  the portal (via "Start Coordination") get a `gmailThreadId` and full inbox support.
+
+---
+
+## AI Analysis — Current Status
+The "Analyze" button sends a prompt to `https://api.anthropic.com/v1/messages` but there
+is **no API key configured** — the request fails silently and the `catch` block takes over.
+The app therefore runs **entirely on keyword-based analysis** via `inferReceivedFromReply()`.
+This is the intended behaviour for now. Do NOT add an API key directly in browser code
+(security risk). If AI is added in the future it must go through a server-side proxy
+(e.g. a Vercel serverless function) so the key is never exposed to the browser.
+
+---
+
+## Current Development Focus
+This codebase is in active stabilization — the priority is **bug fixes and small features**
+to reach a solid, production-ready base. Do not introduce large refactors or architectural
+changes. Every change should be minimal, targeted, and not break existing behaviour.
+When in doubt, fix the bug conservatively and document it in the Recent Fix Log below.
+
+---
+
+## Deployment
+- **Repo:** https://github.com/rami113/orca-ops-portal
+- **Branch:** `main` — used for testing. Vercel auto-deploys on every push to `main`.
+- **Force push is allowed** on `main` since it is a testing branch.
+- To deploy: commit changes locally → `git push origin main` (or `--force` if needed).
 
 ---
 
@@ -162,6 +191,7 @@ Used for deduplication — any item string maps to one of these keys:
 - Do not push secrets (API keys, OAuth secrets) to the repo.
 - Do not change `REQUIRED_ITEMS` without also updating `itemKey()` and `hasItem()`.
 - Do not re-enable the old subject+email inbox search (the commented-out block in `fetchInbox`).
+- Do not introduce large refactors — keep changes small and targeted.
 
 ---
 
