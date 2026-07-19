@@ -864,7 +864,8 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
     const merged=[...new Map([...prev,tag].map(x=>[itemKey(x),x])).values()];
     vessels[idx]={...v,attachmentTags:_attTags,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
-    saveVessels();updateMetrics();renderTable();
+    saveVessels().then(()=>console.log('[tag] saved attachmentTags',_attTags,'for vessel idx',idx));
+    updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
     // Re-render attachments panel to update warning (tagged file no longer "unidentified")
     const _ap=document.getElementById('mib-attachments');
@@ -926,7 +927,7 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
 
   const tagOpts=(fn,existingTag)=>{
     const auto=existingTag||autoTagFromFilename(fn);
-    return [{val:'',label:'— Untagged —'},...REQUIRED_ITEMS.map(r=>({val:r,label:r}))]
+    return [{val:'',label:'— Untagged —'},...REQUIRED_ITEMS.map(r=>({val:r,label:r})),{val:'other',label:'Other / Not a required item'}]
       .map(o=>`<option value="${escapeHtml(o.val)}"${auto===o.val?' selected':''}>${escapeHtml(o.label)}</option>`).join('');
   };
 
@@ -2309,6 +2310,15 @@ function renderInbox(){
 async function sendFromViewModal(){
   const v=vessels[window._mvIdx];
   if(!v){await orcaAlert('Vessel not found.','Error');return;}
+  // Warn if any attachments are still untagged
+  const _mvUntagged=(ibItems||[]).filter(it=>it.vi===window._mvIdx).flatMap(it=>it.attachments||[]).filter(a=>!a.tag&&!autoTagFromFilename(a.filename));
+  if(_mvUntagged.length){
+    const _go=await orcaConfirm(
+      `${_mvUntagged.length} attached file${_mvUntagged.length>1?'s are':' is'} still untagged:\n${_mvUntagged.map(a=>'• '+a.filename).join('\n')}\n\nSend the follow-up anyway?`,
+      '⚠️ Untagged Files'
+    );
+    if(!_go)return;
+  }
   const fuEl=document.getElementById('mv-followup-draft');
   const body=fuEl&&fuEl.value.trim()?fuEl.value.trim():buildFollowupEmail(v,v.missingItems||[]);
   const btn=document.querySelector('#mod-view .btn-g');
@@ -2451,6 +2461,15 @@ async function runIbAnalysis(){
 }
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
+  // Warn if any attachments are still untagged
+  const _untagged=(curIb.attachments||[]).filter(a=>!a.tag&&!autoTagFromFilename(a.filename));
+  if(_untagged.length){
+    const _go=await orcaConfirm(
+      `${_untagged.length} attached file${_untagged.length>1?'s are':' is'} still untagged:\n${_untagged.map(a=>'• '+a.filename).join('\n')}\n\nSend the follow-up anyway?`,
+      '⚠️ Untagged Files'
+    );
+    if(!_go)return;
+  }
   // Read edited text from textarea - user may have modified it
   const fuEl=document.getElementById('mib-fu');
   const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
