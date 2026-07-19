@@ -864,12 +864,15 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
     const prevId='att-prev-'+String(att.msgId||'').slice(-6)+'-'+i;
     const sizeKb=att.size?Math.ceil(att.size/1024)+'KB':'';
     const icon=iconMap[cat]||'ti-paperclip';
-    const autoTag=att.tag||autoTagFromFilename(att.filename);
+    const filenameTag=autoTagFromFilename(att.filename);
+    const autoTag=att.tag||filenameTag;
+    const isAutoTagged=!!filenameTag; // only show Auto-tagged label when filename matched
+    const isManualTagged=!!att.tag&&!filenameTag; // manually tagged but not auto
     const safeFn=escapeHtml(att.filename);
     const safeMt=escapeHtml(att.mimeType);
     const safeAid=escapeHtml(att.attachmentId);
     const safeMid=escapeHtml(att.msgId);
-    return `<div data-att-row style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:${autoTag?'#f0faf4':'var(--white)'};margin-bottom:6px">
+    return `<div data-att-row style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:${autoTag?'#f0faf4':'var(--white)'};margin-bottom:6px" data-att-id="${safeAid}">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:32px;height:32px;border-radius:6px;background:var(--navy-l);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--navy)"><i class="ti ${icon}" style="font-size:16px"></i></div>
         <div style="flex:1;min-width:0">
@@ -886,7 +889,8 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
         <select style="flex:1;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;color:var(--text)" onchange="onAttachTag(this,'${safeAid}','${vi}')">
           ${tagOpts(att.filename,att.tag||'')}
         </select>
-        ${autoTag?`<span style="font-size:11px;color:var(--green);white-space:nowrap;font-weight:600"><i class="ti ti-circle-check"></i> Auto-tagged</span>`:''}
+        ${isAutoTagged?`<span style="font-size:11px;color:var(--green);white-space:nowrap;font-weight:600"><i class="ti ti-circle-check"></i> Auto-tagged</span>`:''}
+        ${isManualTagged?`<span style="font-size:11px;color:var(--navy);white-space:nowrap;font-weight:600"><i class="ti ti-tag"></i> Tagged</span>`:''}
       </div>
       ${isImg?`<div id="${prevId}" style="display:none"></div>`:''}
     </div>`;
