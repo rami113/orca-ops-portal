@@ -2812,10 +2812,75 @@ function trySilentSignIn(){
 window.onload=()=>{
   setTimeout(trySilentSignIn,200);
 };
-setInterval(async () => {
-  if(!token) return;
-  try {
-    await checkInbox(true);
-  } catch(e){ console.warn('Auto-refresh error',e); }
-}, 30 * 1000);
+// ── Smart polling — 5s when tab is active, paused when hidden ─────────────────
+(function(){
+  const ACTIVE_INTERVAL=5000;   // 5s when tab is visible
+  const VESSEL_INTERVAL=8000;   // 8s between vessel data syncs (separate from inbox)
+  let _inboxTimer=null;
+  let _vesselTimer=null;
+  let _tabActive=!document.hidden;
+
+  async function pollInbox(){
+    if(!token||!_tabActive)return;
+    try{await checkInbox(true);}catch(e){console.warn('Auto-refresh error',e);}
+  }
+
+  async function pollVessels(){
+    if(!token||!_tabActive)return;
+    try{
+      // Silently pull latest vessel data from Sheet and merge into local state
+      const fresh=await loadSharedVessels();
+      if(!Array.isArray(fresh)||!fresh.length)return;
+      // Merge fresh Sheet data into local vessels — keep local unsaved changes
+      let changed=false;
+      fresh.forEach(sv=>{
+        const idx=vessels.findIndex(v=>(v.id||v.name)===(sv.id||sv.name));
+        if(idx<0){vessels.push(normalizeVessel(sv));changed=true;return;}
+        const local=vessels[idx];
+        const svNewer=new Date(sv.lastActivity||0)>new Date(local.lastActivity||0);
+        if(svNewer){
+          // Preserve local unsaved edits to key fields, take rest from Sheet
+          const keep={status:local.status,risk:local.risk,progress:local.progress,
+            assignedTo:local.assignedTo,missingItems:local.missingItems,
+            receivedItems:local.receivedItems,detectedItems:local.detectedItems,
+            attachmentTags:local.attachmentTags};
+          // Merge timelines
+          const tl=[...(local.timeline||[]),...(sv.timeline||[])];
+          const seen=new Set();
+          const mergedTl=tl.filter(e=>{const k=(e.ts||'')+(e.type||'')+(e.title||'');if(seen.has(k))return false;seen.add(k);return true;});
+          vessels[idx]={...sv,...keep,timeline:mergedTl};
+          changed=true;
+        }
+      });
+      if(changed){updateMetrics();renderTable();}
+    }catch(e){console.warn('Vessel poll error',e);}
+  }
+
+  function startPolling(){
+    if(!_inboxTimer)_inboxTimer=setInterval(pollInbox,ACTIVE_INTERVAL);
+    if(!_vesselTimer)_vesselTimer=setInterval(pollVessels,VESSEL_INTERVAL);
+  }
+  function stopPolling(){
+    clearInterval(_inboxTimer);_inboxTimer=null;
+    clearInterval(_vesselTimer);_vesselTimer=null;
+  }
+
+  // React to tab visibility changes
+  document.addEventListener('visibilitychange',()=>{
+    _tabActive=!document.hidden;
+    if(_tabActive){
+      startPolling();
+      // Immediately sync when user returns to tab
+      if(token){pollInbox();pollVessels();}
+    } else {
+      stopPolling();
+    }
+  });
+
+  // Start polling once user is signed in (token is set by onSignIn)
+  // We hook into the existing token — start after a short delay to let init complete
+  const _waitForToken=setInterval(()=>{
+    if(token){clearInterval(_waitForToken);if(_tabActive)startPolling();}
+  },1000);
+})();
 
