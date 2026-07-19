@@ -829,12 +829,12 @@ function extractAttachments(payload, msgId){
     const aid=part.body&&part.body.attachmentId;
     if(fn&&aid){
       const hdrs=(part.headers||[]);
-      // Skip inline images — these are embedded email assets (e.g. logo in HTML email)
-      // identified by Content-ID header or Content-Disposition: inline
+      // Skip embedded email assets (e.g. Orca logo in our outbound HTML template).
+      // These are identified by a Content-ID header (cid: references in HTML).
+      // Do NOT skip based on Content-Disposition alone — captains' image attachments
+      // can legitimately have Content-Disposition: inline but are still real files.
       const contentId=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-id');
-      const disposition=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-disposition');
-      const isInline=!!contentId||(disposition&&String(disposition.value||'').toLowerCase().startsWith('inline'));
-      if(!isInline){
+      if(!contentId){
         results.push({
           filename:fn,
           mimeType:part.mimeType||'application/octet-stream',
@@ -1965,11 +1965,13 @@ async function checkInbox(silent=false){
   }
   // Yield to browser so UI updates (spinner) before heavy work starts - fixes INP blocking
   await new Promise(r=>setTimeout(r,0));
-  // Purge stale ibItems that are just quoted chains — empty body, no attachments
-  // Runs before fetch so bad items from shared sheet or previous sessions are cleared
+  // Purge stale ibItems that are just quoted chains — empty body AND no attachments
+  // Items with attachments are always kept even if body is empty
   ibItems=(ibItems||[]).filter(it=>{
     const b=cleanCaptainReplyText(it.body||'').trim();
-    return b||(Array.isArray(it.attachments)&&it.attachments.length);
+    const hasAtts=Array.isArray(it.attachments)&&it.attachments.length>0;
+    // Keep if: has real body content, OR has attachments, OR body is filenames placeholder
+    return b||hasAtts;
   });
   await fetchInbox();
   window.showInlineInboxPanel=true;
@@ -2070,8 +2072,10 @@ async function mergeSharedInbox(){
     // Validate: vessel must exist in portal
     if(!item.vessel)continue;
     // Skip quoted-chain-only items (empty body saved before the fix)
+    // But keep items that might have attachments (attachment-only emails have empty body)
     const cleanedSharedBody=cleanCaptainReplyText(item.body||'');
-    if(!cleanedSharedBody.trim())continue;
+    const sharedHasAtts=Array.isArray(item.attachments)&&item.attachments.length>0;
+    if(!cleanedSharedBody.trim()&&!sharedHasAtts)continue;
     // Super Admin sees all replies; others see only their assigned vessels
     if(!isSuperAdmin){
       const assignedTo=normEmail(item.vessel.assignedTo||'');
