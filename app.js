@@ -2179,20 +2179,24 @@ async function fetchInboxByThreads(){
         }
         // Only add captain replies to ibItems (inbox badge + panel + analyze)
         if(!isOpsMsg){
-          const alreadyInItems=(ibItems||[]).some(i=>i.msgId===msg.id);
-          if(!alreadyInItems){
-            // Extract attachment metadata from the message payload (no extra API call needed)
-            const attachments=extractAttachments(msg.payload,msg.id);
-
-            // Skip messages that are just a quoted reply chain with no new content and no attachments
-            // These show up when Gmail splits threads — body is empty after stripping quoted text
+          // Extract attachment metadata from payload — always do this, we need it for both new and existing items
+          const attachments=extractAttachments(msg.payload,msg.id);
+          const existingIdx=(ibItems||[]).findIndex(it=>it.msgId===msg.id);
+          if(existingIdx>=0){
+            // Item already exists — patch attachments if missing (e.g. loaded from shared sheet)
+            if(!ibItems[existingIdx].attachments||!ibItems[existingIdx].attachments.length){
+              ibItems[existingIdx].attachments=attachments;
+            }
+          } else {
+            // New item — skip if just a quoted chain with no content and no attachments
             if(!body.trim()&&!attachments.length)continue;
-            // When body is empty but files are attached, use a descriptive placeholder
+            // When body is empty but files are attached, use filenames as placeholder
             const displayBody=body.trim()||attachments.map(a=>a.filename).join(', ');
             const item={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi,isNew:!logged,attachments};
             if(!logged)sheetsInboxSave(item);
             ibItems.push(item);
           }
+        }
         }
       }
     }catch(e){
