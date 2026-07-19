@@ -795,7 +795,7 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
   document.getElementById('mib-fu').value=result.followup_email||'';
   // Show attachments from curIb if available (set by openCaseAnalyze via ibItems match)
   const _attPanelR=document.getElementById('mib-attachments');
-  if(_attPanelR)_attPanelR.innerHTML=renderAttachmentsPanel(curIb.attachments||[],replyText||'');
+  if(_attPanelR)_attPanelR.innerHTML=renderAttachmentsPanel(curIb.attachments||[],replyText||'',curIb.vi);
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-res').style.display='block';
   document.getElementById('mib-abtn').style.display='none';
@@ -829,22 +829,49 @@ function extractAttachments(payload, msgId){
   return results;
 }
 
-// Classify an attachment into a category based on filename and mimeType
+// Classify an attachment file type (for icon/badge display only)
 function classifyAttachment(att){
   const fn=String(att.filename||'').toLowerCase();
   const mt=String(att.mimeType||'').toLowerCase();
-  const isGA=/\bga\b|general.?arrangement/i.test(att.filename);
   const isImg=mt.startsWith('image/')||/\.(png|jpg|jpeg|gif|webp|bmp|tiff?)$/i.test(fn);
   const isPdf=mt==='application/pdf'||fn.endsWith('.pdf');
   const isDoc=/\.(doc|docx)$/i.test(fn)||mt.includes('wordprocessingml')||mt.includes('msword');
   const isDwg=/\.(dwg|dxf|dwf)$/i.test(fn);
-  if(isGA&&(isPdf||isDwg||isImg||isDoc))return 'ga';
-  if(isGA)return 'ga';
+  const isXls=/\.(xls|xlsx|csv)$/i.test(fn)||mt.includes('spreadsheet')||mt.includes('excel');
   if(isImg)return 'photo';
   if(isPdf)return 'pdf';
   if(isDoc)return 'doc';
   if(isDwg)return 'drawing';
+  if(isXls)return 'spreadsheet';
   return 'other';
+}
+
+// Auto-tag a checklist item from filename — returns a REQUIRED_ITEMS string or ''
+function autoTagFromFilename(filename){
+  const fn=String(filename||'').toLowerCase().replace(/[_\-\.]/g,' ');
+  const hasGA=/\bga\b|general\s*arrangement/.test(fn);
+  const hasBridge=/bridge|console|wheelhouse/.test(fn);
+  if(hasGA&&hasBridge)return 'Bridge Console GA';
+  if(hasGA)return 'Vessel GA';
+  if(/port|schedule|itinerary|\beta\b|voyage|port\s*call|agent/.test(fn))return 'Next 2\u20133 upcoming port calls + corresponding agent details for each port';
+  if(/cable|penetration/.test(fn))return 'Cable penetration';
+  if(/vsat|routing|diagram/.test(fn))return 'VSAT routing';
+  if(/power|electrical|connection/.test(fn))return 'Power connection';
+  if(/monitor|screen|display/.test(fn))return 'Proposed monitor location photos';
+  if(/seapod|sea\s*pod|camera|pod/.test(fn))return 'Proposed Seapod location photos';
+  if(/doc|acknowledg|sign|accept/.test(fn))return 'Docs acknowledgement';
+  return '';
+}
+
+// From a list of attachments, return REQUIRED_ITEMS that can be confidently auto-detected
+// from filename alone (high-confidence only — GA with clear name, etc.)
+function inferReceivedFromAttachments(attachments){
+  const received=[];
+  for(const att of (attachments||[])){
+    const tag=autoTagFromFilename(att.filename);
+    if(tag)received.push(tag);
+  }
+  return [...new Set(received)];
 }
 
 // Fetch the actual base64 data for an attachment on demand
@@ -902,73 +929,126 @@ async function onAttachPreview(btn, msgId, attachmentId, filename, mimeType, con
   btn.innerHTML='<i class="ti ti-eye-off"></i> Hide';
 }
 
+// Build the Tag As dropdown options — pre-selects based on filename
+function attTagOptions(filename, existingTag){
+  const autoTag=existingTag||autoTagFromFilename(filename);
+  const opts=[{val:'',label:'— Untagged —'},...REQUIRED_ITEMS.map(r=>({val:r,label:r}))];
+  return opts.map(o=>`<option value="${escapeHtml(o.val)}"${autoTag===o.val?' selected':''}>${escapeHtml(o.label)}</option>`).join('');
+}
+
+// Called when ops person changes the Tag dropdown on a file
+function onAttachTag(sel, attachmentId, vesselIdx){
+  const tag=sel.value;
+  const idx=parseInt(vesselIdx);
+  if(isNaN(idx)||!vessels[idx])return;
+  const v=vessels[idx];
+
+  // Store the tag on the ibItem attachment for persistence across modal opens
+  (ibItems||[]).forEach(it=>{
+    if(!Array.isArray(it.attachments))return;
+    it.attachments.forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});
+  });
+
+  // Update the vessel detectedItems/receivedItems with the newly tagged item
+  if(tag){
+    const _prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
+    const _merged=[...new Map([..._prev,tag].map(x=>[itemKey(x),x])).values()];
+    vessels[idx]={...v,
+      detectedItems:_merged,
+      receivedItems:_merged,
+      missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(_merged,r))
+    };
+    saveVessels();updateMetrics();renderTable();
+    // Visual feedback — turn the row green
+    const row=sel.closest('[data-att-row]');
+    if(row)row.style.background='#f0faf4';
+  } else {
+    // Untagged — remove this item from detectedItems if it was only tagged via attachment
+    const row=sel.closest('[data-att-row]');
+    if(row)row.style.background='var(--white)';
+  }
+
+  // Refresh received/missing display in whichever modal is open
+  const _v2=vessels[idx];
+  const recv=document.getElementById('mib-recv')||document.getElementById('mv-received');
+  const miss=document.getElementById('mib-miss')||document.getElementById('mv-missing');
+  if(recv&&document.getElementById('mib-recv')){
+    recv.innerHTML=(_v2.receivedItems||[]).map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+  }
+  if(miss&&document.getElementById('mib-miss')){
+    miss.innerHTML=(_v2.missingItems||[]).map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+  }
+}
+
 // Render the attachments panel HTML — matches existing modal style exactly
-function renderAttachmentsPanel(attachments, bodyText){
+function renderAttachmentsPanel(attachments, bodyText, vesselIdx){
+  const vi=vesselIdx!==undefined?vesselIdx:'';
+
   if(!attachments||!attachments.length){
-    // Check if body text mentions attachments but none found
     const mentionsAttach=/attach|herewith|enclosed|please find|find attached|see below/i.test(bodyText||'');
     if(mentionsAttach){
       return `<div style="margin-top:1rem">
         <div class="sl" style="margin-bottom:8px">Attachments</div>
-        <div style="padding:10px 12px;background:var(--amber);border-radius:var(--rs);font-size:12px;color:var(--amber-t);display:flex;align-items:center;gap:7px">
-          <i class="ti ti-alert-triangle"></i> Captain mentioned attachments but no files were found in this email.
-        </div>
+        <div class="flag-item"><i class="ti ti-alert-triangle"></i> Captain mentioned attachments but no files were found in this email.</div>
       </div>`;
     }
     return '';
   }
 
-  // Check if body mentions GA but no GA file is attached
+  // Warnings — check text vs files mismatch
+  const warnings=[];
   const mentionsGA=/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bodyText||'');
-  const hasGAFile=attachments.some(a=>classifyAttachment(a)==='ga');
-  const gaWarning=mentionsGA&&!hasGAFile
-    ? `<div style="padding:8px 12px;background:var(--amber);border-radius:var(--rs);font-size:12px;color:var(--amber-t);display:flex;align-items:center;gap:7px;margin-bottom:8px">
-        <i class="ti ti-alert-triangle"></i> GA mentioned in reply but no GA file detected in attachments.
-      </div>`
-    : '';
+  const hasGAFile=attachments.some(a=>autoTagFromFilename(a.filename).includes('GA'));
+  if(mentionsGA&&!hasGAFile)warnings.push('GA mentioned in reply but no GA file detected in attachments.');
+  const unidentified=attachments.filter(a=>!autoTagFromFilename(a.filename)&&!a.tag);
+  if(unidentified.length)warnings.push(`${unidentified.length} file${unidentified.length>1?'s':''} attached but could not identify which items they cover — please tag them below.`);
+
+  const warningHtml=warnings.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('');
+
+  // Icon map by file type
+  const iconMap={photo:'ti-photo',pdf:'ti-file-type-pdf',doc:'ti-file-type-doc',drawing:'ti-rulers',spreadsheet:'ti-table',other:'ti-paperclip'};
 
   const cards=attachments.map((att,i)=>{
     const cat=classifyAttachment(att);
     const isImg=cat==='photo';
     const previewId='att-prev-'+att.msgId.slice(-6)+'-'+i;
     const sizeKb=att.size?Math.ceil(att.size/1024)+'KB':'';
-
-    // Icon by category — matching existing ti icon style
-    const iconMap={ga:'ti-file-vector',photo:'ti-photo',pdf:'ti-file-type-pdf',doc:'ti-file-type-doc',drawing:'ti-rulers',other:'ti-paperclip'};
     const icon=iconMap[cat]||'ti-paperclip';
-
-    // Category badge — using existing badge classes
-    const badgeMap={ga:'bn',photo:'bgr',pdf:'br',doc:'bb',drawing:'ba',other:'bg'};
-    const labelMap={ga:'GA File',photo:'Photo',pdf:'PDF',doc:'Document',drawing:'Drawing',other:'File'};
-    const badgeCls=badgeMap[cat]||'bg';
-    const badgeLabel=labelMap[cat]||'File';
+    const autoTag=att.tag||autoTagFromFilename(att.filename);
+    const isAutoTagged=!!autoTag;
 
     const previewBtn=isImg
       ? `<button class="btn btn-s" onclick="onAttachPreview(this,'${att.msgId}','${att.attachmentId}','${escapeHtml(att.filename)}','${att.mimeType}','${previewId}')" title="Preview image"><i class="ti ti-eye"></i> Preview</button>`
       : '';
 
-    return `<div style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:var(--white);display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <div style="width:32px;height:32px;border-radius:6px;background:var(--navy-l);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--navy)">
-        <i class="ti ${icon}" style="font-size:16px"></i>
-      </div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(att.filename)}">${escapeHtml(att.filename)}</div>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
-          <span class="badge ${badgeCls}" style="font-size:10px;padding:1px 7px">${badgeLabel}</span>
-          ${sizeKb?`<span style="font-size:11px;color:var(--faint)">${sizeKb}</span>`:''}
+    return `<div data-att-row style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:${isAutoTagged?'#f0faf4':'var(--white)'};margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:32px;height:32px;border-radius:6px;background:var(--navy-l);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--navy)">
+          <i class="ti ${icon}" style="font-size:16px"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(att.filename)}">${escapeHtml(att.filename)}</div>
+          ${sizeKb?`<div style="font-size:11px;color:var(--faint);margin-top:1px">${sizeKb}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${previewBtn}
+          <button class="btn btn-s btn-p" onclick="onAttachDownload(this,'${att.msgId}','${att.attachmentId}','${escapeHtml(att.filename)}','${att.mimeType}')" title="Download"><i class="ti ti-download"></i></button>
         </div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        ${previewBtn}
-        <button class="btn btn-s btn-p" onclick="onAttachDownload(this,'${att.msgId}','${att.attachmentId}','${escapeHtml(att.filename)}','${att.mimeType}')" title="Download"><i class="ti ti-download"></i></button>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap">Tag as:</span>
+        <select style="flex:1;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;color:var(--text)" onchange="onAttachTag(this,'${att.attachmentId}','${vi}')">
+          ${attTagOptions(att.filename, att.tag||'')}
+        </select>
+        ${isAutoTagged?`<span style="font-size:11px;color:var(--green);white-space:nowrap;font-weight:600"><i class="ti ti-circle-check"></i> Auto-tagged</span>`:''}
       </div>
-    </div>
-    ${isImg?`<div id="${previewId}" style="display:none"></div>`:''}`;
+      ${isImg?`<div id="${previewId}" style="display:none"></div>`:''}
+    </div>`;
   }).join('');
 
   return `<div style="margin-top:1rem">
     <div class="sl" style="margin-bottom:8px">Attachments <span style="font-size:10px;background:var(--navy-l);color:var(--navy);border-radius:99px;padding:1px 8px;font-weight:700;margin-left:4px">${attachments.length}</span></div>
-    ${gaWarning}${cards}
+    ${warningHtml}${cards}
   </div>`;
 }
 
@@ -2216,7 +2296,7 @@ async function sendFromViewModal(){
 
   // Render attachments panel immediately from metadata (no extra fetch needed)
   const _attPanel=document.getElementById('mib-attachments');
-  if(_attPanel)_attPanel.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'');
+  if(_attPanel)_attPanel.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',curIb.vi);
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
   document.getElementById('mod-ib').style.display='flex';
@@ -2261,6 +2341,13 @@ async function runIbAnalysis(){
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
   // Always normalize: infer keywords override empty AI result — use cleaned body only
   ibAna=normalizeAnalysisResult(v,cleanedBody,ibAna);
+  // Also merge in items confidently detected from attachment filenames
+  const _attReceived=inferReceivedFromAttachments(curIb.attachments||[]);
+  if(_attReceived.length){
+    const _merged=[...new Map([...(ibAna.received||[]),..._attReceived].map(x=>[itemKey(x),x])).values()];
+    ibAna.received=_merged;
+    ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_merged,r));
+  }
   // Rebuild followup email using ONLY current reply's received items for the
   // "thank you" section — never merge with stale stored receivedItems.
   // The "still require" section uses ibAna.missing which is now computed from
@@ -2474,7 +2561,7 @@ function openV(idx){
     const _uniqueAtts=_vesselAtts.filter(a=>{if(_seenAtt.has(a.attachmentId))return false;_seenAtt.add(a.attachmentId);return true;});
     // Use most recent reply body for mismatch detection
     const _latestBody=(ibItems||[]).filter(it=>it.vi===idx).slice(-1)[0]?.body||'';
-    _mvAttPanel.innerHTML=renderAttachmentsPanel(_uniqueAtts,_latestBody);
+    _mvAttPanel.innerHTML=renderAttachmentsPanel(_uniqueAtts,_latestBody,idx);
   }
 
   // Populate editable follow-up draft
