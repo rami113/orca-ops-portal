@@ -2146,7 +2146,12 @@ async function fetchInboxByThreads(){
           if(!alreadyInItems){
             // Extract attachment metadata from the message payload (no extra API call needed)
             const attachments=extractAttachments(msg.payload,msg.id);
-            const item={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi,isNew:!logged,attachments};
+            // Skip messages that are just a quoted reply chain with no new content and no attachments
+            // These show up when Gmail splits threads — body is empty after stripping quoted text
+            if(!body.trim()&&!attachments.length)continue;
+            // When body is empty but files are attached, use a descriptive placeholder
+            const displayBody=body.trim()||attachments.map(a=>a.filename).join(', ');
+            const item={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi,isNew:!logged,attachments};
             if(!logged)sheetsInboxSave(item);
             ibItems.push(item);
           }
