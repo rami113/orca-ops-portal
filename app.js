@@ -966,7 +966,9 @@ async function openCaseAnalyze(i){
 
 function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
   const v=vessels[idx];if(!v||!result)return;
-  curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply'};
+  // Preserve attachments already set on curIb by the caller (openCaseAnalyze)
+  const _existingAtts=(curIb&&curIb.attachments)||[];
+  curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:_existingAtts};
   ibAna=result;
   document.getElementById('mib-v').textContent=v.name;
   document.getElementById('mib-m').textContent=(replyFrom?'From: '+replyFrom+' · ':'')+( replyDate||'');
