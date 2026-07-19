@@ -886,8 +886,14 @@ function inferReceivedFromReply(reply){
     (s.includes('photo')||s.includes('ga')||s.includes('document')||s.includes('plan')||
      s.includes('drawing')||s.includes('file')||s.includes('port')||s.includes('layout'));
 
+  // Short label reply: captain writes only the item name (e.g. "Vessel GA", "Bridge Console GA").
+  // This is a labelling pattern — the item name IS the signal because it's the whole message.
+  // Only applies when the reply is very short (≤12 words) and contains no negation/question.
+  const wordCount=s.trim().split(/\s+/).length;
+  const isShortLabel=wordCount<=12&&!s.includes('?')&&!s.includes('will')&&!s.includes("we'll")&&!s.includes('please')&&!s.includes('can you')&&!s.includes('do you');
+
   // hasAttach = definitive proof captain sent something (never just "here are" alone)
-  const hasAttach=strictAttach||hereAreWithItem;
+  const hasAttach=strictAttach||hereAreWithItem||isShortLabel;
 
   // GA: only if explicitly named as "GA" or "General Arrangement" AND attachment signal present
   if((s.includes('vessel ga')||s.includes('vessel general arrangement'))&&hasAttach)got.push('Vessel GA');
