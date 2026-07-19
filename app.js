@@ -853,7 +853,8 @@ async function onAttachPreview(btn,msgId,attachmentId,filename,mimeType,containe
 // Tag dropdown change handler
 function onAttachTag(sel,attachmentId,vesselIdx){
   const tag=sel.value;const idx=parseInt(vesselIdx);
-  if(isNaN(idx)||!vessels[idx])return;
+  console.log('[onAttachTag] vesselIdx=',vesselIdx,'idx=',idx,'tag=',tag,'attachmentId=',attachmentId,'vessel=',vessels[idx]?.name);
+  if(isNaN(idx)||!vessels[idx]){console.warn('[onAttachTag] EARLY RETURN — idx invalid or vessel missing');return;}
   const v=vessels[idx];
   // Persist tag on curIb and ibItems in memory
   if(curIb&&Array.isArray(curIb.attachments))curIb.attachments.forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});
