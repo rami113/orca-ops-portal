@@ -2197,7 +2197,6 @@ async function fetchInboxByThreads(){
             ibItems.push(item);
           }
         }
-        }
       }
     }catch(e){
       console.warn('[fetchInboxByThreads] Thread fetch failed for vessel:',vessel.name,e);
