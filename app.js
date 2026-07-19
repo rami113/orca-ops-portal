@@ -954,9 +954,7 @@ async function openCaseAnalyze(i){
     curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:replyAtts};
     await runIbAnalysis();
     loadDiv.remove();
-    // Keep attachments on curIb for the result modal
-    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:replyAtts};
-    openAnalyzeResultModal(i,replyText,replyFrom,replyDate,ibAna);
+    openAnalyzeResultModal(i,replyText,replyFrom,replyDate,ibAna,replyAtts);
   }catch(err){
     console.error('openCaseAnalyze failed',err);
     loadDiv.remove();
@@ -964,11 +962,11 @@ async function openCaseAnalyze(i){
   }
 }
 
-function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
+function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   const v=vessels[idx];if(!v||!result)return;
-  // Preserve attachments already set on curIb by the caller (openCaseAnalyze)
-  const _existingAtts=(curIb&&curIb.attachments)||[];
-  curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:_existingAtts};
+  // atts passed explicitly from openCaseAnalyze; fallback to curIb.attachments if called from elsewhere
+  const _atts=atts||(curIb&&curIb.attachments)||[];
+  curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:_atts};
   ibAna=result;
   document.getElementById('mib-v').textContent=v.name;
   document.getElementById('mib-m').textContent=(replyFrom?'From: '+replyFrom+' · ':'')+( replyDate||'');
