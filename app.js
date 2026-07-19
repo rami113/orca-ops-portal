@@ -794,15 +794,17 @@ function autoTagFromFilename(filename){
   return '';
 }
 
-// Restore saved tags from vessel.attachmentTags onto an attachments array
-// Called whenever attachments are shown in a modal — ensures tags persist across re-opens
+// Restore saved tags from vessel.attachmentTags onto an attachments array.
+// Returns a NEW array with tags applied — never mutates the source array
+// so ibItems attachments are not affected by the 5s poll replacement.
 function restoreAttachmentTags(attachments, vesselIdx){
   const v=vessels[parseInt(vesselIdx)];
-  if(!v||!v.attachmentTags||!Array.isArray(attachments))return attachments;
-  attachments.forEach(a=>{
-    if(v.attachmentTags[a.attachmentId])a.tag=v.attachmentTags[a.attachmentId];
-  });
-  return attachments;
+  if(!Array.isArray(attachments))return [];
+  const savedTags=(v&&v.attachmentTags)||{};
+  return attachments.map(a=>({
+    ...a,
+    tag:savedTags[a.attachmentId]||a.tag||''
+  }));
 }
 
 // Fetch base64 data for an attachment on demand (called on Download/Preview click)
@@ -893,6 +895,8 @@ function onAttachTag(sel,attachmentId,vesselIdx){
 // Render the attachments panel
 function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
   const vi=vesselIdx!==undefined?String(vesselIdx):'';
+  // Always read tags from vessel.attachmentTags — single source of truth
+  const _savedTags=(vessels[parseInt(vi)]&&vessels[parseInt(vi)].attachmentTags)||{};
   const iconMap={photo:'ti-photo',pdf:'ti-file-type-pdf',doc:'ti-file-type-doc',drawing:'ti-rulers',spreadsheet:'ti-table',other:'ti-paperclip'};
   const classify=(att)=>{
     const fn=String(att.filename||'').toLowerCase();const mt=String(att.mimeType||'').toLowerCase();
@@ -921,12 +925,13 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
   const mentionsGA=/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(allText);
   const hasGAFile=attachments.some(a=>autoTagFromFilename(a.filename).includes('GA'));
   if(mentionsGA&&!hasGAFile)warns.push('GA mentioned but no GA file detected in attachments.');
-  const untagged=attachments.filter(a=>!autoTagFromFilename(a.filename)&&!a.tag);
+  // Use _savedTags as source of truth for untagged check
+  const untagged=attachments.filter(a=>!autoTagFromFilename(a.filename)&&!_savedTags[a.attachmentId]);
   if(untagged.length)warns.push(`${untagged.length} file${untagged.length>1?'s':''} could not be auto-identified — please tag them below.`);
   const warnHtml=warns.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('');
 
-  const tagOpts=(fn,existingTag)=>{
-    const auto=existingTag||autoTagFromFilename(fn);
+  const tagOpts=(fn,savedTag)=>{
+    const auto=savedTag||autoTagFromFilename(fn);
     return [{val:'',label:'— Untagged —'},...REQUIRED_ITEMS.map(r=>({val:r,label:r})),{val:'other',label:'Other / Not a required item'}]
       .map(o=>`<option value="${escapeHtml(o.val)}"${auto===o.val?' selected':''}>${escapeHtml(o.label)}</option>`).join('');
   };
@@ -937,14 +942,16 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
     const sizeKb=att.size?Math.ceil(att.size/1024)+'KB':'';
     const icon=iconMap[cat]||'ti-paperclip';
     const filenameTag=autoTagFromFilename(att.filename);
-    const autoTag=att.tag||filenameTag;
-    const isAutoTagged=!!filenameTag; // only show Auto-tagged label when filename matched
-    const isManualTagged=!!att.tag&&!filenameTag; // manually tagged but not auto
+    // Always read tag from vessel.attachmentTags — source of truth, survives poll replacement
+    const savedTag=_savedTags[att.attachmentId]||'';
+    const effectiveTag=savedTag||filenameTag;
+    const isAutoTagged=!!filenameTag;
+    const isManualTagged=!!savedTag&&!filenameTag;
     const safeFn=escapeHtml(att.filename);
     const safeMt=escapeHtml(att.mimeType);
     const safeAid=escapeHtml(att.attachmentId);
     const safeMid=escapeHtml(att.msgId);
-    return `<div data-att-row style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:${autoTag?'#f0faf4':'var(--white)'};margin-bottom:6px" data-att-id="${safeAid}">
+    return `<div data-att-row style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:${effectiveTag?'#f0faf4':'var(--white)'};margin-bottom:6px" data-att-id="${safeAid}">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:32px;height:32px;border-radius:6px;background:var(--navy-l);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--navy)"><i class="ti ${icon}" style="font-size:16px"></i></div>
         <div style="flex:1;min-width:0">
@@ -959,7 +966,7 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
         <span style="font-size:11px;color:var(--muted);white-space:nowrap">Tag as:</span>
         <select style="flex:1;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;color:var(--text)" onchange="onAttachTag(this,'${safeAid}','${vi}')">
-          ${tagOpts(att.filename,att.tag||'')}
+          ${tagOpts(att.filename,savedTag)}
         </select>
         ${isAutoTagged?`<span style="font-size:11px;color:var(--green);white-space:nowrap;font-weight:600"><i class="ti ti-circle-check"></i> Auto-tagged</span>`:''}
         ${isManualTagged?`<span style="font-size:11px;color:var(--navy);white-space:nowrap;font-weight:600"><i class="ti ti-tag"></i> Tagged</span>`:''}
@@ -2462,7 +2469,8 @@ async function runIbAnalysis(){
 async function sendIbFollowUp(){
   if(!ibAna||!curIb)return;
   // Warn if any attachments are still untagged
-  const _untagged=(curIb.attachments||[]).filter(a=>!a.tag&&!autoTagFromFilename(a.filename));
+  const _savedTagsIb=(vessels[curIb.vi]&&vessels[curIb.vi].attachmentTags)||{};
+  const _untagged=(curIb.attachments||[]).filter(a=>!_savedTagsIb[a.attachmentId]&&!autoTagFromFilename(a.filename));
   if(_untagged.length){
     const _go=await orcaConfirm(
       `${_untagged.length} attached file${_untagged.length>1?'s are':' is'} still untagged:\n${_untagged.map(a=>'• '+a.filename).join('\n')}\n\nSend the follow-up anyway?`,
