@@ -645,8 +645,8 @@ async function deleteVessel(i){
 
 function cleanCaptainReplyText(txt){
   let s=String(txt||'').replace(/\r/g,'').trim();
-  // Remove Gmail quoted history — try regex first, then line-by-line fallback
-  s=s.split(/\nOn .+ wrote:/i)[0];
+  // Remove Gmail quoted history — catches "On DATE, NAME wrote:" at start or after newline
+  s=s.split(/(?:^|\n)On .{5,100}wrote:/i)[0];
   // Line-by-line fallback: cut at first line starting with > (handles any encoding)
   const lines=s.split('\n');
   const qIdx=lines.findIndex(l=>l.trimStart().startsWith('>'));
@@ -712,9 +712,11 @@ function extractAttachments(payload, msgId){
     if(fn&&aid){
       const cid=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-id');
       const disp=String((hdrs.find(h=>String(h.name||'').toLowerCase()==='content-disposition')||{}).value||'').toLowerCase();
-      // Skip only if Content-ID present AND not explicitly an attachment (logo embedded in HTML email)
+      // Skip embedded assets: has Content-ID AND not explicitly Content-Disposition: attachment
       const isEmbedded=!!cid&&!disp.includes('attachment');
-      if(!isEmbedded){
+      // Also skip our own logo by filename (safety net)
+      const isOrcaLogo=/^orca\s*ai$/i.test(fn.trim());
+      if(!isEmbedded&&!isOrcaLogo){
         results.push({filename:fn,mimeType:part.mimeType||'application/octet-stream',attachmentId:aid,msgId:msgId||'',size:part.body.size||0});
       }
     }
@@ -924,31 +926,36 @@ async function openCaseAnalyze(i){
   loadDiv.innerHTML='<div style="background:#fff;border-radius:12px;padding:28px 36px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)"><div class="spinner" style="margin:0 auto 14px"></div><div style="font-size:14px;font-weight:600;color:#1D2E6B">Analyzing reply...</div></div>';
   document.body.appendChild(loadDiv);
   try{
-    let replyText='',replyFrom='',replyDate='';
+    let replyText='',replyFrom='',replyDate='',replyAtts=[];
     if(Array.isArray(ibItems)&&ibItems.length){
       const email=String(vessel.email||'').toLowerCase();
-      // Match strictly by vessel index, vessel reference, or FROM email — no name-based guessing
-      const ex=ibItems.find(item=>{
-        const from=String(item.fe||item.from||'').toLowerCase();
-        return item.vi===i||item.vessel===vessel||(email&&from.includes(email));
-      });
-      if(ex&&ex.body){replyText=cleanCaptainReplyText(ex.body);replyFrom=ex.from||'';replyDate=ex.date||'';}
+      // Get ALL ibItems for this vessel, sorted newest first
+      const vesselItems=ibItems
+        .filter(item=>{
+          const from=String(item.fe||item.from||'').toLowerCase();
+          return item.vi===i||item.vessel===vessel||(email&&from.includes(email));
+        })
+        .sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));
+      // Use most recent reply for text
+      const latest=vesselItems[0];
+      if(latest&&latest.body){replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';}
+      // Accumulate ALL attachments across ALL replies for this vessel
+      const seen=new Set();
+      vesselItems.forEach(it=>(it.attachments||[]).forEach(a=>{
+        if(!seen.has(a.attachmentId)){seen.add(a.attachmentId);replyAtts.push(a);}
+      }));
     }
     if(!replyText){
       const latest=await fetchLatestReplyForVessel(vessel);
       if(latest&&latest.body){replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';}
     }
     if(!replyText){loadDiv.remove();openManualAnalyzeWithReply(i,'');return;}
-    // Run AI using same approach as runIbAnalysis
-    const mis=(vessel.missingItems||[]).join(', '),d=ds(vessel.lastContact);
-    // build prompt identical to runIbAnalysis but using replyText and vessel
     const _tmpCurIb=curIb;const _tmpIbAna=ibAna;
-    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply'};
+    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:replyAtts};
     await runIbAnalysis();
-    // runIbAnalysis sets ibAna and opens mod-ib already
     loadDiv.remove();
-    curIb=_tmpCurIb;
-    // Reopen with new data
+    // Keep attachments on curIb for the result modal
+    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:replyAtts};
     openAnalyzeResultModal(i,replyText,replyFrom,replyDate,ibAna);
   }catch(err){
     console.error('openCaseAnalyze failed',err);
@@ -982,6 +989,9 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
   const _recvM=[...new Map([...(v.receivedItems||[]),...(result.received||[])].map(x=>[itemKey(x),x])).values()];
   result.followup_email=buildFollowupEmail({...v,receivedItems:_recvM},result.missing||[]);
   document.getElementById('mib-fu').value=result.followup_email||'';
+  // Render attachments from curIb (set by openCaseAnalyze with all accumulated atts)
+  const _apR=document.getElementById('mib-attachments');
+  if(_apR)_apR.innerHTML=renderAttachmentsPanel(curIb.attachments||[],replyText||'',idx);
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-res').style.display='block';
   document.getElementById('mib-abtn').style.display='none';
@@ -2063,7 +2073,6 @@ async function fetchInboxByThreads(){
         // Only add captain replies to ibItems (inbox badge + panel + analyze)
         if(!isOpsMsg){
           const atts=extractAttachments(msg.payload,msg.id);
-          console.log('[ATT]',msg.id.slice(-6),body.slice(0,30)||'(empty)','atts:',atts.map(a=>a.filename));
           const existingIdx=(ibItems||[]).findIndex(it=>it.msgId===msg.id);
           if(existingIdx>=0){
             // Already in ibItems (e.g. from shared sheet) — patch attachments if missing
