@@ -199,18 +199,47 @@ window._deletedVesselIds=window._deletedVesselIds||new Set();
 
 async function saveVessels(){
   if(hasSharedDb()){
-    // Merge with current Sheet data before saving to avoid overwriting other users' vessels
     let merged=vessels;
     try{
       const current=await loadSharedVessels();
       if(Array.isArray(current)&&current.length){
-        const myIds=new Set(vessels.map(v=>v.id||v.name));
-        // Exclude: vessels already in local array AND vessels explicitly deleted this session
-        const others=current.filter(v=>{
-          const id=v.id||v.name;
-          return !myIds.has(id)&&!window._deletedVesselIds.has(id);
-        });
-        merged=[...vessels,...others];
+        // Build lookup of Sheet vessels by id
+        const sheetMap=new Map(current.map(v=>[v.id||v.name,v]));
+        const localMap=new Map(vessels.map(v=>[v.id||v.name,v]));
+        // Merge: for vessels that exist in both, merge field-by-field using lastActivity as tiebreaker
+        // Fields that the saving user explicitly controls take priority;
+        // fields only changed by other users are preserved from Sheet.
+        // SAFE fields to always take from local (user just edited them):
+        const _localOwned=['status','risk','progress','nextAction','missingItems','receivedItems',
+          'detectedItems','attachmentTags','followupsSent','lastFollowupPreview','assignedTo',
+          'lastContact','lastEmailDate','emailsSent'];
+        // SAFE fields to merge from Sheet if Sheet version is newer (other user's changes):
+        const _sheetOwned=['timeline','emailsReceived','lastReceivedDate','lastActivity'];
+        const mergedVessels=[];
+        for(const [id,local] of localMap){
+          if(window._deletedVesselIds&&window._deletedVesselIds.has(id))continue;
+          const sheet=sheetMap.get(id);
+          if(!sheet){mergedVessels.push(local);continue;}
+          // Both exist — merge fields
+          const sheetNewer=new Date(sheet.lastActivity||0)>new Date(local.lastActivity||0);
+          const merged={...local};
+          // Take sheet-owned fields only if sheet is newer (another user updated them)
+          if(sheetNewer){
+            _sheetOwned.forEach(f=>{if(sheet[f]!==undefined)merged[f]=sheet[f];});
+            // Merge timelines — union by ts+type
+            const tl=[...(local.timeline||[]),...(sheet.timeline||[])];
+            const seen=new Set();
+            merged.timeline=tl.filter(e=>{const k=(e.ts||'')+(e.type||'')+(e.title||'');if(seen.has(k))return false;seen.add(k);return true;});
+          }
+          mergedVessels.push(merged);
+        }
+        // Add vessels from Sheet that don't exist locally (other users' vessels)
+        for(const [id,sv] of sheetMap){
+          if(!localMap.has(id)&&!(window._deletedVesselIds&&window._deletedVesselIds.has(id))){
+            mergedVessels.push(sv);
+          }
+        }
+        merged=mergedVessels;
       }
     }catch(e){console.warn('merge read failed',e);}
     console.log('[saveVessels] Saving',merged.length,'vessels to Sheet');
@@ -620,9 +649,31 @@ async function transferOwnership(idx){
   // Send notification email to new owner
   if(token&&result.includes('@')){
     const vname=vessels[idx].name||'vessel';
-    const newOwnerName=TEAM_USERS.find(u=>u.email===result)?.name||result;
-    const notifBody='Dear '+newOwnerName+',\n\nYou have been assigned as the new owner of vessel: '+vname+'.\n\nPrevious owner: '+prevOwner+'\n\nPlease log in to the Orca AI Installation Coordinator portal to review the case.\n\nKind regards,\nORCA AI OPS';
-    await sendGmail(result,'[ORCA AI] Vessel ownership transferred: '+vname,notifBody,false).catch(()=>{});
+    const vemail=vessels[idx].email||'';
+    const newOwnerName=TEAM_USERS.find(u=>u.email===result)?.name||result.split('@')[0];
+    const fromName=(user&&user.name)||prevOwner;
+    const missing=(vessels[idx].missingItems||[]);
+    const received=(vessels[idx].receivedItems||[]);
+    const progress=vessels[idx].progress||0;
+    const notifHtml=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:10px;border:1px solid #e0e0dc;overflow:hidden">
+      <div style="background:#1D2E6B;padding:20px 28px">
+        <div style="color:#fff;font-size:18px;font-weight:700">Orca AI — Vessel Transfer</div>
+      </div>
+      <div style="padding:24px 28px">
+        <p style="font-size:14px;color:#1a1a1a;margin:0 0 16px">Dear ${newOwnerName},</p>
+        <p style="font-size:14px;color:#1a1a1a;margin:0 0 20px">You have been assigned as the new coordinator for the following vessel:</p>
+        <div style="background:#f4f6fb;border-radius:8px;padding:16px 20px;margin-bottom:20px;border:1px solid #dde3f0">
+          <div style="font-size:16px;font-weight:700;color:#1D2E6B;margin-bottom:4px">${vname}</div>
+          <div style="font-size:13px;color:#6b6b6b">${vemail}</div>
+          <div style="font-size:13px;color:#6b6b6b;margin-top:8px">Readiness: <strong>${progress}%</strong> &nbsp;|&nbsp; Previous coordinator: <strong>${prevOwner}</strong></div>
+        </div>
+        ${missing.length?`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#c0392b;margin-bottom:8px">Still missing (${missing.length} items)</div>${missing.map(m=>`<div style="font-size:13px;color:#c0392b;padding:5px 0;border-bottom:1px solid #fce8e8">${m}</div>`).join('')}</div>`:''}
+        ${received.length?`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#1D6B4A;margin-bottom:8px">Already received (${received.length} items)</div>${received.map(r=>`<div style="font-size:13px;color:#1D6B4A;padding:5px 0;border-bottom:1px solid #eaf3de">${r}</div>`).join('')}</div>`:''}
+        <p style="font-size:13px;color:#6b6b6b;margin:20px 0 0">Please log in to the <a href="https://orca-ops-portal.vercel.app" style="color:#1D2E6B;font-weight:600">Orca AI Ops Portal</a> to review and continue the coordination.</p>
+        <p style="font-size:13px;color:#6b6b6b;margin:8px 0 0">Transferred by: <strong>${fromName}</strong></p>
+      </div>
+    </div>`;
+    await sendGmail(result,`[Orca AI] Vessel assigned to you: ${vname}`,notifHtml,true).catch(()=>{});
   }
   await orcaAlert('Ownership transferred to '+result+'.\nA notification email has been sent.','✅ Transfer Complete');
 }
