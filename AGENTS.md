@@ -17,8 +17,6 @@ There are **no build steps, no package manager, no test suite**.
 - Open `index.html` directly in a browser for local development.
 - Deploy by pushing to the `main` branch on GitHub — Vercel auto-deploys.
 - No linting config exists. Validate JS manually in the browser DevTools console.
-- **Always run `node -e "new Function(require('fs').readFileSync('app.js','utf8'))"` to
-  check for syntax errors before every `git push`.**
 - Version is tracked manually: bump `ORCA_FIX_VERSION` in `app.js` line 13 and the
   comment in `index.html` line 4 for every release.
 
@@ -40,16 +38,13 @@ There are **no build steps, no package manager, no test suite**.
 - **Primary:** Google Sheets (`SHARED_SHEET_ID`) — single cell A1 stores JSON blob.
 - **Fallback:** `localStorage` key `orca_v3` for vessels, `orca_u2` for user.
 - Always call `saveVessels()` after mutating the `vessels` array.
-- `saveVessels()` does a **field-level merge** with the Sheet before writing — it never
-  blindly overwrites. Local-owned fields always win; other users' timeline/email counts
-  are preserved from Sheet if their `lastActivity` is newer.
 
 ### Global State (app.js top-level `let`)
 ```
 vessels[]   — array of vessel objects (the main data)
 user        — signed-in user object {email, name, pic, role}
 token       — OAuth2 access token string
-ibItems[]   — ONE item per vessel (latest reply + all attachments accumulated)
+ibItems[]   — inbox reply items currently loaded
 curIb       — the inbox item currently open in the analyze modal
 ibAna       — AI/keyword analysis result for curIb
 ana         — analysis result for the manual Analyze tab
@@ -86,7 +81,6 @@ These 9 items are tracked per vessel. Never add/remove without updating `itemKey
   receivedItems[],          // items explicitly detected in captain replies
   detectedItems[],          // same as receivedItems — source of truth, never inverse-of-missing
   missingItems[],           // REQUIRED_ITEMS not yet received
-  attachmentTags{},         // {attachmentId: REQUIRED_ITEMS string} — persisted tag map
   timeline[],               // array of {ts, type, title, detail, body?, msgId?}
   nextAction,
   followupsSent,
@@ -95,12 +89,9 @@ These 9 items are tracked per vessel. Never add/remove without updating `itemKey
 ```
 
 **CRITICAL:** `receivedItems` and `detectedItems` must ONLY be populated from
-`inferReceivedFromReply()` keyword hits or `autoTagFromFilename()` attachment hits —
-NEVER as the inverse of `missingItems`.
-
-**CRITICAL:** `attachmentTags` is the single source of truth for file tags.
-`renderAttachmentsPanel` reads directly from `vessel.attachmentTags` — never from
-`att.tag` on the attachment object (which may be stale after poll replacement).
+`inferReceivedFromReply()` keyword hits — NEVER as the inverse of `missingItems`.
+Setting `receivedItems = REQUIRED_ITEMS.filter(not in missing)` is the bug that was
+fixed — do not reintroduce it.
 
 ---
 
@@ -141,55 +132,15 @@ NEVER as the inverse of `missingItems`.
 - Reply subject format: `"Re: Orca AI Installation Coordination - {vesselName}"`
 
 ### Analysis Pipeline (do not break this order)
-1. `cleanCaptainReplyText(body)` — strip quoted chain from reply (`On DATE wrote:` pattern)
+1. `cleanCaptainReplyText(body)` — strip quoted chain from reply
 2. `inferReceivedFromReply(cleanedBody)` → `received[]` (keyword matching only)
-3. `inferReceivedFromAttachments(attachments)` → merge attachment filename detections
-4. `normalizeAnalysisResult(vessel, cleanedBody, analysis)` — reconciles received/missing
-   using `v.detectedItems` (NOT `v.receivedItems`) to compute missing list
-5. Overwrite `analysis.followup_email` with `buildFollowupEmail({...v, receivedItems: analysis.received}, analysis.missing)`
-6. Save: set `detectedItems` and `receivedItems` to accumulated detections only
+3. `normalizeAnalysisResult(vessel, cleanedBody, analysis)` — reconciles received/missing
+4. Overwrite `analysis.followup_email` with `buildFollowupEmail({...v, receivedItems: analysis.received}, analysis.missing)`
+5. Save: set `detectedItems` and `receivedItems` to accumulated detections only
 
 ### itemKey() Canonical Keys
 Used for deduplication — any item string maps to one of these keys:
 `vessel_ga`, `bridge_ga`, `ports`, `cable`, `vsat`, `power`, `monitor`, `seapod`, `docs`
-
----
-
-## Attachment System
-
-### Key Functions
-- `extractAttachments(payload, msgId)` — walks Gmail MIME tree. Skips parts with
-  Content-ID that are NOT `Content-Disposition: attachment` (embedded logos). Also
-  skips filenames matching `/^orca\s*ai$/i` as safety net.
-- `autoTagFromFilename(filename)` — maps filename keywords to REQUIRED_ITEMS string.
-  GA/general arrangement → Vessel GA or Bridge Console GA, port/schedule → ports, etc.
-- `restoreAttachmentTags(attachments, vesselIdx)` — returns NEW array with tags from
-  `vessel.attachmentTags` applied. Never mutates source array.
-- `renderAttachmentsPanel(attachments, bodyText, vesselIdx)` — reads `_savedTags` from
-  `vessel.attachmentTags` directly. Uses `_savedTags[att.attachmentId]` as source of
-  truth for dropdown pre-selection, background color, labels, and untagged warning.
-- `onAttachTag(sel, attachmentId, vesselIdx)` — saves tag to `vessel.attachmentTags`,
-  calls `saveVessels()`, updates `detectedItems`/`receivedItems`, refreshes modal panels.
-
-### Tag Dropdown Options
-`— Untagged —`, then all 9 REQUIRED_ITEMS, then `Other / Not a required item`.
-"Other" is a valid tag that dismisses the untagged warning without marking any checklist item.
-
-### Warnings
-- GA mentioned in text but no GA file attached → warning shown
-- Attachment signal words in text but no files found → warning shown
-- Files present but unidentified (no auto-tag, no manual tag) → warning shown
-- Warning before send: `sendIbFollowUp` and `sendFromViewModal` both check
-  `vessel.attachmentTags` for untagged files and show `orcaConfirm` before proceeding.
-
-### ibItems Structure
-- **One ibItem per vessel** — always the latest reply with ALL attachments from ALL
-  replies accumulated and deduped by `attachmentId`.
-- `fetchInboxByThreads` collects all captain messages per thread, then builds/updates
-  ONE ibItem after the loop. Tags from `vessel.attachmentTags` are restored on each
-  fetch cycle so tags survive poll replacement.
-- `ibItems[x].attachments` is replaced entirely on every fetch — do NOT rely on
-  `att.tag` being persistent. Always use `vessel.attachmentTags` as the source of truth.
 
 ---
 
@@ -198,105 +149,63 @@ Used for deduplication — any item string maps to one of these keys:
   `gmailThreadId` — this is the only reliable method. The old subject+email search is
   commented out and must stay disabled.
 - Captain replies are identified by: `from` header does NOT contain `"ORCA AI OPS"`.
-- `mergeSharedInbox()` skips items with empty body after `cleanCaptainReplyText` (quoted
-  chain only) — prevents stale duplicates from the shared sheet.
-- **Known limitation:** Vessels without `gmailThreadId` (created before the feature) will
-  NOT receive inbox reply matching.
-
----
-
-## Smart Polling (real-time sync)
-The polling IIFE at the bottom of `app.js`:
-- **Inbox poll every 5s** — calls `checkInbox(true)` when tab is visible
-- **Vessel poll every 8s** — silently reads Sheet, merges into local state.
-  `keep` object in `pollVessels` preserves: `status`, `risk`, `progress`, `assignedTo`,
-  `missingItems`, `receivedItems`, `detectedItems`, `attachmentTags`
-- **Pauses completely** when tab is hidden — zero API calls wasted
-- **Immediate sync** when user returns to tab
-- Starts automatically once `token` is set after sign-in
-
----
-
-## Multi-User Safety
-- `saveVessels()` reads Sheet → field-level merge → writes Sheet.
-- Local-owned fields (status, progress, items, tags) always win over Sheet version.
-- Sheet-owned fields (timeline, emailsReceived, lastActivity) taken from Sheet only
-  when Sheet `lastActivity` is newer than local.
-- Timelines are merged as union deduped by `ts+type+title`.
-- `window._deletedVesselIds` prevents merge from re-adding deleted vessels.
-
----
-
-## Transfer Notification
-`transferOwnership(idx)` sends a branded HTML email to the new assignee containing:
-vessel name, email, readiness %, previous coordinator, missing items (red), received
-items (green), and a direct link to the portal.
+- Never add inbox items without a matching vessel in the `vessels` array.
+- `sheetsInboxSave()` writes new replies to the shared inbox sheet for cross-user visibility.
+- **Known limitation:** Vessels created before `gmailThreadId` was introduced have no
+  thread ID stored and will NOT receive inbox reply matching. Only vessels created through
+  the portal (via "Start Coordination") get a `gmailThreadId` and full inbox support.
 
 ---
 
 ## AI Analysis — Current Status
-The "Analyze" button calls `https://api.anthropic.com/v1/messages` with no API key —
-always fails, `catch` block fires, app falls back to keyword matching. This is intentional.
-Do NOT add an API key in browser code. If AI is added later, route through a Vercel
-serverless function so the key is never exposed to the browser.
+The "Analyze" button sends a prompt to `https://api.anthropic.com/v1/messages` but there
+is **no API key configured** — the request fails silently and the `catch` block takes over.
+The app therefore runs **entirely on keyword-based analysis** via `inferReceivedFromReply()`.
+This is the intended behaviour for now. Do NOT add an API key directly in browser code
+(security risk). If AI is added in the future it must go through a server-side proxy
+(e.g. a Vercel serverless function) so the key is never exposed to the browser.
+
+---
+
+## Current Development Focus
+This codebase is in active stabilization — the priority is **bug fixes and small features**
+to reach a solid, production-ready base. Do not introduce large refactors or architectural
+changes. Every change should be minimal, targeted, and not break existing behaviour.
+When in doubt, fix the bug conservatively and document it in the Recent Fix Log below.
 
 ---
 
 ## Deployment
-- **Repo:** https://github.com/rami113/orca-ops-portal (public — do not commit secrets)
-- **Branch:** `main` — Vercel auto-deploys on every push.
-- **Force push is allowed** on `main` (testing branch).
-- To deploy: `git add . && git commit -m "msg" && git push origin main`
+- **Repo:** https://github.com/rami113/orca-ops-portal
+- **Branch:** `main` — used for testing. Vercel auto-deploys on every push to `main`.
+- **Force push is allowed** on `main` since it is a testing branch.
+- To deploy: commit changes locally → `git push origin main` (or `--force` if needed).
 
 ---
 
 ## What NOT to Do
-- Do not add a backend/server — intentionally fully static.
+- Do not add a backend/server — this is intentionally a fully static app.
 - Do not add npm, webpack, or any build tooling.
-- Do not use `v.receivedItems` to compute `missing` — use `v.detectedItems`.
-- Do not use `att.tag` as the tag source of truth — use `vessel.attachmentTags`.
+- Do not use `v.receivedItems` as a source for computing `missing` — use `v.detectedItems`.
 - Do not call `alert()` or `confirm()` — use `orcaAlert()` / `orcaConfirm()`.
 - Do not push secrets (API keys, OAuth secrets) to the repo.
 - Do not change `REQUIRED_ITEMS` without also updating `itemKey()` and `hasItem()`.
-- Do not re-enable the old subject+email inbox search (commented-out block in `fetchInbox`).
+- Do not re-enable the old subject+email inbox search (the commented-out block in `fetchInbox`).
 - Do not introduce large refactors — keep changes small and targeted.
-- Always run the syntax check (`node -e "new Function(...)"`) before pushing.
 
 ---
 
 ## Recent Fix Log
-
-**Session — Jul 2026 (Part 1)**
-- Bug: Follow-up email "Thank you" section listed items captain never sent.
-- Fix: Introduced `detectedItems` — accumulates only `inferReceivedFromReply()` hits.
-  `normalizeAnalysisResult` uses `v.detectedItems` not `v.receivedItems` to compute missing.
-  All four save sites updated: `runIbAnalysis`, `sendIbFollowUp`, `saveAnalyzeOnly`, `saveAndSend`.
-- Also tightened `inferReceivedFromReply`: port calls and VSAT require `strictAttach`.
-  Added `isShortLabel` detection for captain replies that are just the item name.
-
-**Session — Jul 2026 (Part 2)**
-- Feature: Full attachment system — extract, classify, auto-tag, preview, download.
-- `extractAttachments()`: walks Gmail MIME payload, skips embedded assets (Content-ID
-  + not attachment disposition), skips Orca AI logo by filename.
-- `autoTagFromFilename()`: maps GA, port, cable, VSAT, power, monitor, seapod, docs
-  keywords in filename to REQUIRED_ITEMS.
-- `renderAttachmentsPanel()`: file cards with Tag dropdown, warnings, inline preview.
-- `onAttachTag()`: saves to `vessel.attachmentTags`, updates detectedItems, refreshes panels.
-- Tag dropdown: includes "Other / Not a required item" to dismiss untagged warning.
-- Warning before send: both send functions check for untagged files via `orcaConfirm`.
-- One ibItem per vessel: `fetchInboxByThreads` builds one item per vessel with latest
-  reply text and all attachments from all replies accumulated.
-- `vessel.attachmentTags` is the persistent source of truth for tags — survives poll
-  replacement, modal re-opens, hard refresh, and cross-session.
-- `renderAttachmentsPanel` reads `_savedTags` directly from `vessel.attachmentTags`.
-
-**Session — Jul 2026 (Part 3)**
-- Feature: Smart polling — replaced 30s timer with 5s inbox + 8s vessel poll, pauses
-  when tab hidden, immediate sync on tab return.
-- Feature: Field-level merge in `saveVessels()` — prevents overwriting other users' changes.
-- Feature: Transfer notification — branded HTML email to new vessel assignee.
-- Feature: `pollVessels()` silently merges Sheet changes, preserves local edits including
-  `attachmentTags`.
-- Fix: Duplicate inbox items from quoted reply chains — `mergeSharedInbox` and
-  `fetchInboxByThreads` both filter empty-body items.
-- Fix: `cleanCaptainReplyText` regex updated to catch `On DATE wrote:` at start of string.
+**Session — Jul 2026**
+- Bug: Follow-up email "Thank you for providing" section incorrectly listed items the
+  captain never sent (Port calls, Cable, VSAT, Monitor photos, Seapod photos).
+- Root cause: `receivedItems` was stored as `REQUIRED_ITEMS minus missing` (inverse).
+  On next analyze, `normalizeAnalysisResult` merged these stale items as if they were
+  confirmed, removing them from `missing` and listing them in the "Thank you" section.
+- Fix: Introduced `detectedItems` field — accumulates only `inferReceivedFromReply()`
+  hits. `normalizeAnalysisResult` now uses `v.detectedItems` (not `v.receivedItems`)
+  to compute the missing list. All four save sites updated: `runIbAnalysis`,
+  `sendIbFollowUp`, `saveAnalyzeOnly`, `saveAndSend`.
+- Also tightened `inferReceivedFromReply`: port calls now require `strictAttach`,
+  VSAT routing requires `strictAttach`, generic `hereAre` signal requires an item
+  keyword to count as an attachment signal.
