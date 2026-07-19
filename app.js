@@ -849,6 +849,7 @@ function extractAttachments(payload, msgId){
     if(fn&&aid){
       // Skip embedded email assets (Orca logo etc) — identified by Content-ID (cid: reference)
       const contentId=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-id');
+      console.log('[EXTRACT]',fn,'contentId:',contentId?.value,'->',!contentId?'KEEP':'SKIP');
       if(!contentId){
         results.push({
           filename:fn,
