@@ -2063,6 +2063,7 @@ async function fetchInboxByThreads(){
         // Only add captain replies to ibItems (inbox badge + panel + analyze)
         if(!isOpsMsg){
           const atts=extractAttachments(msg.payload,msg.id);
+          console.log('[ATT]',msg.id.slice(-6),body.slice(0,30)||'(empty)','atts:',atts.map(a=>a.filename));
           const existingIdx=(ibItems||[]).findIndex(it=>it.msgId===msg.id);
           if(existingIdx>=0){
             // Already in ibItems (e.g. from shared sheet) — patch attachments if missing
