@@ -819,17 +819,20 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
   // Warnings when no attachments
   if(!attachments||!attachments.length){
     const warns=[];
-    if(/attach|herewith|enclosed|please find|find attached/i.test(bodyText||''))warns.push('Captain mentioned attachments but no files were found in this email.');
-    if(/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bodyText||''))warns.push('GA mentioned in reply but no GA file was attached.');
+    const bt=bodyText||'';
+    if(/attach|herewith|enclosed|please find|find attached/i.test(bt))warns.push('Captain mentioned attachments but no files were found in this email.');
+    else if(/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bt))warns.push('GA mentioned in reply but no GA file was attached.');
     if(!warns.length)return '';
     return `<div style="margin-bottom:1rem"><div class="sl" style="margin-bottom:8px">Attachments</div>${warns.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('')}</div>`;
   }
 
   // Warnings with files present
   const warns=[];
-  const mentionsGA=/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bodyText||'');
+  // Check both body text AND filenames for GA mentions
+  const allText=(bodyText||'')+' '+attachments.map(a=>a.filename).join(' ');
+  const mentionsGA=/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(allText);
   const hasGAFile=attachments.some(a=>autoTagFromFilename(a.filename).includes('GA'));
-  if(mentionsGA&&!hasGAFile)warns.push('GA mentioned in reply but no GA file detected in attachments.');
+  if(mentionsGA&&!hasGAFile)warns.push('GA mentioned but no GA file detected in attachments.');
   const untagged=attachments.filter(a=>!autoTagFromFilename(a.filename)&&!a.tag);
   if(untagged.length)warns.push(`${untagged.length} file${untagged.length>1?'s':''} could not be auto-identified — please tag them below.`);
   const warnHtml=warns.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('');
@@ -1989,6 +1992,9 @@ async function mergeSharedInbox(){
     // Validate: reply must be after first portal email
     const firstSent=item.vessel.firstEmailDate||item.vessel.lastEmailDate||null;
     if(firstSent&&item.date&&new Date(item.date)<new Date(firstSent))continue;
+    // Skip quoted-chain-only items (empty body after cleaning — no real content)
+    const cleanedBody=cleanCaptainReplyText(item.body||'').trim();
+    if(!cleanedBody)continue;
     ibItems.push(item);
     added++;
   }
