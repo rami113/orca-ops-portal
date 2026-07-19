@@ -1965,6 +1965,12 @@ async function checkInbox(silent=false){
   }
   // Yield to browser so UI updates (spinner) before heavy work starts - fixes INP blocking
   await new Promise(r=>setTimeout(r,0));
+  // Purge stale ibItems that are just quoted chains — empty body, no attachments
+  // Runs before fetch so bad items from shared sheet or previous sessions are cleared
+  ibItems=(ibItems||[]).filter(it=>{
+    const b=cleanCaptainReplyText(it.body||'').trim();
+    return b||(Array.isArray(it.attachments)&&it.attachments.length);
+  });
   await fetchInbox();
   window.showInlineInboxPanel=true;
   updateReceivedStatsFromInbox();
@@ -2063,6 +2069,9 @@ async function mergeSharedInbox(){
     if(existingIds.has(item.msgId))continue;
     // Validate: vessel must exist in portal
     if(!item.vessel)continue;
+    // Skip quoted-chain-only items (empty body saved before the fix)
+    const cleanedSharedBody=cleanCaptainReplyText(item.body||'');
+    if(!cleanedSharedBody.trim())continue;
     // Super Admin sees all replies; others see only their assigned vessels
     if(!isSuperAdmin){
       const assignedTo=normEmail(item.vessel.assignedTo||'');
@@ -2078,6 +2087,7 @@ async function mergeSharedInbox(){
     // Validate: reply must be after first portal email
     const firstSent=item.vessel.firstEmailDate||item.vessel.lastEmailDate||null;
     if(firstSent&&item.date&&new Date(item.date)<new Date(firstSent))continue;
+    item.body=cleanedSharedBody;
     ibItems.push(item);
     added++;
   }
@@ -2093,9 +2103,6 @@ async function mergeSharedInbox(){
 // This replaces the old subject+email search approach which caused cross-contamination.
 async function fetchInboxByThreads(){
   if(!token||!vessels.length)return;
-  // Purge any previously stored ibItems that are just quoted chains (empty body, no attachments)
-  // These sneak in from before the fix or from the shared sheet
-  ibItems=(ibItems||[]).filter(it=>(it.body&&it.body.trim())||( Array.isArray(it.attachments)&&it.attachments.length));
   const myEmail=normEmail(user&&user.email);
   const _isSuper=isSuperAdmin(myEmail);
   const myVessels=_isSuper?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')===myEmail);
