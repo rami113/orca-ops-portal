@@ -735,7 +735,7 @@ async function openCaseAnalyze(i){
   loadDiv.innerHTML='<div style="background:#fff;border-radius:12px;padding:28px 36px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)"><div class="spinner" style="margin:0 auto 14px"></div><div style="font-size:14px;font-weight:600;color:#1D2E6B">Analyzing reply...</div></div>';
   document.body.appendChild(loadDiv);
   try{
-    let replyText='',replyFrom='',replyDate='';
+    let replyText='',replyFrom='',replyDate='',replyAtts=[];
     if(Array.isArray(ibItems)&&ibItems.length){
       const email=String(vessel.email||'').toLowerCase();
       // Match strictly by vessel index, vessel reference, or FROM email — no name-based guessing
@@ -743,23 +743,34 @@ async function openCaseAnalyze(i){
         const from=String(item.fe||item.from||'').toLowerCase();
         return item.vi===i||item.vessel===vessel||(email&&from.includes(email));
       });
-      if(ex&&ex.body){replyText=cleanCaptainReplyText(ex.body);replyFrom=ex.from||'';replyDate=ex.date||'';}
+      if(ex&&ex.body){replyText=cleanCaptainReplyText(ex.body);replyFrom=ex.from||'';replyDate=ex.date||'';replyAtts=ex.attachments||[];}
     }
     if(!replyText){
       const latest=await fetchLatestReplyForVessel(vessel);
       if(latest&&latest.body){replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';}
     }
     if(!replyText){loadDiv.remove();openManualAnalyzeWithReply(i,'');return;}
-    // Run AI using same approach as runIbAnalysis
-    const mis=(vessel.missingItems||[]).join(', '),d=ds(vessel.lastContact);
-    // build prompt identical to runIbAnalysis but using replyText and vessel
+    // If we still have no attachments, fetch them from the thread directly
+    if(!replyAtts.length&&vessel.gmailThreadId){
+      try{
+        const _tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${vessel.gmailThreadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
+        if(_tr.ok){
+          const _td=await _tr.json();
+          const _msgs=(_td.messages||[]).filter(m=>{
+            const _from=(m.payload&&m.payload.headers||[]).find(h=>h.name==='From')?.value||'';
+            return !_from.toLowerCase().includes('orca ai ops');
+          });
+          _msgs.forEach(m=>{replyAtts.push(...extractAttachments(m.payload,m.id));});
+        }
+      }catch(e){console.warn('Could not fetch attachments from thread',e);}
+    }
     const _tmpCurIb=curIb;const _tmpIbAna=ibAna;
-    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply'};
+    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:replyAtts};
     await runIbAnalysis();
     // runIbAnalysis sets ibAna and opens mod-ib already
     loadDiv.remove();
-    curIb=_tmpCurIb;
-    // Reopen with new data
+    // Reopen with new data — keep attachments on curIb
+    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:replyAtts};
     openAnalyzeResultModal(i,replyText,replyFrom,replyDate,ibAna);
   }catch(err){
     console.error('openCaseAnalyze failed',err);
@@ -993,13 +1004,15 @@ function renderAttachmentsPanel(attachments, bodyText, vesselIdx){
 
   if(!attachments||!attachments.length){
     const mentionsAttach=/attach|herewith|enclosed|please find|find attached|see below/i.test(bodyText||'');
-    if(mentionsAttach){
-      return `<div style="margin-top:1rem">
-        <div class="sl" style="margin-bottom:8px">Attachments</div>
-        <div class="flag-item"><i class="ti ti-alert-triangle"></i> Captain mentioned attachments but no files were found in this email.</div>
-      </div>`;
-    }
-    return '';
+    const mentionsGA=/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bodyText||'');
+    const warnings=[];
+    if(mentionsAttach)warnings.push('Captain mentioned attachments but no files were found in this email.');
+    if(mentionsGA)warnings.push('GA mentioned in reply but no GA file was attached.');
+    if(!warnings.length)return '';
+    return `<div style="margin-top:1rem">
+      <div class="sl" style="margin-bottom:8px">Attachments</div>
+      ${warnings.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('')}
+    </div>`;
   }
 
   // Warnings — check text vs files mismatch
@@ -2556,19 +2569,38 @@ function openV(idx){
   const tl=document.getElementById('mv-timeline');
   if(tl)tl.innerHTML=renderTimeline(v);
 
-  // Attachments — collect from all captain reply ibItems for this vessel
+  // Attachments — collect from ibItems first, then fall back to fetching from thread
   const _mvAttPanel=document.getElementById('mv-attachments');
   if(_mvAttPanel){
-    // Gather all attachments across all inbox items for this vessel
+    _mvAttPanel.innerHTML='';
     const _vesselAtts=(ibItems||[])
       .filter(it=>it.vi===idx&&Array.isArray(it.attachments)&&it.attachments.length)
       .flatMap(it=>it.attachments);
-    // Deduplicate by attachmentId
     const _seenAtt=new Set();
     const _uniqueAtts=_vesselAtts.filter(a=>{if(_seenAtt.has(a.attachmentId))return false;_seenAtt.add(a.attachmentId);return true;});
-    // Use most recent reply body for mismatch detection
-    const _latestBody=(ibItems||[]).filter(it=>it.vi===idx).slice(-1)[0]?.body||'';
-    _mvAttPanel.innerHTML=renderAttachmentsPanel(_uniqueAtts,_latestBody,idx);
+    const _latestBody=(ibItems||[]).filter(it=>it.vi===idx).slice(-1)[0]?.body||v.lastFollowupPreview||'';
+    if(_uniqueAtts.length){
+      _mvAttPanel.innerHTML=renderAttachmentsPanel(_uniqueAtts,_latestBody,idx);
+    } else if(v.gmailThreadId&&token){
+      // ibItems empty (e.g. after hard refresh) — fetch attachments from thread directly
+      _mvAttPanel.innerHTML='<div class="ai-load" style="margin-top:1rem"><div class="spinner"></div> Loading attachments...</div>';
+      fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${v.gmailThreadId}?format=full`,{headers:{Authorization:'Bearer '+token}})
+        .then(r=>r.ok?r.json():null)
+        .then(td=>{
+          if(!td){_mvAttPanel.innerHTML='';return;}
+          const _atts=[];
+          (td.messages||[]).forEach(m=>{
+            const _from=(m.payload&&m.payload.headers||[]).find(h=>h.name==='From')?.value||'';
+            if(!_from.toLowerCase().includes('orca ai ops')){
+              _atts.push(...extractAttachments(m.payload,m.id));
+            }
+          });
+          const _seen2=new Set();
+          const _uniq2=_atts.filter(a=>{if(_seen2.has(a.attachmentId))return false;_seen2.add(a.attachmentId);return true;});
+          _mvAttPanel.innerHTML=renderAttachmentsPanel(_uniq2,_latestBody,idx);
+        })
+        .catch(()=>{_mvAttPanel.innerHTML='';});
+    }
   }
 
   // Populate editable follow-up draft
