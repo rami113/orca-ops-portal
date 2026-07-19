@@ -2070,19 +2070,33 @@ async function fetchInboxByThreads(){
             addTimeline(vessels[vi],'reply','Captain replied',from,body.substring(0,2000),msg.id);
           }
         }
-        // Only add captain replies to ibItems (inbox badge + panel + analyze)
+        // Only one ibItem per vessel — always the latest reply with all attachments accumulated
         if(!isOpsMsg){
           const atts=extractAttachments(msg.payload,msg.id);
-          const existingIdx=(ibItems||[]).findIndex(it=>it.msgId===msg.id);
-          if(existingIdx>=0){
-            // Already in ibItems (e.g. from shared sheet) — patch attachments if missing
-            if(!ibItems[existingIdx].attachments||!ibItems[existingIdx].attachments.length){
-              ibItems[existingIdx].attachments=atts;
+          const displayBody=body.trim()||atts.map(a=>a.filename).join(', ');
+          if(!displayBody)continue; // skip quoted-chain-only messages
+          // Find existing ibItem for this vessel (by vi)
+          const vesselItemIdx=(ibItems||[]).findIndex(it=>it.vi===vi);
+          if(vesselItemIdx>=0){
+            const existing=ibItems[vesselItemIdx];
+            const existingDate=new Date(existing.date||0);
+            const thisDate=new Date(date||0);
+            // Always accumulate attachments from all replies
+            const existingAtts=existing.attachments||[];
+            const existingAids=new Set(existingAtts.map(a=>a.attachmentId));
+            const newAtts=atts.filter(a=>!existingAids.has(a.attachmentId));
+            ibItems[vesselItemIdx].attachments=[...existingAtts,...newAtts];
+            // Update to latest reply if this message is newer
+            if(thisDate>existingDate){
+              ibItems[vesselItemIdx].msgId=msg.id;
+              ibItems[vesselItemIdx].body=displayBody.substring(0,2000);
+              ibItems[vesselItemIdx].date=date;
+              ibItems[vesselItemIdx].from=from;
+              ibItems[vesselItemIdx].fe=fe;
+              ibItems[vesselItemIdx].subj=subj;
+              ibItems[vesselItemIdx].isNew=!logged;
             }
           } else {
-            // Skip if body is empty AND no attachments (quoted-chain only)
-            const displayBody=body.trim()||atts.map(a=>a.filename).join(', ');
-            if(!displayBody)continue;
             const item={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi,isNew:!logged,attachments:atts};
             if(!logged)sheetsInboxSave(item);
             ibItems.push(item);
