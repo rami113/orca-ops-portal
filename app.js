@@ -2178,7 +2178,11 @@ async function fetchInboxByThreads(){
           if(!alreadyInItems){
             // Extract attachment metadata from the message payload (no extra API call needed)
             const attachments=extractAttachments(msg.payload,msg.id);
-            console.log('[DEBUG] msg',msg.id,'body:',JSON.stringify(body.slice(0,60)),'atts:',attachments.length,'payload parts:',(msg.payload?.parts||[]).map(p=>({fn:p.filename,mt:p.mimeType,aid:p.body?.attachmentId?.slice(0,10),hdrs:(p.headers||[]).map(h=>h.name)})));
+            console.log('[DEBUG] msg',msg.id,'body:',JSON.stringify(body.slice(0,60)),'atts:',attachments.length);
+            (msg.payload?.parts||[]).forEach((p,pi)=>{
+              console.log('[DEBUG] part'+pi,{fn:p.filename,mt:p.mimeType,aid:p.body?.attachmentId?.slice(0,10),hdrs:(p.headers||[]).map(h=>h.name+':'+h.value?.slice(0,40))});
+              (p.parts||[]).forEach((pp,ppi)=>console.log('[DEBUG] part'+pi+'.'+ppi,{fn:pp.filename,mt:pp.mimeType,aid:pp.body?.attachmentId?.slice(0,10),hdrs:(pp.headers||[]).map(h=>h.name+':'+h.value?.slice(0,40))}));
+            });
             // Skip messages that are just a quoted reply chain with no new content and no attachments
             // These show up when Gmail splits threads — body is empty after stripping quoted text
             if(!body.trim()&&!attachments.length)continue;
