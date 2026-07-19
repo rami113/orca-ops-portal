@@ -793,11 +793,183 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
   const _recvM=[...new Map([...(v.receivedItems||[]),...(result.received||[])].map(x=>[itemKey(x),x])).values()];
   result.followup_email=buildFollowupEmail({...v,receivedItems:_recvM},result.missing||[]);
   document.getElementById('mib-fu').value=result.followup_email||'';
+  // Show attachments from curIb if available (set by openCaseAnalyze via ibItems match)
+  const _attPanelR=document.getElementById('mib-attachments');
+  if(_attPanelR)_attPanelR.innerHTML=renderAttachmentsPanel(curIb.attachments||[],replyText||'');
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-res').style.display='block';
   document.getElementById('mib-abtn').style.display='none';
   document.getElementById('mib-sbtn').style.display='inline-flex';
   document.getElementById('mod-ib').style.display='flex';
+}
+
+// ── Attachment helpers ────────────────────────────────────────────────────────
+
+// Walk a Gmail message payload tree and collect all attachment parts.
+// Returns array of {filename, mimeType, attachmentId, msgId, size}
+function extractAttachments(payload, msgId){
+  const results=[];
+  const walk=(part)=>{
+    if(!part)return;
+    const fn=part.filename||'';
+    const aid=part.body&&part.body.attachmentId;
+    // A part is an attachment if it has a filename and an attachmentId
+    if(fn&&aid){
+      results.push({
+        filename:fn,
+        mimeType:part.mimeType||'application/octet-stream',
+        attachmentId:aid,
+        msgId:msgId||'',
+        size:part.body.size||0
+      });
+    }
+    if(part.parts)part.parts.forEach(walk);
+  };
+  walk(payload);
+  return results;
+}
+
+// Classify an attachment into a category based on filename and mimeType
+function classifyAttachment(att){
+  const fn=String(att.filename||'').toLowerCase();
+  const mt=String(att.mimeType||'').toLowerCase();
+  const isGA=/\bga\b|general.?arrangement/i.test(att.filename);
+  const isImg=mt.startsWith('image/')||/\.(png|jpg|jpeg|gif|webp|bmp|tiff?)$/i.test(fn);
+  const isPdf=mt==='application/pdf'||fn.endsWith('.pdf');
+  const isDoc=/\.(doc|docx)$/i.test(fn)||mt.includes('wordprocessingml')||mt.includes('msword');
+  const isDwg=/\.(dwg|dxf|dwf)$/i.test(fn);
+  if(isGA&&(isPdf||isDwg||isImg||isDoc))return 'ga';
+  if(isGA)return 'ga';
+  if(isImg)return 'photo';
+  if(isPdf)return 'pdf';
+  if(isDoc)return 'doc';
+  if(isDwg)return 'drawing';
+  return 'other';
+}
+
+// Fetch the actual base64 data for an attachment on demand
+async function fetchAttachmentData(msgId, attachmentId){
+  if(!token)return null;
+  try{
+    const r=await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${attachmentId}`,
+      {headers:{Authorization:'Bearer '+token}}
+    );
+    if(!r.ok)return null;
+    const d=await r.json();
+    // Gmail uses URL-safe base64 — convert back to standard
+    return String(d.data||'').replace(/-/g,'+').replace(/_/g,'/');
+  }catch(e){console.warn('fetchAttachmentData failed',e);return null;}
+}
+
+// Trigger a browser download from base64 data
+function downloadAttachment(base64, filename, mimeType){
+  try{
+    const bin=atob(base64);
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    const blob=new Blob([bytes],{type:mimeType||'application/octet-stream'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=filename;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }catch(e){console.error('downloadAttachment failed',e);}
+}
+
+// Called when user clicks Download on an attachment card
+async function onAttachDownload(btn, msgId, attachmentId, filename, mimeType){
+  const orig=btn.innerHTML;
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i>';
+  const b64=await fetchAttachmentData(msgId,attachmentId);
+  btn.disabled=false;btn.innerHTML=orig;
+  if(!b64){await orcaAlert('Could not fetch attachment. Check your connection.','Error');return;}
+  downloadAttachment(b64,filename,mimeType);
+}
+
+// Called when user clicks Preview on an image attachment card
+async function onAttachPreview(btn, msgId, attachmentId, filename, mimeType, containerId){
+  const orig=btn.innerHTML;
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i>';
+  const b64=await fetchAttachmentData(msgId,attachmentId);
+  btn.disabled=false;btn.innerHTML=orig;
+  if(!b64){await orcaAlert('Could not load image.','Error');return;}
+  const container=document.getElementById(containerId);
+  if(!container)return;
+  const isOpen=container.style.display!=='none';
+  if(isOpen){container.style.display='none';btn.innerHTML='<i class="ti ti-eye"></i> Preview';return;}
+  container.innerHTML=`<img src="data:${mimeType};base64,${b64}" alt="${escapeHtml(filename)}" style="max-width:100%;max-height:320px;border-radius:6px;display:block;margin-top:8px;border:1px solid var(--border)"/>`;
+  container.style.display='block';
+  btn.innerHTML='<i class="ti ti-eye-off"></i> Hide';
+}
+
+// Render the attachments panel HTML — matches existing modal style exactly
+function renderAttachmentsPanel(attachments, bodyText){
+  if(!attachments||!attachments.length){
+    // Check if body text mentions attachments but none found
+    const mentionsAttach=/attach|herewith|enclosed|please find|find attached|see below/i.test(bodyText||'');
+    if(mentionsAttach){
+      return `<div style="margin-top:1rem">
+        <div class="sl" style="margin-bottom:8px">Attachments</div>
+        <div style="padding:10px 12px;background:var(--amber);border-radius:var(--rs);font-size:12px;color:var(--amber-t);display:flex;align-items:center;gap:7px">
+          <i class="ti ti-alert-triangle"></i> Captain mentioned attachments but no files were found in this email.
+        </div>
+      </div>`;
+    }
+    return '';
+  }
+
+  // Check if body mentions GA but no GA file is attached
+  const mentionsGA=/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bodyText||'');
+  const hasGAFile=attachments.some(a=>classifyAttachment(a)==='ga');
+  const gaWarning=mentionsGA&&!hasGAFile
+    ? `<div style="padding:8px 12px;background:var(--amber);border-radius:var(--rs);font-size:12px;color:var(--amber-t);display:flex;align-items:center;gap:7px;margin-bottom:8px">
+        <i class="ti ti-alert-triangle"></i> GA mentioned in reply but no GA file detected in attachments.
+      </div>`
+    : '';
+
+  const cards=attachments.map((att,i)=>{
+    const cat=classifyAttachment(att);
+    const isImg=cat==='photo';
+    const previewId='att-prev-'+att.msgId.slice(-6)+'-'+i;
+    const sizeKb=att.size?Math.ceil(att.size/1024)+'KB':'';
+
+    // Icon by category — matching existing ti icon style
+    const iconMap={ga:'ti-file-vector',photo:'ti-photo',pdf:'ti-file-type-pdf',doc:'ti-file-type-doc',drawing:'ti-rulers',other:'ti-paperclip'};
+    const icon=iconMap[cat]||'ti-paperclip';
+
+    // Category badge — using existing badge classes
+    const badgeMap={ga:'bn',photo:'bgr',pdf:'br',doc:'bb',drawing:'ba',other:'bg'};
+    const labelMap={ga:'GA File',photo:'Photo',pdf:'PDF',doc:'Document',drawing:'Drawing',other:'File'};
+    const badgeCls=badgeMap[cat]||'bg';
+    const badgeLabel=labelMap[cat]||'File';
+
+    const previewBtn=isImg
+      ? `<button class="btn btn-s" onclick="onAttachPreview(this,'${att.msgId}','${att.attachmentId}','${escapeHtml(att.filename)}','${att.mimeType}','${previewId}')" title="Preview image"><i class="ti ti-eye"></i> Preview</button>`
+      : '';
+
+    return `<div style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:var(--white);display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div style="width:32px;height:32px;border-radius:6px;background:var(--navy-l);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--navy)">
+        <i class="ti ${icon}" style="font-size:16px"></i>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(att.filename)}">${escapeHtml(att.filename)}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+          <span class="badge ${badgeCls}" style="font-size:10px;padding:1px 7px">${badgeLabel}</span>
+          ${sizeKb?`<span style="font-size:11px;color:var(--faint)">${sizeKb}</span>`:''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        ${previewBtn}
+        <button class="btn btn-s btn-p" onclick="onAttachDownload(this,'${att.msgId}','${att.attachmentId}','${escapeHtml(att.filename)}','${att.mimeType}')" title="Download"><i class="ti ti-download"></i></button>
+      </div>
+    </div>
+    ${isImg?`<div id="${previewId}" style="display:none"></div>`:''}`;
+  }).join('');
+
+  return `<div style="margin-top:1rem">
+    <div class="sl" style="margin-bottom:8px">Attachments <span style="font-size:10px;background:var(--navy-l);color:var(--navy);border-radius:99px;padding:1px 8px;font-weight:700;margin-left:4px">${attachments.length}</span></div>
+    ${gaWarning}${cards}
+  </div>`;
 }
 
 function normTxt(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
@@ -1872,7 +2044,9 @@ async function fetchInboxByThreads(){
         if(!isOpsMsg){
           const alreadyInItems=(ibItems||[]).some(i=>i.msgId===msg.id);
           if(!alreadyInItems){
-            const item={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi,isNew:!logged};
+            // Extract attachment metadata from the message payload (no extra API call needed)
+            const attachments=extractAttachments(msg.payload,msg.id);
+            const item={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi,isNew:!logged,attachments};
             if(!logged)sheetsInboxSave(item);
             ibItems.push(item);
           }
@@ -2040,6 +2214,9 @@ async function sendFromViewModal(){
   const statusLabels={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
   document.getElementById('mib-stat-status').textContent=statusLabels[v.status]||v.status||'—';
 
+  // Render attachments panel immediately from metadata (no extra fetch needed)
+  const _attPanel=document.getElementById('mib-attachments');
+  if(_attPanel)_attPanel.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'');
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
   document.getElementById('mod-ib').style.display='flex';
@@ -2284,6 +2461,21 @@ function openV(idx){
   seedTimeline(v);
   const tl=document.getElementById('mv-timeline');
   if(tl)tl.innerHTML=renderTimeline(v);
+
+  // Attachments — collect from all captain reply ibItems for this vessel
+  const _mvAttPanel=document.getElementById('mv-attachments');
+  if(_mvAttPanel){
+    // Gather all attachments across all inbox items for this vessel
+    const _vesselAtts=(ibItems||[])
+      .filter(it=>it.vi===idx&&Array.isArray(it.attachments)&&it.attachments.length)
+      .flatMap(it=>it.attachments);
+    // Deduplicate by attachmentId
+    const _seenAtt=new Set();
+    const _uniqueAtts=_vesselAtts.filter(a=>{if(_seenAtt.has(a.attachmentId))return false;_seenAtt.add(a.attachmentId);return true;});
+    // Use most recent reply body for mismatch detection
+    const _latestBody=(ibItems||[]).filter(it=>it.vi===idx).slice(-1)[0]?.body||'';
+    _mvAttPanel.innerHTML=renderAttachmentsPanel(_uniqueAtts,_latestBody);
+  }
 
   // Populate editable follow-up draft
   const _mvMiss=v.missingItems||[];
