@@ -847,10 +847,14 @@ function extractAttachments(payload, msgId){
     }
 
     if(fn&&aid){
-      // Skip embedded email assets (Orca logo etc) — identified by Content-ID (cid: reference)
       const contentId=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-id');
-      console.log('[EXTRACT]',fn,'contentId:',contentId?.value,'->',!contentId?'KEEP':'SKIP');
-      if(!contentId){
+      const disposition=String((hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-disposition')||{}).value||'').toLowerCase();
+      // Only skip if Content-ID present AND disposition is NOT attachment
+      // Gmail assigns Content-ID to all parts in multipart/related — that alone is not enough
+      // Real captain attachments will have Content-Disposition: attachment even if they have Content-ID
+      // The Orca logo has Content-ID + Content-Disposition: inline → correctly skipped
+      const isEmbedded=!!contentId&&!disposition.includes('attachment');
+      if(!isEmbedded){
         results.push({
           filename:fn,
           mimeType:part.mimeType||'application/octet-stream',
@@ -2179,12 +2183,7 @@ async function fetchInboxByThreads(){
           if(!alreadyInItems){
             // Extract attachment metadata from the message payload (no extra API call needed)
             const attachments=extractAttachments(msg.payload,msg.id);
-            console.log('[DEBUG] msg',msg.id,'body:',JSON.stringify(body.slice(0,60)),'atts:',attachments.length);
-            const _dbgWalk=(p,prefix)=>{
-              console.log('[DEBUG]',prefix,{fn:p.filename,mt:p.mimeType,aid:p.body?.attachmentId?.slice(0,10),hdrs:(p.headers||[]).map(h=>h.name+': '+String(h.value||'').slice(0,60))});
-              (p.parts||[]).forEach((pp,i)=>_dbgWalk(pp,prefix+'.'+i));
-            };
-            (msg.payload?.parts||[]).forEach((p,i)=>_dbgWalk(p,'part'+i));
+
             // Skip messages that are just a quoted reply chain with no new content and no attachments
             // These show up when Gmail splits threads — body is empty after stripping quoted text
             if(!body.trim()&&!attachments.length)continue;
