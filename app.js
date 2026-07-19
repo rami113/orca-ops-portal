@@ -800,6 +800,9 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     vessels[idx]={...v,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
     saveVessels();updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
+    // Re-render attachments panel to update warning (tagged file no longer "unidentified")
+    const _ap=document.getElementById('mib-attachments');
+    if(_ap&&curIb)_ap.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',idx);
     // Update ibAna and refresh Received/Missing panels in the open modal
     if(ibAna){
       const _allRec=[...new Map([...(ibAna.received||[]),tag].map(x=>[itemKey(x),x])).values()];
@@ -2041,6 +2044,9 @@ async function fetchInboxByThreads(){
       const thread=await r.json();
       const messages=(thread.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
       const vi=vessels.indexOf(vessel);
+      // _captainMsgs collects data from all captain messages in this thread
+      // so we can build ONE ibItem per vessel after processing all messages
+      const _captainMsgs={};
       for(let msgIdx=0;msgIdx<messages.length;msgIdx++){
         const msg=messages[msgIdx];
         const hdr=(msg.payload&&msg.payload.headers)||[];
@@ -2077,37 +2083,38 @@ async function fetchInboxByThreads(){
             addTimeline(vessels[vi],'reply','Captain replied',from,body.substring(0,2000),msg.id);
           }
         }
-        // Only one ibItem per vessel — always the latest reply with all attachments accumulated
+        // Collect per-message data — we'll build the single ibItem after the loop
         if(!isOpsMsg){
           const atts=extractAttachments(msg.payload,msg.id);
           const displayBody=body.trim()||atts.map(a=>a.filename).join(', ');
           if(!displayBody)continue; // skip quoted-chain-only messages
-          // Find existing ibItem for this vessel (by vi)
-          const vesselItemIdx=(ibItems||[]).findIndex(it=>it.vi===vi);
-          if(vesselItemIdx>=0){
-            const existing=ibItems[vesselItemIdx];
-            const existingDate=new Date(existing.date||0);
-            const thisDate=new Date(date||0);
-            // Always accumulate attachments from all replies
-            const existingAtts=existing.attachments||[];
-            const existingAids=new Set(existingAtts.map(a=>a.attachmentId));
-            const newAtts=atts.filter(a=>!existingAids.has(a.attachmentId));
-            ibItems[vesselItemIdx].attachments=[...existingAtts,...newAtts];
-            // Update to latest reply if this message is newer
-            if(thisDate>existingDate){
-              ibItems[vesselItemIdx].msgId=msg.id;
-              ibItems[vesselItemIdx].body=displayBody.substring(0,2000);
-              ibItems[vesselItemIdx].date=date;
-              ibItems[vesselItemIdx].from=from;
-              ibItems[vesselItemIdx].fe=fe;
-              ibItems[vesselItemIdx].subj=subj;
-              ibItems[vesselItemIdx].isNew=!logged;
-            }
-          } else {
-            const item={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi,isNew:!logged,attachments:atts};
-            if(!logged)sheetsInboxSave(item);
-            ibItems.push(item);
-          }
+          if(!_captainMsgs[vi])_captainMsgs[vi]={latestMsg:null,latestBody:'',latestDate:new Date(0),allAtts:[],allAids:new Set(),firstUnlogged:null};
+          const cm=_captainMsgs[vi];
+          // Track latest message
+          const thisDate=new Date(date||0);
+          if(thisDate>cm.latestDate){cm.latestDate=thisDate;cm.latestMsg={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi,isNew:!logged};}
+          // Accumulate attachments deduped by attachmentId
+          atts.forEach(a=>{if(!cm.allAids.has(a.attachmentId)){cm.allAids.add(a.attachmentId);cm.allAtts.push(a);}});
+          // Track first unlogged for sheetsInboxSave
+          if(!logged&&!cm.firstUnlogged)cm.firstUnlogged={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi};
+        }
+      }
+      // After processing all messages in this thread, build/update ONE ibItem for this vessel
+      for(const _vi of Object.keys(_captainMsgs)){
+        const cm=_captainMsgs[_vi];
+        if(!cm.latestMsg)continue;
+        const existingIdx=(ibItems||[]).findIndex(it=>String(it.vi)===String(_vi));
+        const itemWithAtts={...cm.latestMsg,attachments:cm.allAtts};
+        if(existingIdx>=0){
+          // Replace attachments completely from fresh fetch — prevents accumulation across calls
+          // Preserve any manually set tags
+          const prevAtts=ibItems[existingIdx].attachments||[];
+          const tagMap={};prevAtts.forEach(a=>{if(a.tag)tagMap[a.attachmentId]=a.tag;});
+          cm.allAtts.forEach(a=>{if(tagMap[a.attachmentId])a.tag=tagMap[a.attachmentId];});
+          ibItems[existingIdx]={...itemWithAtts,attachments:cm.allAtts};
+        } else {
+          if(cm.firstUnlogged)sheetsInboxSave({...cm.firstUnlogged,attachments:[]});
+          ibItems.push(itemWithAtts);
         }
       }
     }catch(e){
