@@ -813,15 +813,22 @@ function extractAttachments(payload, msgId){
     if(!part)return;
     const fn=part.filename||'';
     const aid=part.body&&part.body.attachmentId;
-    // A part is an attachment if it has a filename and an attachmentId
     if(fn&&aid){
-      results.push({
-        filename:fn,
-        mimeType:part.mimeType||'application/octet-stream',
-        attachmentId:aid,
-        msgId:msgId||'',
-        size:part.body.size||0
-      });
+      const hdrs=(part.headers||[]);
+      // Skip inline images — these are embedded email assets (e.g. logo in HTML email)
+      // identified by Content-ID header or Content-Disposition: inline
+      const contentId=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-id');
+      const disposition=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-disposition');
+      const isInline=!!contentId||(disposition&&String(disposition.value||'').toLowerCase().startsWith('inline'));
+      if(!isInline){
+        results.push({
+          filename:fn,
+          mimeType:part.mimeType||'application/octet-stream',
+          attachmentId:aid,
+          msgId:msgId||'',
+          size:part.body.size||0
+        });
+      }
     }
     if(part.parts)part.parts.forEach(walk);
   };
