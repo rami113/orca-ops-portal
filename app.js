@@ -825,14 +825,29 @@ function extractAttachments(payload, msgId){
   const results=[];
   const walk=(part)=>{
     if(!part)return;
-    const fn=part.filename||'';
+    const hdrs=(part.headers||[]);
     const aid=part.body&&part.body.attachmentId;
+
+    // Get filename — Gmail may put it in part.filename OR in Content-Disposition header
+    let fn=part.filename||'';
+    if(!fn){
+      const disp=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-disposition');
+      if(disp){
+        const m=String(disp.value||'').match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i);
+        if(m)fn=decodeURIComponent(m[1].trim().replace(/['"]/g,''));
+      }
+    }
+    // Also try Content-Type header for name= parameter
+    if(!fn){
+      const ct=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-type');
+      if(ct){
+        const m=String(ct.value||'').match(/name\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i);
+        if(m)fn=decodeURIComponent(m[1].trim().replace(/['"]/g,''));
+      }
+    }
+
     if(fn&&aid){
-      const hdrs=(part.headers||[]);
-      // Skip embedded email assets (e.g. Orca logo in our outbound HTML template).
-      // These are identified by a Content-ID header (cid: references in HTML).
-      // Do NOT skip based on Content-Disposition alone — captains' image attachments
-      // can legitimately have Content-Disposition: inline but are still real files.
+      // Skip embedded email assets (Orca logo etc) — identified by Content-ID (cid: reference)
       const contentId=hdrs.find(h=>h.name&&h.name.toLowerCase()==='content-id');
       if(!contentId){
         results.push({
@@ -2163,6 +2178,7 @@ async function fetchInboxByThreads(){
           if(!alreadyInItems){
             // Extract attachment metadata from the message payload (no extra API call needed)
             const attachments=extractAttachments(msg.payload,msg.id);
+            console.log('[DEBUG] msg',msg.id,'body:',JSON.stringify(body.slice(0,60)),'atts:',attachments.length,'payload parts:',(msg.payload?.parts||[]).map(p=>({fn:p.filename,mt:p.mimeType,aid:p.body?.attachmentId?.slice(0,10),hdrs:(p.headers||[]).map(h=>h.name)})));
             // Skip messages that are just a quoted reply chain with no new content and no attachments
             // These show up when Gmail splits threads — body is empty after stripping quoted text
             if(!body.trim()&&!attachments.length)continue;
