@@ -690,6 +690,192 @@ function decodeGmailBody(payload){
   };
 }
 
+// ── Attachment helpers ─────────────────────────────────────────────────────────
+
+// Walk Gmail message payload and return real captain attachments (not embedded logo etc.)
+function extractAttachments(payload, msgId){
+  const results=[];
+  const walk=(part)=>{
+    if(!part)return;
+    const hdrs=part.headers||[];
+    const aid=part.body&&part.body.attachmentId;
+    // Get filename from part.filename or Content-Disposition or Content-Type headers
+    let fn=part.filename||'';
+    if(!fn){
+      const cd=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-disposition');
+      if(cd){const m=String(cd.value||'').match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i);if(m)fn=decodeURIComponent(m[1].trim().replace(/['"]/g,''));}
+    }
+    if(!fn){
+      const ct=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-type');
+      if(ct){const m=String(ct.value||'').match(/name\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i);if(m)fn=decodeURIComponent(m[1].trim().replace(/['"]/g,''));}
+    }
+    if(fn&&aid){
+      const cid=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-id');
+      const disp=String((hdrs.find(h=>String(h.name||'').toLowerCase()==='content-disposition')||{}).value||'').toLowerCase();
+      // Skip only if Content-ID present AND not explicitly an attachment (logo embedded in HTML email)
+      const isEmbedded=!!cid&&!disp.includes('attachment');
+      if(!isEmbedded){
+        results.push({filename:fn,mimeType:part.mimeType||'application/octet-stream',attachmentId:aid,msgId:msgId||'',size:part.body.size||0});
+      }
+    }
+    if(part.parts)part.parts.forEach(walk);
+  };
+  walk(payload);
+  return results;
+}
+
+// Auto-tag a file to a checklist item based on filename keywords
+function autoTagFromFilename(filename){
+  const fn=String(filename||'').toLowerCase().replace(/[_\-\.]/g,' ');
+  const hasGA=/\bga\b|general\s*arrangement/.test(fn);
+  const hasBridge=/bridge|console|wheelhouse/.test(fn);
+  if(hasGA&&hasBridge)return 'Bridge Console GA';
+  if(hasGA)return 'Vessel GA';
+  if(/port|schedule|itinerary|\beta\b|voyage|port\s*call|agent/.test(fn))return 'Next 2\u20133 upcoming port calls + corresponding agent details for each port';
+  if(/cable|penetration/.test(fn))return 'Cable penetration';
+  if(/vsat|routing|diagram/.test(fn))return 'VSAT routing';
+  if(/power|electrical|connection/.test(fn))return 'Power connection';
+  if(/monitor|screen|display/.test(fn))return 'Proposed monitor location photos';
+  if(/seapod|sea\s*pod|camera|pod/.test(fn))return 'Proposed Seapod location photos';
+  if(/acknowledg|sign|accept/.test(fn))return 'Docs acknowledgement';
+  return '';
+}
+
+// Fetch base64 data for an attachment on demand (called on Download/Preview click)
+async function fetchAttachmentData(msgId,attachmentId){
+  if(!token)return null;
+  try{
+    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${attachmentId}`,{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok)return null;
+    const d=await r.json();
+    return String(d.data||'').replace(/-/g,'+').replace(/_/g,'/');
+  }catch(e){console.warn('fetchAttachmentData failed',e);return null;}
+}
+
+// Download a file from base64 data
+function downloadAttachment(b64,filename,mimeType){
+  try{
+    const bin=atob(b64);const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    const blob=new Blob([bytes],{type:mimeType||'application/octet-stream'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=filename;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }catch(e){console.error('downloadAttachment failed',e);}
+}
+
+// Button handlers — called from inline onclick in rendered HTML
+async function onAttachDownload(btn,msgId,attachmentId,filename,mimeType){
+  const orig=btn.innerHTML;btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i>';
+  const b64=await fetchAttachmentData(msgId,attachmentId);
+  btn.disabled=false;btn.innerHTML=orig;
+  if(!b64){await orcaAlert('Could not fetch attachment.','Error');return;}
+  downloadAttachment(b64,filename,mimeType);
+}
+
+async function onAttachPreview(btn,msgId,attachmentId,filename,mimeType,containerId){
+  const orig=btn.innerHTML;btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i>';
+  const b64=await fetchAttachmentData(msgId,attachmentId);
+  btn.disabled=false;btn.innerHTML=orig;
+  if(!b64){await orcaAlert('Could not load image.','Error');return;}
+  const container=document.getElementById(containerId);if(!container)return;
+  if(container.style.display!=='none'){container.style.display='none';btn.innerHTML='<i class="ti ti-eye"></i> Preview';return;}
+  container.innerHTML=`<img src="data:${mimeType};base64,${b64}" alt="${escapeHtml(filename)}" style="max-width:100%;max-height:320px;border-radius:6px;display:block;margin-top:8px;border:1px solid var(--border)"/>`;
+  container.style.display='block';btn.innerHTML='<i class="ti ti-eye-off"></i> Hide';
+}
+
+// Tag dropdown change handler
+function onAttachTag(sel,attachmentId,vesselIdx){
+  const tag=sel.value;const idx=parseInt(vesselIdx);
+  if(isNaN(idx)||!vessels[idx])return;
+  const v=vessels[idx];
+  // Persist tag on the ibItem
+  (ibItems||[]).forEach(it=>{(it.attachments||[]).forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});});
+  if(tag){
+    const prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
+    const merged=[...new Map([...prev,tag].map(x=>[itemKey(x),x])).values()];
+    vessels[idx]={...v,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
+    saveVessels();updateMetrics();renderTable();
+    const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
+  } else {
+    const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
+  }
+}
+
+// Render the attachments panel
+function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
+  const vi=vesselIdx!==undefined?String(vesselIdx):'';
+  const iconMap={photo:'ti-photo',pdf:'ti-file-type-pdf',doc:'ti-file-type-doc',drawing:'ti-rulers',spreadsheet:'ti-table',other:'ti-paperclip'};
+  const classify=(att)=>{
+    const fn=String(att.filename||'').toLowerCase();const mt=String(att.mimeType||'').toLowerCase();
+    if(mt.startsWith('image/')||/\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(fn))return 'photo';
+    if(mt==='application/pdf'||fn.endsWith('.pdf'))return 'pdf';
+    if(/\.(doc|docx)$/i.test(fn)||mt.includes('wordprocessingml'))return 'doc';
+    if(/\.(dwg|dxf|dwf)$/i.test(fn))return 'drawing';
+    if(/\.(xls|xlsx|csv)$/i.test(fn)||mt.includes('spreadsheet'))return 'spreadsheet';
+    return 'other';
+  };
+
+  // Warnings when no attachments
+  if(!attachments||!attachments.length){
+    const warns=[];
+    if(/attach|herewith|enclosed|please find|find attached/i.test(bodyText||''))warns.push('Captain mentioned attachments but no files were found in this email.');
+    if(/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bodyText||''))warns.push('GA mentioned in reply but no GA file was attached.');
+    if(!warns.length)return '';
+    return `<div style="margin-bottom:1rem"><div class="sl" style="margin-bottom:8px">Attachments</div>${warns.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('')}</div>`;
+  }
+
+  // Warnings with files present
+  const warns=[];
+  const mentionsGA=/vessel\s*ga|bridge\s*(console\s*)?ga|general\s*arrangement/i.test(bodyText||'');
+  const hasGAFile=attachments.some(a=>autoTagFromFilename(a.filename).includes('GA'));
+  if(mentionsGA&&!hasGAFile)warns.push('GA mentioned in reply but no GA file detected in attachments.');
+  const untagged=attachments.filter(a=>!autoTagFromFilename(a.filename)&&!a.tag);
+  if(untagged.length)warns.push(`${untagged.length} file${untagged.length>1?'s':''} could not be auto-identified — please tag them below.`);
+  const warnHtml=warns.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('');
+
+  const tagOpts=(fn,existingTag)=>{
+    const auto=existingTag||autoTagFromFilename(fn);
+    return [{val:'',label:'— Untagged —'},...REQUIRED_ITEMS.map(r=>({val:r,label:r}))]
+      .map(o=>`<option value="${escapeHtml(o.val)}"${auto===o.val?' selected':''}>${escapeHtml(o.label)}</option>`).join('');
+  };
+
+  const cards=attachments.map((att,i)=>{
+    const cat=classify(att);const isImg=cat==='photo';
+    const prevId='att-prev-'+String(att.msgId||'').slice(-6)+'-'+i;
+    const sizeKb=att.size?Math.ceil(att.size/1024)+'KB':'';
+    const icon=iconMap[cat]||'ti-paperclip';
+    const autoTag=att.tag||autoTagFromFilename(att.filename);
+    const safeFn=escapeHtml(att.filename);
+    const safeMt=escapeHtml(att.mimeType);
+    const safeAid=escapeHtml(att.attachmentId);
+    const safeMid=escapeHtml(att.msgId);
+    return `<div data-att-row style="border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;background:${autoTag?'#f0faf4':'var(--white)'};margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:32px;height:32px;border-radius:6px;background:var(--navy-l);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--navy)"><i class="ti ${icon}" style="font-size:16px"></i></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${safeFn}">${safeFn}</div>
+          ${sizeKb?`<div style="font-size:11px;color:var(--faint);margin-top:1px">${sizeKb}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${isImg?`<button class="btn btn-s" onclick="onAttachPreview(this,'${safeMid}','${safeAid}','${safeFn}','${safeMt}','${prevId}')"><i class="ti ti-eye"></i> Preview</button>`:''}
+          <button class="btn btn-s btn-p" onclick="onAttachDownload(this,'${safeMid}','${safeAid}','${safeFn}','${safeMt}')"><i class="ti ti-download"></i></button>
+        </div>
+      </div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap">Tag as:</span>
+        <select style="flex:1;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit;color:var(--text)" onchange="onAttachTag(this,'${safeAid}','${vi}')">
+          ${tagOpts(att.filename,att.tag||'')}
+        </select>
+        ${autoTag?`<span style="font-size:11px;color:var(--green);white-space:nowrap;font-weight:600"><i class="ti ti-circle-check"></i> Auto-tagged</span>`:''}
+      </div>
+      ${isImg?`<div id="${prevId}" style="display:none"></div>`:''}
+    </div>`;
+  }).join('');
+
+  return `<div style="margin-bottom:1rem"><div class="sl" style="margin-bottom:8px">Attachments <span style="font-size:10px;background:var(--navy-l);color:var(--navy);border-radius:99px;padding:1px 8px;font-weight:700;margin-left:4px">${attachments.length}</span></div>${warnHtml}${cards}</div>`;
+}
+
 function openManualAnalyzeWithReply(i,replyText){
   // If called from dashboard context (no reply found), show inline message instead of navigating
   if(!replyText){
@@ -1870,9 +2056,18 @@ async function fetchInboxByThreads(){
         }
         // Only add captain replies to ibItems (inbox badge + panel + analyze)
         if(!isOpsMsg){
-          const alreadyInItems=(ibItems||[]).some(i=>i.msgId===msg.id);
-          if(!alreadyInItems){
-            const item={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi,isNew:!logged};
+          const atts=extractAttachments(msg.payload,msg.id);
+          const existingIdx=(ibItems||[]).findIndex(it=>it.msgId===msg.id);
+          if(existingIdx>=0){
+            // Already in ibItems (e.g. from shared sheet) — patch attachments if missing
+            if(!ibItems[existingIdx].attachments||!ibItems[existingIdx].attachments.length){
+              ibItems[existingIdx].attachments=atts;
+            }
+          } else {
+            // Skip if body is empty AND no attachments (quoted-chain only)
+            const displayBody=body.trim()||atts.map(a=>a.filename).join(', ');
+            if(!displayBody)continue;
+            const item={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi,isNew:!logged,attachments:atts};
             if(!logged)sheetsInboxSave(item);
             ibItems.push(item);
           }
@@ -2040,6 +2235,9 @@ async function sendFromViewModal(){
   const statusLabels={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
   document.getElementById('mib-stat-status').textContent=statusLabels[v.status]||v.status||'—';
 
+  // Render attachments panel from metadata already stored on the ibItem
+  const _ap=document.getElementById('mib-attachments');
+  if(_ap)_ap.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',curIb.vi);
   document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
   document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
   document.getElementById('mod-ib').style.display='flex';
