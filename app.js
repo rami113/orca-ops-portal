@@ -791,13 +791,17 @@ function onAttachTag(sel,attachmentId,vesselIdx){
   const tag=sel.value;const idx=parseInt(vesselIdx);
   if(isNaN(idx)||!vessels[idx])return;
   const v=vessels[idx];
-  // Persist tag on curIb and ibItems
+  // Persist tag on curIb and ibItems in memory
   if(curIb&&Array.isArray(curIb.attachments))curIb.attachments.forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});
   (ibItems||[]).forEach(it=>{(it.attachments||[]).forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});});
+  // Persist tag on vessel.attachmentTags — survives refresh, session changes, other users
+  const _attTags=Object.assign({},v.attachmentTags||{});
+  if(tag)_attTags[attachmentId]=tag;
+  else delete _attTags[attachmentId];
   if(tag){
     const prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
     const merged=[...new Map([...prev,tag].map(x=>[itemKey(x),x])).values()];
-    vessels[idx]={...v,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
+    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
     saveVessels();updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
     // Re-render attachments panel to update warning (tagged file no longer "unidentified")
@@ -814,7 +818,12 @@ function onAttachTag(sel,attachmentId,vesselIdx){
       if(missEl)missEl.innerHTML=ibAna.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
     }
   } else {
+    // Tag cleared — update vessel without this tag
+    vessels[idx]={...v,attachmentTags:_attTags};
+    saveVessels();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
+    const _ap2=document.getElementById('mib-attachments');
+    if(_ap2&&curIb)_ap2.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',idx);
   }
 }
 
@@ -2107,14 +2116,20 @@ async function fetchInboxByThreads(){
       for(const _vi of Object.keys(_captainMsgs)){
         const cm=_captainMsgs[_vi];
         if(!cm.latestMsg)continue;
+        const _viInt=parseInt(_vi);
+        const _vessel=vessels[_viInt];
+        // Restore saved tags from vessel.attachmentTags (persisted to Sheet — survives refresh)
+        const _savedTags=(_vessel&&_vessel.attachmentTags)||{};
+        cm.allAtts.forEach(a=>{
+          if(_savedTags[a.attachmentId])a.tag=_savedTags[a.attachmentId];
+        });
         const existingIdx=(ibItems||[]).findIndex(it=>String(it.vi)===String(_vi));
         const itemWithAtts={...cm.latestMsg,attachments:cm.allAtts};
         if(existingIdx>=0){
-          // Replace attachments completely from fresh fetch — prevents accumulation across calls
-          // Preserve any manually set tags
+          // Replace attachments completely from fresh fetch — tags already restored above
           const prevAtts=ibItems[existingIdx].attachments||[];
           const tagMap={};prevAtts.forEach(a=>{if(a.tag)tagMap[a.attachmentId]=a.tag;});
-          cm.allAtts.forEach(a=>{if(tagMap[a.attachmentId])a.tag=tagMap[a.attachmentId];});
+          cm.allAtts.forEach(a=>{if(!a.tag&&tagMap[a.attachmentId])a.tag=tagMap[a.attachmentId];});
           ibItems[existingIdx]={...itemWithAtts,attachments:cm.allAtts};
         } else {
           if(cm.firstUnlogged)sheetsInboxSave({...cm.firstUnlogged,attachments:[]});
