@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- ORCA OPS PORTAL v35.11 visible reset shared db -->
+<!-- ORCA OPS PORTAL v35.7 exact inbox matching -->
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Orca AI - Installation Coordinator</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<div id="auth-screen">
+  <!-- Left panel -->
+  <div class="auth-left">
+    <div class="auth-left-inner">
+      <img class="auth-wordmark" src="logo.png" alt="Orca AI" onerror="this.style.display='none'"/>
+      <div style="font-size:13px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.5);text-transform:uppercase;margin-bottom:2rem">ORCA AI</div>
+      <h1>Installation<br>Coordinator</h1>
+      <p>Track vessel installations, manage captain replies, and coordinate your team — all in one place.</p>
+      <div class="auth-left-stats">
+        <div class="auth-stat"><div class="auth-stat-n">9</div><div class="auth-stat-l">Items tracked</div></div>
+        <div class="auth-stat"><div class="auth-stat-n">2m</div><div class="auth-stat-l">Auto-refresh</div></div>
+        <div class="auth-stat"><div class="auth-stat-n">AI</div><div class="auth-stat-l">Powered</div></div>
+      </div>
+    </div>
+  </div>
+  <!-- Right panel -->
+  <div class="auth-right">
+    <div class="auth-box">
+      <div class="auth-logo" style="margin-bottom:1.8rem">
+        <div style="width:52px;height:52px;background:var(--navy);border-radius:14px;display:inline-flex;align-items:center;justify-content:center">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 17l4-8 4 4 4-6 4 10"/><circle cx="12" cy="12" r="10" stroke-opacity=".3"/></svg>
+        </div>
+      </div>
+      <h2>Welcome back</h2>
+      <p>Sign in to access the portal and manage vessel installations.</p>
+      <div class="auth-signin-label">Continue with</div>
+      <button class="google-btn" onclick="signIn()">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G"/>
+        Sign in with Google
+      </button>
+      <div class="auth-note">Only @orca-ai.io accounts are permitted</div>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:16px">
+      <img src="logo.png" alt="Orca AI" style="height:28px" onerror="this.outerHTML='<span style=\'font-weight:800;color:#1D2E6B;font-size:15px\'>ORCA AI</span>'"/>
+      <nav class="nav-tabs">
+        <button class="tab active" onclick="showTab('dashboard')"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
+        <button class="tab" onclick="showTab('inbox')"><i class="ti ti-inbox"></i> Inbox<span class="ib-badge" id="ib-count" style="display:none">0</span></button>
+
+        <button class="tab" id="tab-admin" style="display:none" onclick="showTab('admin')"><i class="ti ti-settings"></i> Admin</button>
+      </nav>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="user-pill"><img class="user-avatar" id="uav" src="" alt=""/><span id="uname"></span></div>
+      <button class="btn btn-s" onclick="signOut()"><i class="ti ti-logout"></i> Sign out</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div id="view-dashboard" class="view active">
+      <div id="shared-db-warning" style="display:none;background:#fff3cd;border:1px solid #f0d98c;color:#7a5200;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+        <strong>Shared database is not configured.</strong> Data is currently saved only on this browser. Paste a shared Google Sheet ID into <code>SHARED_SHEET_ID</code> in this HTML file so all users see the same dashboard.
+      </div>
+      <div class="hero">
+        <div class="hero-left">
+          <div class="hero-logo-wrap">
+            <img class="hero-logo" src="logo.png" alt="Orca AI" onerror="this.outerHTML='<div class=\'hero-logo-text\'>ORCA AI</div>'"/>
+          </div>
+          <div><h1>Installation Coordinator</h1><p>Manage vessel installations, track replies, and coordinate your team.</p></div>
+        </div>
+        <button class="btn btn-g" onclick="openStart()"><i class="ti ti-rocket"></i> Start Coordination</button>
+      </div>
+      <div class="metrics-wrap"><div class="metrics">
+        <div class="metric"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t" style="color:#1D2E6B">0</div><div class="metric-sub">being tracked</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-circle-check" style="color:#003d1a"></i> Ready</div><div class="metric-val" id="m-r" style="color:#003d1a">0</div><div class="metric-sub">ready for installation</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w" style="color:#1D2E6B">0</div><div class="metric-sub">under 3 days</div></div>
+        <div class="metric"><div class="metric-label"><i class="ti ti-alert-triangle" style="color:#E24B4A"></i> Require attention</div><div class="metric-val" id="m-a" style="color:#E24B4A">0</div><div class="metric-sub">7+ days or blocker</div></div>
+      </div></div>
+      <div class="panel">
+        <div class="sh">
+          <div style="font-size:15px;font-weight:700">All vessels</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-s" onclick="refreshSharedData()"><i class="ti ti-database"></i> Sync</button><button class="btn btn-s" id="btn-chk" onclick="checkInbox()"><i class="ti ti-refresh"></i> Check inbox</button><span style="font-size:11px;color:var(--faint);margin-left:4px" id="last-refresh-label"></span>
+            <div style="position:relative;display:inline-block">
+              <button id="btn-fleet-filter" onclick="toggleFleetPicker()" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit"><i class="ti ti-ship" style="font-size:13px"></i> <span id="fleet-filter-label">All fleets</span> <i class="ti ti-chevron-down" style="font-size:11px"></i></button>
+              <div id="fleet-picker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:1000;min-width:200px;padding:8px 0">
+                <div style="padding:6px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Filter by fleet</div>
+                <div id="fleet-picker-list" style="max-height:200px;overflow-y:auto"></div>
+                <div style="border-top:1px solid var(--border);margin-top:4px;padding:6px 12px">
+                  <button onclick="clearFleetFilter()" style="font-size:12px;color:var(--navy);background:none;border:none;cursor:pointer;padding:0">Clear filter</button>
+                </div>
+              </div>
+            </div>
+            <select id="flt" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+              <option value="">All statuses</option>
+              <option value="waiting">Waiting for reply</option>
+              <option value="followup">Follow-up required</option>
+              <option value="ready">Ready for installation</option>
+              <option value="scheduled">Installation scheduled</option>
+              
+            </select>
+            <select id="sort-vessels" onchange="renderTable()" style="width:auto;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+              <option value="newest">Newest email first</option>
+              <option value="oldest">Oldest email first</option>
+            </select>
+          </div>
+        </div>
+        <table class="tbl">
+          <thead><tr><th>Vessel</th><th>Status</th><th>Readiness</th><th>Risk</th><th>Light</th><th>Reply age</th><th>Email activity</th><th>Last activity</th><th>Owner</th><th>Actions</th></tr></thead>
+          <tbody id="vtbody"></tbody>
+        </table>
+        <div id="vempty" style="text-align:center;padding:3rem;color:var(--muted);display:none">
+          <i class="ti ti-ship" style="font-size:40px;display:block;margin-bottom:12px;opacity:.25"></i>
+          No vessels yet. <button class="btn btn-p" onclick="openStart()" style="margin-left:8px;font-size:12px"><i class="ti ti-rocket"></i> Start first coordination</button>
+        </div>
+      
+        <div id="dash-inbox-inline" style="display:none;margin-top:1rem;border-top:1px solid var(--border);padding-top:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <div>
+              <strong style="font-size:14px">New inbox replies</strong>
+              <div style="font-size:12px;color:var(--muted)">Latest replies detected for the vessels below.</div>
+            </div>
+            <button class="btn btn-s" onclick="document.getElementById('dash-inbox-inline').style.display='none'">Hide</button>
+          </div>
+          <div id="dash-inbox-list"></div>
+        </div>
+</div>
+    </div>
+
+    <!-- INBOX -->
+    <div id="view-inbox" class="view">
+      <div class="panel">
+        <div class="sh">
+          <div class="panel-title" style="margin-bottom:0"><i class="ti ti-inbox"></i> Inbox — vessel replies</div>
+          <button class="btn btn-s" id="btn-chk-inbox-page" onclick="checkInbox()"><i class="ti ti-refresh"></i> Check inbox</button>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem">Replies detected from vessel masters. Click "Analyze & Update" to process with AI.</p>
+        <div id="ib-list"></div>
+        <div id="ib-empty" style="text-align:center;padding:2rem;color:var(--muted);font-size:13px;display:none">
+          <i class="ti ti-mail-opened" style="font-size:36px;display:block;margin-bottom:10px;opacity:.3"></i>
+          No new replies detected. <button class="btn btn-s" onclick="checkInbox()" style="margin-left:8px"><i class="ti ti-refresh"></i> Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYZE -->
+    <div id="view-analyze" class="view">
+      <div class="panel">
+        <div class="panel-title"><i class="ti ti-cpu"></i> Analyze vessel reply</div>
+        <div class="fr"><label>Select vessel</label><select id="ra-sel" style="width:100%"><option value="">— Select vessel —</option></select></div>
+        <div class="fr"><label>Paste captain's full reply</label>
+          <div class="rw">
+            <textarea id="ra-reply" placeholder="Paste the full reply here..."></textarea>
+            <div class="rf"><span style="font-size:11px;color:var(--faint)">AI identifies what was received and what's missing</span><button class="btn btn-p btn-s" onclick="analyzeReply()"><i class="ti ti-cpu"></i> Analyze</button></div>
+          </div>
+        </div>
+      </div>
+      <div id="a-load" class="ai-load" style="display:none"><div class="spinner"></div> AI is analyzing...</div>
+      <div id="a-out" style="display:none">
+        <div class="panel">
+          <div class="panel-title"><i class="ti ti-report-analytics"></i> Analysis results</div>
+          <div class="dg">
+            <div><div class="sl" style="margin-bottom:8px">Received ✓</div><ul class="cl-list" id="a-recv" style="margin-bottom:16px"></ul><div class="sl" style="margin-bottom:8px">Still missing</div><div class="miss-list" id="a-miss"></div></div>
+            <div><div class="sl" style="margin-bottom:8px">Status update</div><div style="display:flex;flex-direction:column;gap:10px" id="a-stat"></div></div>
+          </div>
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+            <div class="sl" style="margin-bottom:10px">Follow-up draft</div>
+            <div id="a-fu" class="email-box" style="max-height:200px"></div>
+            <div style="margin-top:10px;display:flex;gap:10px;align-items:center"><button class="btn btn-p" onclick="saveAnalyzeOnly()"><i class="ti ti-device-floppy"></i> Save status</button><button class="btn btn-g" onclick="saveAndSend()"><i class="ti ti-send"></i> Send follow-up via Gmail</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VESSEL DETAIL -->
+    <div id="view-vessel-detail" class="view">
+      <div class="bc" onclick="showTab('dashboard')"><i class="ti ti-arrow-left"></i> Back to dashboard</div>
+      <div class="dg">
+        <div>
+          <div class="panel">
+            <div class="panel-title" id="vd-t"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+              <div class="metric"><div class="metric-label">Status</div><div id="vd-s" style="margin-top:5px"></div></div>
+              <div class="metric"><div class="metric-label">Progress</div><div class="metric-val" id="vd-p" style="font-size:22px"></div></div>
+              <div class="metric"><div class="metric-label">Risk</div><div id="vd-r" style="margin-top:5px"></div></div>
+            </div>
+            <div class="sl" style="margin-bottom:10px">Communication history</div>
+            <div id="vd-tl"></div>
+          </div>
+        </div>
+        <div>
+          <div class="panel"><div class="panel-title"><i class="ti ti-checklist"></i> Readiness checklist</div><ul class="cl-list" id="vd-cl"></ul></div>
+          <div class="panel"><div class="panel-title"><i class="ti ti-alert-circle"></i> Missing items</div><div class="miss-list" id="vd-mi"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN -->
+    <div id="view-admin" class="view">
+      <div class="panel">
+        <div class="panel-title"><i class="ti ti-settings"></i> Admin panel</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:.5rem">Visible to Super Admin and Admin Level 2. Destructive system actions are Super Admin only.</p><div id="current-role-info" style="font-size:12px;color:var(--muted);margin-bottom:.5rem"></div><div id="shared-db-status" style="font-size:12px;color:var(--muted);margin-bottom:1.5rem"></div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Team members</div>
+        <div id="adm-u" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">All vessels</div>
+        <div id="adm-v" style="border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:1.5rem"></div>
+        <div id="super-admin-actions" style="display:none;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-d" onclick="clearAllCacheAndHistory()"><i class="ti ti-trash"></i> Clear Cache &amp; History</button>
+          
+        <button id="btn-reset-db" class="btn btn-d" style="display:none" onclick="resetSharedDatabase()"><i class="ti ti-database-x"></i> Reset Shared Database</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- START MODAL -->
+<div id="mod-start" class="modal-bg" style="display:none">
+  <div class="modal modal-start">
+    <div class="modal-t"><i class="ti ti-rocket" style="color:var(--navy)"></i> Start Coordination</div>
+    <div class="modal-s">Enter vessel details. An initial email will be generated and sent directly from your Gmail.</div>
+    <div class="fg">
+      <div class="fr"><label>Vessel name *</label><input id="mv" placeholder="MV Ocean Star"/></div>
+      <div class="fr"><label>Master email *</label><input id="me" type="email" placeholder="master@vessel.com"/></div>
+      <div class="fr" style="flex-direction:column;gap:0">
+        <label style="margin-bottom:6px">Owner / Fleet</label>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <select id="mfleet" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--rs);font-size:14px;font-family:inherit;background:var(--white)" onchange="handleFleetSelect(this.value)">
+            <option value="">— Select fleet —</option>
+          </select>
+          <input id="mfleet-new" placeholder="Or type new fleet name..." style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--rs);font-size:14px;font-family:inherit" oninput="handleFleetInput(this.value)"/>
+        </div>
+        <div id="mfleet-val" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+      </div>
+
+      
+    </div>
+    <div class="fg">
+      <div class="fr"><label>CC (optional)</label><input id="mcc" type="email" placeholder="cc@orca-ai.io"/></div>
+      <div class="fr"><label>BCC (optional)</label><input id="mbcc" type="email" placeholder="bcc@orca-ai.io"/></div>
+    </div>
+    <div class="fr"><label>Documents link</label><input id="md" placeholder="https://drive.google.com/..."/></div>
+    <div id="mod-ep" style="display:none;margin-top:1rem">
+      <div class="sl" style="margin-bottom:8px">Generated email draft</div>
+      <div id="mod-al" class="ai-load" style="display:none"><div class="spinner"></div> Generating email...</div>
+      <div id="mod-ep-txt" class="email-box"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="document.getElementById('mod-start').style.display='none'">Cancel</button>
+      <button class="btn btn-p" id="btn-gen" onclick="genEmail()"><i class="ti ti-mail"></i> Generate email</button>
+      <button class="btn btn-g btn-s" id="btn-snd" style="display:none;font-size:13px;padding:8px 14px" onclick="sendAndSaveNew()"><i class="ti ti-send"></i> Send via Gmail + Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- INBOX ANALYZE MODAL -->
+<div id="mod-ib" class="modal-bg" style="display:none">
+  <div class="modal modal-analyze">
+    <div class="modal-t"><i class="ti ti-inbox" style="color:var(--navy)"></i> Reply — <span id="mib-v"></span></div>
+    <div class="modal-s" id="mib-m"></div>
+
+    <!-- Status timeline panel -->
+    <div id="mib-stats" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:1rem;padding:12px;background:#f4f6fb;border-radius:8px;border:1px solid #dde3f0">
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">⏱ Since first email</div>
+        <div id="mib-stat-first" style="font-size:22px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">days ago</div>
+      </div>
+      <div style="text-align:center;border-left:1px solid #dde3f0;border-right:1px solid #dde3f0">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📨 Response time</div>
+        <div id="mib-stat-resp" style="font-size:22px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">days to reply</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📊 Readiness</div>
+        <div id="mib-stat-ready" style="font-size:22px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="mib-stat-status">—</div>
+      </div>
+    </div>
+
+    <div class="sl" style="margin-bottom:8px">Captain's reply</div>
+    <div id="mib-b" class="email-box" style="margin-bottom:1rem;max-height:150px"></div>
+    <div id="mib-al" class="ai-load" style="display:none"><div class="spinner"></div> AI is analyzing...</div>
+    <div id="mib-res" style="display:none">
+      <div class="dg" style="margin-bottom:1rem">
+        <div><div class="sl" style="margin-bottom:6px">Received ✓</div><ul class="cl-list" id="mib-recv"></ul></div>
+        <div><div class="sl" style="margin-bottom:6px">Still missing</div><div class="miss-list" id="mib-miss"></div></div>
+      </div>
+      <div class="sl" style="margin-bottom:8px">Follow-up draft</div>
+      <textarea id="mib-fu" style="width:100%;min-height:180px;max-height:300px;padding:12px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;box-sizing:border-box;margin-bottom:1rem;color:var(--text)"></textarea>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="document.getElementById('mod-ib').style.display='none'">Close</button>
+      <button class="btn btn-p" id="mib-abtn" onclick="runIbAnalysis()" style="display:none"><i class="ti ti-cpu"></i> Analyze</button>
+      <button class="btn btn-g" id="mib-sbtn" style="display:none;font-size:14px;padding:10px 20px" onclick="sendIbFollowUp()"><i class="ti ti-send"></i> Send this update to the captain</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script src="https://accounts.google.com/gsi/client" onload="if(typeof initG!=='undefined')initG()" async defer></script>
+
+<!-- VIEW modal - full vessel analysis overview -->
+<div id="mod-view" class="modal-bg" style="display:none">
+  <div class="modal modal-view">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem">
+      <div>
+        <div style="font-size:18px;font-weight:800;color:var(--navy)" id="mv-name"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px" id="mv-email"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="mv-status-badge"></div>
+        <button class="btn" onclick="document.getElementById('mod-view').style.display='none'"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.2rem">
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">⏱ Days active</div>
+        <div id="mv-days-active" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="mv-start-date">—</div>
+      </div>
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📨 Emails sent</div>
+        <div id="mv-sent" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">to captain</div>
+      </div>
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📥 Replies</div>
+        <div id="mv-recv-count" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">from captain</div>
+      </div>
+      <div style="background:#f4f6fb;border-radius:8px;padding:12px;text-align:center;border:1px solid #dde3f0">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📊 Readiness</div>
+        <div id="mv-progress" style="font-size:24px;font-weight:800;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="mv-risk-label">—</div>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div style="margin-bottom:1.2rem">
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+        <span style="font-size:12px;font-weight:600;color:var(--navy)">Installation readiness</span>
+        <span style="font-size:12px;color:var(--muted)" id="mv-next-action">—</span>
+      </div>
+      <div style="height:8px;background:#e8eaf0;border-radius:99px;overflow:hidden">
+        <div id="mv-prog-bar" style="height:100%;border-radius:99px;background:var(--navy);transition:width .4s"></div>
+      </div>
+    </div>
+
+    <!-- Checklist: received + missing side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.2rem">
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#003d1a;margin-bottom:8px">✅ Received from captain</div>
+        <div id="mv-received"></div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#c0392b;margin-bottom:8px">⏳ Still missing</div>
+        <div id="mv-missing"></div>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div style="margin-bottom:1.2rem">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">📋 Communication history</div>
+      <div id="mv-timeline" class="mv-timeline-scroll"></div>
+    </div>
+
+    <!-- Editable follow-up draft -->
+    <div style="margin-bottom:1.2rem">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--navy);margin-bottom:8px">✏️ Follow-up draft — edit before sending</div>
+      <textarea id="mv-followup-draft" style="width:100%;min-height:160px;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;box-sizing:border-box;color:var(--text)"></textarea>
+    </div>
+
+    <div class="modal-f" style="margin-top:0.5rem">
+      <button class="btn" onclick="document.getElementById('mod-view').style.display='none'">Close</button>
+      <button class="btn btn-g" onclick="sendFromViewModal()" style="font-size:13px"><i class="ti ti-send"></i> Send this update to the captain</button>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW REPLY modal - simple captain reply viewer -->
+<div id="mod-view-reply" class="modal-bg" style="display:none">
+  <div class="modal modal-email">
+    <div class="modal-t"><i class="ti ti-eye" style="color:var(--navy)"></i> Captain's Reply — <span id="view-reply-vessel"></span></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px" id="view-reply-from"></div>
+    <div style="font-size:13px;color:var(--navy);font-style:italic;margin-bottom:14px" id="view-reply-subj"></div>
+    <div id="view-reply-body" style="background:#f7f8fc;border:1px solid var(--border);border-radius:8px;padding:18px;overflow-y:auto;max-height:62vh"></div>
+    <div class="modal-f" style="margin-top:16px">
+      <button class="btn" onclick="document.getElementById('mod-view-reply').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- LATEST STATUS modal -->
+<div id="mod-latest-status" class="modal-bg" style="display:none">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-t"><i class="ti ti-report-analytics" style="color:var(--navy)"></i> Latest Status — <span id="ls-vessel-name"></span></div>
+
+    <!-- Stats row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;padding:14px;background:#f4f6fb;border-radius:8px;border:1px solid #dde3f0">
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">⏱ Since first email</div>
+        <div id="ls-days-first" style="font-size:26px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="ls-date-first">—</div>
+      </div>
+      <div style="text-align:center;border-left:1px solid #dde3f0;border-right:1px solid #dde3f0">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📨 Response time</div>
+        <div id="ls-resp-days" style="font-size:26px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)">days to reply</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">📊 Readiness</div>
+        <div id="ls-readiness" style="font-size:26px;font-weight:700;color:var(--navy)">—</div>
+        <div style="font-size:11px;color:var(--muted)" id="ls-status-label">—</div>
+      </div>
+    </div>
+
+    <!-- Received items -->
+    <div style="margin-bottom:14px">
+      <div class="sl" style="margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em">✅ Received from captain</div>
+      <div id="ls-received"></div>
+    </div>
+
+    <!-- Missing items -->
+    <div style="margin-bottom:6px">
+      <div class="sl" style="margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em">⏳ Still missing</div>
+      <div id="ls-missing"></div>
+    </div>
+
+    <div class="modal-f" style="margin-top:16px">
+      <button class="btn" onclick="document.getElementById('mod-latest-status').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Async confirm/alert modal - must be in real DOM -->
+<div id="orca-modal-overlay">
+  <div id="orca-modal-box">
+    <div id="orca-modal-title"></div>
+    <div id="orca-modal-msg"></div>
+    <div id="orca-modal-btns">
+      <button id="orca-modal-cancel" style="display:none">Cancel</button>
+      <button id="orca-modal-ok">OK</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

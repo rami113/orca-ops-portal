@@ -1,0 +1,2496 @@
+const REQUIRED_ITEMS=[
+  'Vessel GA',
+  'Bridge Console GA',
+  'Next 2–3 upcoming port calls + corresponding agent details for each port',
+  'Cable penetration',
+  'VSAT routing',
+  'Power connection',
+  'Proposed monitor location photos',
+  'Proposed Seapod location photos',
+  'Docs acknowledgement'
+];
+console.log("ORCA v35.11 visible reset shared db loaded");
+window.ORCA_FIX_VERSION="v35.11";
+const GOOGLE_CLIENT_IDS={
+  'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
+  'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
+  '127.0.0.1':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com'
+};
+const DEFAULT_CLIENT_ID='150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com';
+const CLIENT_ID=GOOGLE_CLIENT_IDS[window.location.hostname]||DEFAULT_CLIENT_ID;
+const SCOPES='https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/spreadsheets profile email';
+const SUPER_ADMINS=['rami@orca-ai.io'];
+const SUPER_ADMIN='rami@orca-ai.io'; // backwards compatibility
+const ADMIN=SUPER_ADMIN; // backwards compatibility
+const ADMIN_L2=[
+  'amir.m@orca-ai.io',
+  'israel@orca-ai.io',
+  'jacob@orca-ai.io',
+  'yotam.keret@orca-ai.io',
+  'yaron.y@orca-ai.io',
+  'leon.gutnik@orca-ai.io',
+].map(e=>e.toLowerCase());
+
+const TEAM_USERS=[
+  {email:'rami@orca-ai.io',name:'Rami Moscovich',role:'Super Admin'},
+  {email:'amir.m@orca-ai.io',name:'Amir M',role:'Admin L2'},
+  {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
+  {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
+  {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
+  {email:'timothy@orca-ai.io',name:'Timothy',role:'User L2'},
+  {email:'opsrep2@orca-ai.io',name:'Ops Rep 2',role:'User L2'},
+  {email:'opsrep1@orca-ai.io',name:'Ops Rep 1',role:'User L2'},
+  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin L2'}
+];
+
+function normEmail(e){return String(e||'').trim().toLowerCase();}
+function getUserRole(email){
+  const e=normEmail(email);
+  if(SUPER_ADMINS.map(normEmail).includes(e))return 'super-admin';
+  if(ADMIN_L2.includes(e))return 'admin-l2';
+  return 'user';
+}
+function isSuperAdmin(email){
+  email=normEmail(email||(user&&user.email));
+  return getUserRole(email)==='super-admin';
+}
+function isAdmin(email){
+  email=normEmail(email||(user&&user.email));
+  const role=getUserRole(email);
+  return role==='super-admin'||role==='admin-l2';
+}
+function roleLabel(email){
+  const role=getUserRole(email);
+  if(role==='super-admin')return 'Super Admin';
+  if(role==='admin-l2')return 'Admin L2';
+  return 'User';
+}
+function applyUserRole(){
+  if(!user||!user.email)return;
+  user.email=normEmail(user.email);
+  user.role=getUserRole(user.email);
+  user.roleLabel=roleLabel(user.email);
+}
+const VKEY='orca_v3',UKEY='orca_u2';
+
+// SHARED DATABASE CONFIG
+// Create one Google Sheet, share it with the Orca AI Ops team as Editor,
+// then paste the spreadsheet ID below.
+// Example URL: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+const SHARED_SHEET_ID='1Aveudwg5B8D-XrO04L33WibwtzWEaMVhLfDOMyNb3Y4';
+const SHARED_SHEET_NAME='vessels';
+let sharedDbReady=false;
+let sharedDbLastSync=null;
+
+let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
+
+
+function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
+function sharedDbUrl(range){
+  return `https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}!${range}`;
+}
+async function ensureSharedDb(){
+  if(!hasSharedDb()||!token){sharedDbReady=false;return false;}
+  try{
+    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    if(r.status===403){
+      console.error('Sheets 403 - no permission. Requesting re-consent.');
+      const lbl=document.getElementById('last-refresh-label');
+      if(lbl)lbl.textContent='⚠️ Google Sheets access denied - re-authorizing...';
+      if(tc)tc.requestAccessToken({prompt:'consent'});
+      sharedDbReady=false;return false;
+    }
+    if(!r.ok){
+      console.error('Sheets error',r.status);
+      sharedDbReady=false;return false;
+    }
+    const d=await r.json();
+    const val=d.values&&d.values[0]&&d.values[0][0];
+    if(!val)await saveSharedVessels([]);
+    else{try{JSON.parse(val);}catch(e){await saveSharedVessels([]);}}
+    sharedDbReady=true;
+    return true;
+  }catch(e){
+    console.error('Shared DB init failed',e);
+    sharedDbReady=false;
+    return false;
+  }
+}
+async function loadSharedVessels(){
+  if(!hasSharedDb()||!token)return null;
+  try{
+    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();
+    const val=d.values&&d.values[0]&&d.values[0][0];
+    if(!val)return [];
+    const parsed=JSON.parse(val);
+    if(Array.isArray(parsed))return parsed;
+    if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
+    return [];
+  }catch(e){
+    console.error('Shared DB load failed',e);
+    return null;
+  }
+}function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
+function parseSharedPayload(raw){
+  try{
+    if(Array.isArray(raw))return {resetAt:'',vessels:raw};
+    if(raw&&typeof raw==='object'&&Array.isArray(raw.vessels))return raw;
+    if(typeof raw==='string'){
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
+      if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.vessels))return parsed;
+    }
+  }catch(e){}
+  return {resetAt:'',vessels:[]};
+}
+async function saveSharedVessels(data){
+  if(!hasSharedDb()||!token)return false;
+  try{
+    const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(data||[])]]};
+    const r=await fetch(sharedDbUrl('A1')+'?valueInputOption=RAW',{
+      method:'PUT',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    if(!r.ok){
+      console.error('Shared DB save HTTP error',await r.text());
+      return false;
+    }
+    sharedDbLastSync=new Date().toISOString();
+    return true;
+  }catch(e){
+    console.error('Shared DB save failed',e);
+    return false;
+  }
+}
+async function loadVessels(){
+  const warn=document.getElementById('shared-db-warning');
+  if(warn)warn.style.display=hasSharedDb()?'none':'block';
+  const lbl=document.getElementById('last-refresh-label');
+  if(hasSharedDb()){
+    if(lbl)lbl.textContent='🔄 Loading shared database...';
+    const ok=await ensureSharedDb();
+    if(ok){
+      const shared=await loadSharedVessels();
+      if(Array.isArray(shared)){
+        vessels=shared.map(normalizeVessel);
+        if(lbl)lbl.textContent='✅ Shared DB loaded — '+vessels.length+' vessels';
+        console.log('[loadVessels] Loaded',vessels.length,'vessels from Sheet');
+        return;
+      }
+    }
+    // Sheets access failed
+    console.error('[loadVessels] Sheets failed — falling back to localStorage');
+    if(lbl)lbl.textContent='⚠️ Sheet access failed — using local data';
+    if(tc){
+      tc.requestAccessToken({prompt:'consent'});
+      if(lbl)lbl.textContent='⚠️ Re-authorizing Google access...';
+    }
+  } else {
+    console.warn('[loadVessels] No Sheet configured — using localStorage');
+    if(lbl)lbl.textContent='⚠️ No shared database configured';
+  }
+  lv();
+}
+// Track vessel IDs deleted in this session so saveVessels merge never re-adds them
+window._deletedVesselIds=window._deletedVesselIds||new Set();
+
+async function saveVessels(){
+  if(hasSharedDb()){
+    // Merge with current Sheet data before saving to avoid overwriting other users' vessels
+    let merged=vessels;
+    try{
+      const current=await loadSharedVessels();
+      if(Array.isArray(current)&&current.length){
+        const myIds=new Set(vessels.map(v=>v.id||v.name));
+        // Exclude: vessels already in local array AND vessels explicitly deleted this session
+        const others=current.filter(v=>{
+          const id=v.id||v.name;
+          return !myIds.has(id)&&!window._deletedVesselIds.has(id);
+        });
+        merged=[...vessels,...others];
+      }
+    }catch(e){console.warn('merge read failed',e);}
+    console.log('[saveVessels] Saving',merged.length,'vessels to Sheet');
+    const ok=await saveSharedVessels(merged);
+    if(ok){console.log('[saveVessels] Saved OK');return;}
+    console.error('Shared DB save failed');
+    const lbl2=document.getElementById('last-refresh-label');
+    if(lbl2)lbl2.textContent='⚠️ Save failed — check Google Sheets access';
+  }
+  sv();
+}
+async function refreshSharedData(){
+  // Show syncing state on button
+  const btn=document.querySelector('[onclick="refreshSharedData()"]');
+  const origHtml=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Syncing...';}
+  await new Promise(r=>setTimeout(r,0));
+  await loadVessels();
+  updateMetrics();
+  renderTable();
+  populateSel();
+  if(typeof renderAdmin==='function')renderAdmin();
+  // Restore button + show toast
+  if(btn){btn.disabled=false;btn.innerHTML=origHtml;}
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1D2E6B;color:#fff;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  t.textContent='✅ Sync complete — '+vessels.length+' vessel'+(vessels.length===1?'':'s')+' loaded';
+  document.body.appendChild(t);setTimeout(()=>t.remove(),3000);
+}
+
+function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
+
+function loadVesselsCompat(){
+  const keys=['orca_v3','orca_v2','orca_v1','vessels'];
+  for(const k of keys){
+    try{
+      const raw=localStorage.getItem(k);
+      if(!raw)continue;
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return parsed;
+      if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
+    }catch(e){}
+  }
+  return [];
+}
+function normalizeVessel(v){
+  if(!v.firstEmailDate&&v.lastEmailDate)v.firstEmailDate=v.lastEmailDate;
+  v.status=v.status||'waiting';
+  if(v.status==='new')v.status='waiting';
+  if(v.status==='escalated')v.status='followup';
+  v.risk=v.risk||'medium';
+  v.progress=Number(v.progress||0);
+  v.emailsSent=Number(v.emailsSent||0);
+  v.emailsReceived=Number(v.emailsReceived||0);
+  v.assignedTo=v.assignedTo||(user&&user.email)||'rami@orca-ai.io';
+  v.timeline=v.timeline||[];
+  if(!v.lastContact)v.lastContact=v.lastEmailDate||v.lastReceivedDate||new Date().toISOString();
+  return v;
+}
+
+function sv(){try{localStorage.setItem(VKEY,JSON.stringify(vessels));}catch(e){console.error('save failed',e);}}
+function lu(){try{return JSON.parse(localStorage.getItem(UKEY)||'{}');}catch(e){return{};}}
+function su(u){const us=lu();us[u.email]={...u,ls:new Date().toISOString()};try{localStorage.setItem(UKEY,JSON.stringify(us));}catch(e){}}
+
+function initG(){
+  tc=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,
+    scope:SCOPES,
+    callback:handleToken,
+    error_callback:(e)=>{
+      console.error('Google OAuth error',e);
+      const origin=window.location.origin;
+      alert('Google sign-in failed. Make sure this origin is authorized in Google Cloud for the OAuth Client ID: '+origin);
+    }
+  });
+}
+function signIn(){
+  try{
+    if(typeof google==='undefined'||!google.accounts){
+      alert('Google sign-in is loading, please try again in a moment.');return;
+    }
+    // Always re-init to avoid stale token client state
+    initG();
+    if(!tc){alert('Please wait, Google API loading...');return;}
+    const alreadyApproved=localStorage.getItem('orca_google_consent_ok')==='1';
+    // Use 'select_account' when approved so FedCM doesn't block the manual click
+    // Use 'consent' on first time
+    tc.requestAccessToken({prompt: alreadyApproved ? 'select_account' : 'consent'});
+  }catch(e){
+    console.error(e);
+    alert('Sign-in failed: '+(e.message||e));
+  }
+}
+// ── Session token helpers ──
+function saveSession(accessToken, userObj){
+  try{
+    const expiry=Date.now()+(55*60*1000); // 55 min (token lives 60)
+    const sess={token:accessToken,user:userObj,expiry};
+    sessionStorage.setItem('orca_session',JSON.stringify(sess));
+    localStorage.setItem('orca_google_consent_ok','1');
+    localStorage.setItem('orca_last_email',userObj.email||'');
+  }catch(e){}
+}
+function loadSession(){
+  try{
+    const raw=sessionStorage.getItem('orca_session');
+    if(!raw)return null;
+    const sess=JSON.parse(raw);
+    if(!sess||Date.now()>sess.expiry){sessionStorage.removeItem('orca_session');return null;}
+    return sess;
+  }catch(e){return null;}
+}
+function clearSession(){
+  try{sessionStorage.removeItem('orca_session');}catch(e){}
+}
+function scheduleTokenRefresh(){
+  // Auto-refresh token 5 min before expiry
+  setTimeout(async()=>{
+    if(!tc)return;
+    const savedEmail=localStorage.getItem('orca_last_email')||'';
+    tc.requestAccessToken({prompt:'',login_hint:savedEmail});
+  }, 50*60*1000); // 50 min
+}
+
+async function handleToken(r){
+  if(r.error){console.error(r);alert('Google sign-in failed: '+(r.error_description||r.error));return;}
+  token=r.access_token;
+  const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}});
+  const p=await res.json();
+  user={email:normEmail(p.email),name:p.name||p.email,pic:p.picture||''};
+  // Save session token
+  saveSession(token, user);
+  scheduleTokenRefresh();
+  // Check Gmail + Sheets access
+  try{
+    const gmailTest = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:'Bearer '+token}});
+    if(!gmailTest.ok){
+      const label = document.getElementById('last-refresh-label');
+      if(label) label.textContent = '⚠️ Gmail access not granted';
+      console.warn('Gmail scope not granted');
+    }
+    // Check Sheets access
+    const sheetsTest = await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+SHARED_SHEET_ID+'?fields=spreadsheetId',{headers:{Authorization:'Bearer '+token}});
+    if(!sheetsTest.ok){
+      console.warn('Sheets scope not granted - will request consent');
+      // Force re-consent to get spreadsheets scope
+      if(tc) tc.requestAccessToken({prompt:'consent'});
+    }
+  }catch(e){}
+  applyUserRole();
+  su(user); await loadVessels();
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
+  if(user.pic)document.getElementById('uav').src=user.pic;
+  document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
+  renderTable();updateMetrics();populateSel();
+  sheetsInboxInit();
+  checkInbox(true);
+}
+function signOut(){
+  if(token)google.accounts.oauth2.revoke(token,()=>{});
+  token=null;user=null;vessels=[];
+  clearSession();
+  localStorage.removeItem('orca_google_consent_ok');
+  localStorage.removeItem('orca_last_email');
+  document.getElementById('app').style.display='none';
+  document.getElementById('auth-screen').style.display='flex';
+}
+
+function showTab(t){
+  if(t==='admin' && !isAdmin(user&&user.email)){
+    alert('Admin access only.');
+    t='dashboard';
+  }
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('view-'+t).classList.add('active');
+  const m={dashboard:0,inbox:1,analyze:2};
+  if(m[t]!==undefined)document.querySelectorAll('.tab')[m[t]].classList.add('active');
+  if(t==='admin'){
+    document.getElementById('tab-admin').classList.add('active');
+    renderAdmin();
+  }
+  if(t==='inbox')renderInbox();
+}
+
+function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
+function sb(s){const m={
+  waiting:['bg','ti-clock','Waiting for reply'],
+  followup:['ba','ti-send','Follow-up required'],
+  ready:['bn','ti-circle-check','Ready for installation'],
+  scheduled:['bb','ti-calendar-check','Installation scheduled'],
+  completed:['bgr','ti-check','Installation completed']
+};const[c,ic,l]=m[s]||['bg','ti-circle','Waiting for reply'];return`<span class="badge ${c}"><i class="ti ${ic}"></i> ${l}</span>`;}
+function rb(r){const m={low:['bgr','Low'],medium:['ba','Medium'],high:['br','High']};const[c,l]=m[r]||['bg','—'];return`<span class="badge ${c}">${l}</span>`;}
+
+function trafficLight(v){
+  const d=ds(v.lastContact);
+  let c='green',label='On track';
+  if(v.risk==='high'||d>=7){c='red';label='Attention';}
+  else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
+  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
+  return `<span class="traffic"><span class="tl-light tl-${c}"></span>${label}</span>`;
+}
+
+function ds(d){if(!d)return null;return Math.floor((Date.now()-new Date(d))/86400000);}
+function dc(d){if(d===null)return'<span style="color:#ccc">—</span>';const c=d>=7?'d-d':d>=3?'d-w':'d-ok';return`<span class="${c}">${d}d</span>`;}
+
+function userOptions(selected){
+  const stored=Object.values(lu());
+  const map=new Map();
+  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
+  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
+  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
+  if(selected&&!map.has(normEmail(selected)))map.set(normEmail(selected),{email:selected,name:selected,role:'User'});
+  const users=Array.from(map.values()).sort((a,b)=>{
+    const rank={SUPER:0,ADMIN:1,USER:2};
+    const ar=isSuperAdmin(a.email)?rank.SUPER:isAdmin(a.email)?rank.ADMIN:rank.USER;
+    const br=isSuperAdmin(b.email)?rank.SUPER:isAdmin(b.email)?rank.ADMIN:rank.USER;
+    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
+  });
+  return users.map(u=>`<option value="${u.email}" ${normEmail(u.email)===normEmail(selected)?'selected':''}>${u.name||u.email}</option>`).join('');
+}
+
+function setVesselStatus(i,status){
+  if(!vessels[i])return;
+  const old=vessels[i].status;
+  vessels[i].status=status;
+  if(status==='waiting'){vessels[i].nextAction='Wait for master reply';}
+  if(status==='followup'){vessels[i].nextAction='Send follow-up';}
+  if(status==='ready'){vessels[i].nextAction='Coordinate installation window';vessels[i].progress=Math.max(vessels[i].progress||0,75);}
+  if(status==='scheduled'){vessels[i].nextAction='Installation scheduled';vessels[i].progress=Math.max(vessels[i].progress||0,90);}
+  if(status==='completed'){vessels[i].nextAction='Installation completed';vessels[i].progress=100;vessels[i].risk='low';}
+  if(old!==status)addTimeline(vessels[i],'status','Status changed',`${sbText(old)} → ${sbText(status)}`);
+  saveVessels();updateMetrics();renderTable();renderAdmin();populateSel();
+}
+function statusOptions(selected){
+  const statuses=[
+    ['waiting','Waiting for reply'],
+    ['followup','Follow-up required'],
+    ['ready','Ready for installation'],
+    ['scheduled','Installation scheduled'],
+    ['completed','Installation completed']
+  ];
+  return statuses.map(([v,l])=>`<option value="${v}" ${v===selected?'selected':''}>${l}</option>`).join('');
+}
+
+function assignVessel(i,email){
+  if(!vessels[i])return;
+  const old=vessels[i].assignedTo||'Unassigned';
+  vessels[i].assignedTo=email;
+  addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
+  saveVessels();renderTable();renderAdmin();
+}
+
+
+// ── Fleet management ──
+window._selectedFleets=new Set();
+
+function getAllFleets(){
+  return [...new Set(vessels.map(v=>v.fleet||'').filter(Boolean))].sort();
+}
+
+function toggleFleetPicker(){
+  const p=document.getElementById('fleet-picker');
+  if(!p)return;
+  if(p.style.display==='none'){
+    buildFleetPicker();
+    p.style.display='block';
+    // close on outside click
+    setTimeout(()=>document.addEventListener('click',closeFleetPickerOutside),0);
+  } else {
+    p.style.display='none';
+  }
+}
+function closeFleetPickerOutside(e){
+  const p=document.getElementById('fleet-picker');
+  const b=document.getElementById('btn-fleet-filter');
+  if(p&&!p.contains(e.target)&&e.target!==b&&!b?.contains(e.target)){
+    p.style.display='none';
+    document.removeEventListener('click',closeFleetPickerOutside);
+  }
+}
+function buildFleetPicker(){
+  const list=document.getElementById('fleet-picker-list');
+  if(!list)return;
+  const fleets=getAllFleets();
+  if(!fleets.length){list.innerHTML='<div style="padding:8px 12px;font-size:12px;color:var(--muted)">No fleets yet</div>';return;}
+  list.innerHTML=fleets.map(f=>{
+    const checked=window._selectedFleets.has(f);
+    return '<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px">'
+      +'<input type="checkbox" class="fleet-cb" data-fleet="'+f+'" '+(checked?'checked':'')+'style="width:14px;height:14px;cursor:pointer"> '+f+'</label>';
+  }).join('');
+  list.querySelectorAll('.fleet-cb').forEach(function(cb){
+    cb.addEventListener('change',function(){toggleFleetSelection(this.getAttribute('data-fleet'),this.checked);});
+  });
+}
+function toggleFleetSelection(fleet,checked){
+  if(checked)window._selectedFleets.add(fleet);
+  else window._selectedFleets.delete(fleet);
+  updateFleetFilterLabel();
+  renderTable();
+}
+function clearFleetFilter(){
+  window._selectedFleets.clear();
+  updateFleetFilterLabel();
+  document.getElementById('fleet-picker').style.display='none';
+  document.removeEventListener('click',closeFleetPickerOutside);
+  renderTable();
+}
+function updateFleetFilterLabel(){
+  const lbl=document.getElementById('fleet-filter-label');
+  if(!lbl)return;
+  const n=window._selectedFleets.size;
+  lbl.textContent=n===0?'All fleets':n===1?[...window._selectedFleets][0]:n+' fleets';
+}
+function openModalWithFleetList(){
+  // Populate fleet dropdown in Start modal
+  const sel=document.getElementById('mfleet');
+  if(!sel)return;
+  const fleets=getAllFleets();
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— Select fleet —</option>'+fleets.map(f=>'<option value="'+f+'"'+(f===cur?' selected':'')+'>'+f+'</option>').join('');
+  document.getElementById('mfleet-new').value='';
+  document.getElementById('mfleet-val').textContent='';
+}
+function handleFleetSelect(val){
+  if(val){
+    document.getElementById('mfleet-new').value='';
+    document.getElementById('mfleet-val').textContent='Selected: '+val;
+  }
+}
+function handleFleetInput(val){
+  if(val.trim()){
+    document.getElementById('mfleet').value='';
+    document.getElementById('mfleet-val').textContent=val.trim()?'New fleet: '+val.trim():'';
+  }
+}
+function getSelectedFleet(){
+  const newVal=document.getElementById('mfleet-new')?.value.trim();
+  const selVal=document.getElementById('mfleet')?.value;
+  return newVal||selVal||'';
+}
+
+async function editVesselFleet(idx){
+  const v=vessels[idx];if(!v)return;
+  const fleets=getAllFleets();
+  const overlay=document.getElementById('orca-modal-overlay');
+  document.getElementById('orca-modal-title').textContent='Set Fleet — '+v.name;
+  const opts=fleets.map(f=>'<option value="'+f+'"'+(f===v.fleet?' selected':'')+'>'+f+'</option>').join('');
+  document.getElementById('orca-modal-msg').innerHTML=
+    '<div style="margin-bottom:8px"><select id="ef-sel" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px"><option value="">— Select existing fleet —</option>'+opts+'</select></div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:6px;text-align:center">— or type new —</div>'
+    +'<input id="ef-new" placeholder="New fleet name..." style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;box-sizing:border-box" value=""/>';
+  document.getElementById('orca-modal-cancel').style.display='inline-block';
+  document.getElementById('orca-modal-cancel').textContent='Cancel';
+  document.getElementById('orca-modal-ok').textContent='Save';
+  overlay.classList.add('show');
+  const result=await new Promise(resolve=>{
+    const ok=document.getElementById('orca-modal-ok');
+    const cancel=document.getElementById('orca-modal-cancel');
+    const cleanup=()=>overlay.classList.remove('show');
+    const onOk=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);
+      const nv=document.getElementById('ef-new')?.value.trim();
+      const sv=document.getElementById('ef-sel')?.value;
+      resolve(nv||sv||'');};
+    const onCancel=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(null);};
+    ok.addEventListener('click',onOk);cancel.addEventListener('click',onCancel);
+  });
+  if(result===null)return;
+  vessels[idx].fleet=result;
+  saveVessels();renderTable();
+}
+async function transferOwnership(idx){
+  const v=vessels[idx];if(!v)return;
+  const TEAM=TEAM_USERS.map(u=>u.email);
+  const current=v.assignedTo||'Unassigned';
+  const options=TEAM.filter(u=>u!==current);
+  // Build a simple pick list via orcaConfirm style
+  const overlay=document.getElementById('orca-modal-overlay');
+  document.getElementById('orca-modal-title').textContent='Transfer Ownership — '+v.name;
+  document.getElementById('orca-modal-msg').innerHTML='<div style="margin-bottom:8px">Currently: <strong>'+current+'</strong></div>'
+    +'<select id="transfer-sel" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px">'
+    +'<option value="">— Select new owner —</option>'
+    +options.map(u=>`<option value="${u}">${u}</option>`).join('')
+    +'</select>';
+  document.getElementById('orca-modal-cancel').style.display='inline-block';
+  document.getElementById('orca-modal-cancel').textContent='Cancel';
+  document.getElementById('orca-modal-ok').textContent='Transfer';
+  overlay.classList.add('show');
+  const result=await new Promise(resolve=>{
+    const ok=document.getElementById('orca-modal-ok');
+    const cancel=document.getElementById('orca-modal-cancel');
+    const cleanup=()=>overlay.classList.remove('show');
+    const onOk=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(document.getElementById('transfer-sel')?.value||'');};
+    const onCancel=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve('');};
+    ok.addEventListener('click',onOk);cancel.addEventListener('click',onCancel);
+  });
+  if(!result)return;
+  const prevOwner=vessels[idx].assignedTo||'Unassigned';
+  vessels[idx].assignedTo=result;
+  vessels[idx].lastTransferTo=result;
+  vessels[idx].lastTransferAt=new Date().toISOString();
+  addTimeline(vessels[idx],'assignment','Ownership transferred','From: '+prevOwner+' → To: '+result);
+  saveVessels();renderTable();
+  // Send notification email to new owner
+  if(token&&result.includes('@')){
+    const vname=vessels[idx].name||'vessel';
+    const newOwnerName=TEAM_USERS.find(u=>u.email===result)?.name||result;
+    const notifBody='Dear '+newOwnerName+',\n\nYou have been assigned as the new owner of vessel: '+vname+'.\n\nPrevious owner: '+prevOwner+'\n\nPlease log in to the Orca AI Installation Coordinator portal to review the case.\n\nKind regards,\nORCA AI OPS';
+    await sendGmail(result,'[ORCA AI] Vessel ownership transferred: '+vname,notifBody,false).catch(()=>{});
+  }
+  await orcaAlert('Ownership transferred to '+result+'.\nA notification email has been sent.','✅ Transfer Complete');
+}
+async function deleteVessel(i){
+  if(!isAdmin()){await orcaAlert('Only admins can delete cases.','Access Denied');return;}
+  if(!vessels[i])return;
+  const ok=await orcaConfirm('Delete this case from the portal history?','Delete Case');
+  if(!ok)return;
+  await new Promise(r=>setTimeout(r,0));
+  // Register the ID as deleted BEFORE splice so saveVessels merge never re-adds it
+  const deletedId=vessels[i].id||vessels[i].name;
+  window._deletedVesselIds=window._deletedVesselIds||new Set();
+  window._deletedVesselIds.add(deletedId);
+  vessels.splice(i,1);
+  await saveVessels();
+  updateMetrics();renderTable();populateSel();renderAdmin();
+}
+
+
+
+function cleanCaptainReplyText(txt){
+  let s=String(txt||'').replace(/\r/g,'').trim();
+  // Remove Gmail quoted history — try regex first, then line-by-line fallback
+  s=s.split(/\nOn .+ wrote:/i)[0];
+  // Line-by-line fallback: cut at first line starting with > (handles any encoding)
+  const lines=s.split('\n');
+  const qIdx=lines.findIndex(l=>l.trimStart().startsWith('>'));
+  if(qIdx>0)s=lines.slice(0,qIdx).join('\n');
+  s=s.replace(/\[image:[^\]]+\]/gi,'').trim();
+  return s;
+}
+function decodeGmailBody(payload){
+  const decode=(data)=>{
+    try{
+      const bin=atob(String(data||'').replace(/-/g,'+').replace(/_/g,'/'));
+      try{
+        // TextDecoder handles all UTF-8 correctly (bullets, dashes, smart quotes, etc.)
+        const bytes=Uint8Array.from(bin,c=>c.charCodeAt(0));
+        return new TextDecoder('utf-8').decode(bytes);
+      }catch(e){
+        // Fallback for very old browsers
+        try{return decodeURIComponent(escape(bin));}catch(e2){return bin;}
+      }
+    }catch(e){return '';}
+  };
+  const walk=(p)=>{
+    if(!p)return '';
+    if(p.mimeType==='text/plain'&&p.body&&p.body.data)return decode(p.body.data);
+    if(p.mimeType==='text/html'&&p.body&&p.body.data)return stripHtmlForText(decode(p.body.data));
+    if(p.parts)for(const part of p.parts){const got=walk(part);if(got)return got;}
+    return '';
+  };
+  return walk(payload);
+}async function readGmailMessage(id){
+  const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+  const dd=await dr.json();
+  const hdr=(dd.payload&&dd.payload.headers)||[];
+  const get=n=>hdr.find(h=>String(h.name||'').toLowerCase()===n.toLowerCase())?.value||'';
+  return {
+    msgId:id,
+    from:get('From'),
+    subj:get('Subject'),
+    date:get('Date'),
+    body:cleanCaptainReplyText(decodeGmailBody(dd.payload)||dd.snippet||'')
+  };
+}
+
+function openManualAnalyzeWithReply(i,replyText){
+  // If called from dashboard context (no reply found), show inline message instead of navigating
+  if(!replyText){
+    orcaAlert('No captain reply was found for this vessel. Please check inbox first.','No reply found');
+    return;
+  }
+  showTab('analyze');
+  setTimeout(()=>{
+    const sel=document.getElementById('ra-sel');
+    const txt=document.getElementById('ra-reply');
+    if(sel)sel.value=String(i);
+    if(txt){
+      txt.value=replyText||'';
+      txt.placeholder='';
+      txt.focus();
+    }
+  },50);
+}
+
+// Fetch the latest captain reply for a specific vessel directly from Gmail.
+// Searches strictly by from-email + exact coordination subject line.
+async function fetchLatestReplyForVessel(vessel){
+  if(!token||!vessel||!vessel.email)return null;
+  const ve=String(vessel.email||'').trim();
+  const vn=String(vessel.name||'').trim();
+  const q=`from:${ve} subject:"Re: Orca AI Installation Coordination - ${vn}" newer_than:60d`;
+  try{
+    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=5`,{headers:{Authorization:'Bearer '+token}});
+    const d=await r.json();
+    if(!d.messages||!d.messages.length)return null;
+    return await readGmailMessage(d.messages[0].id);
+  }catch(e){
+    console.warn('fetchLatestReplyForVessel failed',e);
+    return null;
+  }
+}
+
+async function openCaseAnalyze(i){
+  const vessel=vessels[i];
+  if(!vessel){alert('Vessel not found.');return;}
+  const loadDiv=document.createElement('div');
+  loadDiv.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99998;display:flex;align-items:center;justify-content:center';
+  loadDiv.innerHTML='<div style="background:#fff;border-radius:12px;padding:28px 36px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)"><div class="spinner" style="margin:0 auto 14px"></div><div style="font-size:14px;font-weight:600;color:#1D2E6B">Analyzing reply...</div></div>';
+  document.body.appendChild(loadDiv);
+  try{
+    let replyText='',replyFrom='',replyDate='';
+    if(Array.isArray(ibItems)&&ibItems.length){
+      const email=String(vessel.email||'').toLowerCase();
+      // Match strictly by vessel index, vessel reference, or FROM email — no name-based guessing
+      const ex=ibItems.find(item=>{
+        const from=String(item.fe||item.from||'').toLowerCase();
+        return item.vi===i||item.vessel===vessel||(email&&from.includes(email));
+      });
+      if(ex&&ex.body){replyText=cleanCaptainReplyText(ex.body);replyFrom=ex.from||'';replyDate=ex.date||'';}
+    }
+    if(!replyText){
+      const latest=await fetchLatestReplyForVessel(vessel);
+      if(latest&&latest.body){replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';}
+    }
+    if(!replyText){loadDiv.remove();openManualAnalyzeWithReply(i,'');return;}
+    // Run AI using same approach as runIbAnalysis
+    const mis=(vessel.missingItems||[]).join(', '),d=ds(vessel.lastContact);
+    // build prompt identical to runIbAnalysis but using replyText and vessel
+    const _tmpCurIb=curIb;const _tmpIbAna=ibAna;
+    curIb={vi:i,vessel:vessel,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply'};
+    await runIbAnalysis();
+    // runIbAnalysis sets ibAna and opens mod-ib already
+    loadDiv.remove();
+    curIb=_tmpCurIb;
+    // Reopen with new data
+    openAnalyzeResultModal(i,replyText,replyFrom,replyDate,ibAna);
+  }catch(err){
+    console.error('openCaseAnalyze failed',err);
+    loadDiv.remove();
+    openManualAnalyzeWithReply(i,'');
+  }
+}
+
+function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result){
+  const v=vessels[idx];if(!v||!result)return;
+  curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply'};
+  ibAna=result;
+  document.getElementById('mib-v').textContent=v.name;
+  document.getElementById('mib-m').textContent=(replyFrom?'From: '+replyFrom+' · ':'')+( replyDate||'');
+  document.getElementById('mib-b').textContent=replyText;
+  const firstSent=v.lastEmailDate||v.createdAt||v.lastContact||null;
+  const dsf=firstSent?Math.floor((Date.now()-new Date(firstSent))/86400000):null;
+  document.getElementById('mib-stat-first').textContent=dsf!==null?dsf:'—';
+  const rMs=replyDate?new Date(replyDate).getTime():null;
+  const lMs=firstSent?new Date(firstSent).getTime():null;
+  let rd='—';
+  if(rMs&&lMs&&rMs>lMs){rd=Math.floor((rMs-lMs)/86400000);if(rd===0)rd='<1';}
+  document.getElementById('mib-stat-resp').textContent=rd;
+  const score=readinessScore(v)||v.progress||0;
+  document.getElementById('mib-stat-ready').textContent=score+'%';
+  const sL={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
+  document.getElementById('mib-stat-status').textContent=sL[v.status]||v.status||'—';
+  document.getElementById('mib-recv').innerHTML=(result.received||[]).map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+  document.getElementById('mib-miss').innerHTML=(result.missing||[]).map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+  // Rebuild followup with correct received/missing
+  const _recvM=[...new Map([...(v.receivedItems||[]),...(result.received||[])].map(x=>[itemKey(x),x])).values()];
+  result.followup_email=buildFollowupEmail({...v,receivedItems:_recvM},result.missing||[]);
+  document.getElementById('mib-fu').value=result.followup_email||'';
+  document.getElementById('mib-al').style.display='none';
+  document.getElementById('mib-res').style.display='block';
+  document.getElementById('mib-abtn').style.display='none';
+  document.getElementById('mib-sbtn').style.display='inline-flex';
+  document.getElementById('mod-ib').style.display='flex';
+}
+
+function normTxt(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function isThanksOnlyReply(txt){
+  const s=normTxt(txt).replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+  if(!s)return true;
+  const generic=[
+    'thanks','thank you','thank you very much','many thanks','noted','ok','okay','yes','roger',
+    'will check','will look into this','i will look into this','we will check','noted with thanks',
+    'thank you for your email','thanks for your email'
+  ];
+  if(generic.includes(s))return true;
+  // Any attachment/file signal = NOT thanks-only
+  const technical=[
+    'port','agent','eta','vessel ga','bridge','console','cable','penetration','vsat','power',
+    'monitor','photo','picture','seapod','camera','deck','docs','document','acknowledg',
+    'attach','attached','herewith','enclosed','please find','find attached','sending','sent',
+    'see below','find below','image','file','drawing','plan','layout','general arrangement'
+  ];
+  return !technical.some(k=>s.includes(k));
+}
+function itemKey(item){
+  const s=normTxt(item);
+  if((s.includes('vessel')&&s.includes('ga'))||s.includes('general arrangement'))return 'vessel_ga';
+  if((s.includes('bridge')&&s.includes('ga'))||s.includes('bridge console ga'))return 'bridge_ga';
+  if(s.includes('port')||s.includes('agent')||s.includes('eta'))return 'ports';
+  if(s.includes('cable')||s.includes('penetration'))return 'cable';
+  if(s.includes('vsat'))return 'vsat';
+  if(s.includes('power'))return 'power';
+  if(s.includes('monitor'))return 'monitor';
+  if(s.includes('seapod')||s.includes('camera')||s.includes('compass'))return 'seapod';
+  if(s.includes('doc')||s.includes('acknowledg'))return 'docs';
+  return s.split(' ')[0]||s;
+}
+function hasItem(list,item){
+  const k=itemKey(item);
+  return (list||[]).some(x=>itemKey(x)===k || normTxt(x).includes(k) || normTxt(item).includes(itemKey(x)));
+}
+function derivedMissing(v){
+  const recv=v&&Array.isArray(v.receivedItems)?v.receivedItems:[];
+  const current=v&&Array.isArray(v.missingItems)&&v.missingItems.length?v.missingItems:REQUIRED_ITEMS;
+  const base=current.length?current:REQUIRED_ITEMS;
+  return REQUIRED_ITEMS.filter(item=>!hasItem(recv,item) && hasItem(base,item));
+}
+function buildFollowupEmail(v,missing){
+  const m=(missing&&missing.length?missing:REQUIRED_ITEMS);
+  const received=v.receivedItems||[];
+
+  // Acknowledge what was received
+  const ackLines=received.length
+    ? 'Thank you for providing the following:\n'+received.map(x=>'• '+x).join('\n')+'\n\n'
+    : '';
+
+  // Still missing section
+  const missingLines=m.map(x=>'• '+x).join('\n');
+
+  // Dynamic closing — only mention voyage/port if still missing
+  const needsPorts=m.some(x=>/port|voyage|agent/i.test(x));
+  const closing=needsPorts
+    ? 'Once the voyage schedule, upcoming ports, agent details and technical information are reviewed, Orca AI will identify the most suitable installation opportunity.'
+    : 'Once we receive the above, we will be able to finalize the installation coordination.';
+
+  return `Dear Master,
+
+${ackLines}To complete the installation coordination, we still require the following information:
+
+${missingLines}
+
+${closing}
+
+Kind regards,
+ORCA AI OPS`;
+}
+
+function inferReceivedFromReply(reply){
+  const s=normTxt(reply);
+  const got=[];
+
+  // STRICT attachment signals only — captain must have actually sent/attached something
+  const strictAttach=s.includes('attached')||s.includes('attach')||s.includes('herewith')||
+    s.includes('enclosed')||s.includes('please find')||s.includes('find attached')||
+    s.includes('find below')||s.includes('see below')||s.includes('sending')||s.includes('i have sent');
+
+  // "here are/is" only counts when paired with a concrete item keyword — not generic conversation
+  const hereAreWithItem=(s.includes('here are')||s.includes('here is the'))&&
+    (s.includes('photo')||s.includes('ga')||s.includes('document')||s.includes('plan')||
+     s.includes('drawing')||s.includes('file')||s.includes('port')||s.includes('layout'));
+
+  // hasAttach = definitive proof captain sent something (never just "here are" alone)
+  const hasAttach=strictAttach||hereAreWithItem;
+
+  // GA: only if explicitly named as "GA" or "General Arrangement" AND attachment signal present
+  if((s.includes('vessel ga')||s.includes('vessel general arrangement'))&&hasAttach)got.push('Vessel GA');
+  if((s.includes('bridge console ga')||s.includes('bridge general arrangement'))&&hasAttach)got.push('Bridge Console GA');
+  // Generic GA only if not about photos AND has attachment signal
+  if(/\bga\b/.test(s)&&!s.includes('photo')&&!s.includes('picture')&&!s.includes('image')&&hasAttach){
+    if(s.includes('bridge'))got.push('Bridge Console GA');
+    else if(s.includes('vessel'))got.push('Vessel GA');
+  }
+
+  // Port calls: only if agent details explicitly mentioned AND attachment/sharing signal present
+  if(s.includes('port')&&s.includes('agent')&&s.includes('detail')&&hasAttach)got.push('Next 2\u20133 upcoming port calls + corresponding agent details for each port');
+
+  // Cable/VSAT/Power: only if explicitly named AND strict attachment signal (not just mentioned)
+  if(s.includes('cable penetration')&&strictAttach)got.push('Cable penetration');
+  if(s.includes('vsat')&&(s.includes('routing')||s.includes('diagram'))&&strictAttach)got.push('VSAT routing');
+  if(s.includes('power connection')&&strictAttach)got.push('Power connection');
+
+  // Photos: must mention the specific item name near a strict attachment signal
+  // "console photo" alone is NOT "Bridge Console GA" - it could be monitor/location photos
+  if(s.includes('monitor')&&(s.includes('location')||s.includes('photo'))&&strictAttach)got.push('Proposed monitor location photos');
+  if((s.includes('seapod')||s.includes('sea pod'))&&(s.includes('location')||s.includes('photo'))&&strictAttach)got.push('Proposed Seapod location photos');
+
+  // Docs: only if explicit acknowledgement document attached/sent — not just the word "acknowledged"
+  if((s.includes('docs acknowledge')||s.includes('document acknowledg'))&&strictAttach)got.push('Docs acknowledgement');
+  if(s.includes('acknowledg')&&s.includes('attach')&&!s.includes('will')&&!s.includes("we'll"))got.push('Docs acknowledgement');
+
+  return [...new Set(got)];
+}
+
+
+function normalizeAnalysisResult(v,reply,analysis){
+  const oldMissing=derivedMissing(v);
+  const thanksOnly=isThanksOnlyReply(reply);
+  analysis=analysis||{};
+  let received=Array.isArray(analysis.received)?analysis.received.filter(x=>normTxt(x)&&!['partial info','thank you','thanks','yes','ok','okay'].includes(normTxt(x))):[];
+  const inferred=inferReceivedFromReply(reply);
+  const s_rep=normTxt(reply);
+  // ALWAYS use inferReceivedFromReply — ignore AI received[] completely
+  // AI hallucinates too often; keyword matching is reliable
+  received=[...inferred];
+  // else: use AI received (hasAttachSignal but infer missed something)
+  let missing=Array.isArray(analysis.missing)&&analysis.missing.length?analysis.missing:oldMissing;
+  if(thanksOnly && received.length===0){
+    // Pure thanks with nothing detected — keep old missing, clear received
+    missing=oldMissing;
+  }else{
+    // Recompute missing against ALL REQUIRED_ITEMS using only items that were
+    // explicitly detected in actual replies (stored in v.detectedItems), NOT
+    // v.receivedItems which may be polluted by the inverse-of-missing calculation.
+    // v.detectedItems is the accumulation of real inferReceivedFromReply() hits only.
+    const historicalDetected=Array.isArray(v.detectedItems)?v.detectedItems:[];
+    const allDetected=[...new Map([...historicalDetected,...received].map(x=>[itemKey(x),x])).values()];
+    missing=REQUIRED_ITEMS.filter(item=>!hasItem(allDetected,item));
+  }
+  const complete=missing.length===0;
+  analysis.received=received;
+  analysis.missing=missing;
+  analysis.status=complete?'ready':'followup';
+  analysis.risk=complete?'low':(analysis.risk||'medium');
+  analysis.progress=complete?85:Math.max(Number(analysis.progress||0), received.length?25:0);
+  analysis.nextAction=complete?'Coordinate installation window':'Send follow-up';
+  analysis.followup_email=complete
+    ? `Dear Master,\n\nThank you for providing the required information. We will review the details and coordinate the next steps for the Orca AI installation.\n\nKind regards,\nORCA AI OPS`
+    : buildFollowupEmail(v,missing);
+  return analysis;
+}
+function cleanTimeline(v){
+  if(!v)return;
+  v.timeline=(v.timeline||[]).filter(e=>e&&(e.title||e.text)).map(e=>{
+    if(!e.title&&e.text)e.title=e.text;
+    if(!e.ts&&e.date)e.ts=new Date(e.date).toISOString();
+    if(!e.ts)e.ts=new Date().toISOString();
+    if(!e.type)e.type=e.text&&e.text.toLowerCase().includes('reply')?'reply':'note';
+    return e;
+  });
+}
+
+function addTimeline(v,type,title,detail,body,msgId){
+  if(!v)return;
+  v.timeline=v.timeline||[];
+  const entry={ts:new Date().toISOString(),type,title,detail};
+  if(body)entry.body=String(body).slice(0,3000);
+  if(msgId)entry.msgId=msgId;
+  v.timeline.unshift(entry);
+  v.lastActivity=new Date().toISOString();
+}
+function fmtDT(d){
+  if(!d)return '—';
+  const dt=new Date(d);
+  if(!Number.isFinite(dt.getTime()))return '—';
+  return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+function readinessScore(v){
+  if(!v)return 0;
+  if(v.status==='completed')return 100;
+  // All REQUIRED items received = 100%
+  if((v.missingItems||[]).length===0&&(v.receivedItems||[]).length>0)return 100;
+  if(v.status==='scheduled')return Math.max(v.progress||0,90);
+  if(v.status==='ready')return Math.max(v.progress||0,85);
+  const received=[
+    ...(v.receivedItems||[]),
+    ...(v.filesReceived||[]),
+    v.analysisSummary||'',
+    v.lastReplyText||'',
+    v.notes||''
+  ].map(x=>String(x).toLowerCase()).join(' | ');
+  const missing=(v.missingItems||[]).map(x=>String(x).toLowerCase()).join(' | ');
+  const got=(terms)=>terms.some(t=>received.includes(t)) && !terms.some(t=>missing.includes(t));
+  let score=0;
+  if(got(['vessel ga','general arrangement']))score+=12;
+  if(got(['bridge console ga','bridge console','console ga']))score+=12;
+  if(got(['monitor','monitor location','proposed monitor']))score+=15;
+  if(got(['seapod','camera location','proposed seapod']))score+=15;
+  if(got(['port call','upcoming port','agent details','port agent']))score+=15;
+  if(got(['cable','penetration','routing']))score+=10;
+  if(got(['power','vsat']))score+=10;
+  if(got(['docs','acknowledgement','acknowledgment']))score+=5;
+  score=Math.max(score, Number(v.progress||0));
+  if((v.missingItems||[]).length&&score>75)score=75;
+  return Math.min(100,Math.max(0,score));
+}
+function readinessBar(v){
+  const s=readinessScore(v);
+  return `<div class="readiness-cell">
+    <div class="prog"><span style="width:${Math.min(100,s)}%"></span></div>
+    <span>${s}%</span>
+  </div>`;
+}
+
+function filteredVessels(){
+  let arr=vessels.map((v,i)=>({...v,__i:i}));
+  const q=String(window.dashSearch||'').trim().toLowerCase();
+  if(q)arr=arr.filter(v=>[v.name,v.email,v.owner,v.fleet,v.assignedTo,v.docs,v.company,v.imo].some(x=>String(x||'').toLowerCase().includes(q)));
+  const _fltStatus=document.getElementById('flt')?.value||'';
+  if(_fltStatus)arr=arr.filter(v=>v.status===_fltStatus);
+  if((window.dashKpiFilter||'')==='ready')arr=arr.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
+  if((window.dashKpiFilter||'')==='waiting')arr=arr.filter(v=>v.status==='waiting');
+  if((window.dashKpiFilter||'')==='attention')arr=arr.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  // Fleet filter
+  if(window._selectedFleets&&window._selectedFleets.size>0)arr=arr.filter(v=>window._selectedFleets.has(v.fleet||''));
+  const _sortMode=document.getElementById('sort-vessels')?.value||'newest';
+  if(_sortMode==='oldest')arr.sort((a,b)=>new Date(a.lastEmailDate||a.lastContact||0)-new Date(b.lastEmailDate||b.lastContact||0));
+  else arr.sort((a,b)=>new Date(b.lastEmailDate||b.lastContact||0)-new Date(a.lastEmailDate||a.lastContact||0));
+
+  return arr;
+}
+function tlToggle(eid,arid){
+  var el=document.getElementById(eid);
+  var ar=document.getElementById(arid);
+  if(!el||!ar)return;
+  var op=el.style.display==='none';
+  el.style.display=op?'block':'none';
+  ar.innerHTML=op?'&#9660;':'&#9658;';
+}
+function renderTimeline(v){
+  seedTimeline(v);
+  var events=(v.timeline||[]).slice().sort(function(a,b){return new Date(b.ts||0)-new Date(a.ts||0);});
+  if(!events.length)return '<div style="font-size:13px;color:var(--faint)">No timeline yet.</div>';
+  // Show only actual emails (sent/reply), not AI analysis events
+  events=events.filter(function(e){var t=(e.title||'').toLowerCase();return (e.type==='sent'||e.type==='reply')&&!t.includes('analyz')&&!t.includes('status')&&!t.includes('ai ')&&!t.includes('updated');});
+  // Fix mislabeled entries: "Email sent to captain" where FROM is not ORCA AI OPS
+  // was stored incorrectly when the old SENT-label approach was used — relabel at render time
+  events=events.map(function(e){
+    if(e.title==='Email sent to captain'&&!(e.detail||'').toLowerCase().includes('orca ai ops')){
+      return Object.assign({},e,{title:'Captain replied',type:'reply'});
+    }
+    return e;
+  });
+  // Deduplicate: if "Initial email sent" and "Email sent to captain" exist within
+  // 2 minutes of each other they are the same event — keep only "Initial email sent"
+  var initEntry=events.find(function(e){return e.title==='Initial email sent';});
+  if(initEntry){
+    var initTs=new Date(initEntry.ts||0).getTime();
+    events=events.filter(function(e){
+      if(e.title==='Email sent to captain'){
+        return Math.abs(new Date(e.ts||0).getTime()-initTs)>120000;
+      }
+      return true;
+    });
+  }
+  var rows=events.slice(0,50).map(function(e,i){
+    var iconMap={sent:'ti-mail-forward',reply:'ti-mail-opened',ai:'ti-robot',status:'ti-list-check',assignment:'ti-user-share',note:'ti-note'};
+    var icon=iconMap[e.type]||'ti-circle';
+    // For captain replies, strip quoted chain at display time (fixes old stored data too)
+    var displayBody=(e.type==='reply'&&e.body)?cleanCaptainReplyText(e.body):( e.body||'');
+    var hasBody=!!(displayBody&&displayBody.trim().length>0);
+    var eid='tlb'+i+'x'+(((e.ts||'').length*997+(e.title||'').length*31)>>>0);
+    var arid='ara'+eid;
+    var safeBody=hasBody?displayBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
+    var bodyDiv=hasBody?('<div id="'+eid+'" style="display:none;margin-top:8px;padding:12px 14px;background:#f7f8fc;border-radius:7px;border:1px solid #e0e0dc;font-size:12px;line-height:1.7;white-space:pre-wrap;color:#1a1a1a;max-height:260px;overflow-y:auto">'+safeBody+'</div>'):'';
+    var arrowSpan=hasBody?('<span id="'+arid+'" style="font-size:10px;color:#1D2E6B;margin-left:6px;user-select:none">&#9658;</span>'):'';
+    var rowStyle=hasBody?'cursor:pointer;border-radius:7px;padding:8px 6px;margin:0 -6px':'padding:8px 0';
+    var dataAttrs=hasBody?(' data-eid="'+eid+'" data-arid="'+arid+'"'):'';
+    return '<div class="tl-row'+(hasBody?' tl-clickable':'')+'" style="'+rowStyle+'"'+dataAttrs+'>'
+      +'<div class="tl-dot" style="margin-top:2px"><i class="ti '+icon+'"></i></div>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="display:flex;align-items:center"><strong>'+(e.title||e.text||'Activity')+'</strong>'+arrowSpan+'</div>'
+      +'<div><span>'+fmtDT(e.ts||e.date)+(e.detail?' \xb7 '+e.detail:(e.by?' \xb7 '+e.by:''))+'</span></div>'
+      +bodyDiv
+      +'</div></div>';
+  });
+  return rows.join('');
+}
+
+function seedTimeline(v){
+  if(!v.timeline||!v.timeline.length){
+    v.timeline=[];
+    if(v.lastEmailDate)addTimeline(v,'sent','Initial email sent',`Sent to ${v.email||'master'}`);
+    if((v.emailsReceived||0)>0)addTimeline(v,'reply','Captain replied',`${v.emailsReceived} replies received`);
+    if(v.status==='followup')addTimeline(v,'ai','AI analysis completed','Follow-up required');
+  }
+}
+
+
+function getVesselTbody(){
+  let tb=document.getElementById('vtb');
+  if(tb)return tb;
+  const table=document.querySelector('#view-dashboard table.tbl, #view-dashboard .tbl');
+  if(table){
+    tb=table.querySelector('tbody');
+    if(tb){tb.id='vtb';return tb;}
+    tb=document.createElement('tbody');
+    tb.id='vtb';
+    table.appendChild(tb);
+    return tb;
+  }
+  return null;
+}
+function getVesselEmpty(){
+  let empty=document.getElementById('vempty');
+  if(empty)return empty;
+  const panel=document.querySelector('#view-dashboard .panel');
+  if(panel){
+    empty=document.createElement('div');
+    empty.id='vempty';
+    empty.style.cssText='text-align:center;padding:3rem;color:var(--muted);display:none';
+    empty.innerHTML='<div style="font-size:42px;color:#d0d0d0"><i class="ti ti-ship"></i></div><p>No vessels yet.</p><button class="btn btn-p" onclick="openStart()"><i class="ti ti-rocket"></i> Start first coordination</button>';
+    panel.appendChild(empty);
+    return empty;
+  }
+  return null;
+}
+
+function renderTable(){
+  setTimeout(_renderTableImpl, 0);
+}
+function _renderTableImpl(){
+  const tb=getVesselTbody(),empty=getVesselEmpty();
+  if(!tb){console.warn('Vessel table body not found');return;}
+  const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==window.dashSearch)searchEl.value=window.dashSearch||'';
+  const arr=filteredVessels();
+  if(!vessels.length){
+    tb.innerHTML='';
+    if(empty)empty.style.display='block';
+    return;
+  }
+  if(empty)empty.style.display=arr.length?'none':'block';
+  tb.innerHTML=arr.map(v=>{
+    const idx=v.__i;
+    seedTimeline(vessels[idx]);
+    const d=ds(v.lastContact);
+    const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
+    const _allDone=(v.missingItems||[]).length===0&&(v.receivedItems||[]).length>0;
+    return `<tr class="cl" style="${_allDone?'background:#f0faf4;border-left:3px solid #003d1a':''}">
+      <td>
+        <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
+          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
+          <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
+          <div onclick="event.stopPropagation();editVesselFleet(${idx})" title="Click to set fleet" style="margin-top:4px;cursor:pointer">
+            ${v.fleet
+              ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
+              : '<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>'}
+          ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
+              ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px">&#8644; Transferred to '+v.lastTransferTo.split('@')[0]+'</span>'
+              : ''}
+          </div>
+        </div>
+      </td>
+      <td>
+        <select class="status-select" onclick="event.stopPropagation()" onchange="event.stopPropagation();setVesselStatus(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">
+          ${statusOptions(v.status)}
+        </select>
+      </td>
+      <td>${readinessBar(v)}</td>
+      <td>${rb(v.risk||'medium')}</td>
+      <td>${trafficLight(v)}</td>
+      <td>${dc(d)}</td>
+      <td class="email-activity" style="color:var(--muted)">
+        <strong>Sent</strong> ${v.emailsSent||0} · ${v.lastEmailDate?new Date(v.lastEmailDate).toLocaleDateString('en-GB'):'—'}<br>
+        <strong>Received</strong> ${v.emailsReceived||0} · ${v.lastReceivedDate?new Date(v.lastReceivedDate).toLocaleDateString('en-GB'):'—'}
+      </td>
+      <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
+      <td>
+        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
+      </td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-s" title="View & Status" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){openV(_i);},0)"><i class="ti ti-eye"></i> View</button>
+          <button class="btn btn-p btn-s" title="Analyze AI" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){openCaseAnalyze(_i);},0)"><i class="ti ti-robot"></i> Analyze</button>
+          <button class="btn btn-s" title="Transfer ownership" onclick="event.stopPropagation();var _i=${idx};setTimeout(function(){transferOwnership(_i);},0)" style="font-size:11px"><i class="ti ti-arrows-exchange"></i> Transfer</button>
+          ${adminDelete}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+function updateMetrics(){
+  document.getElementById('m-t').textContent=vessels.length;
+  const _rCount=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color='#003d1a';}
+  const _atEl=document.getElementById('m-a');
+  const _atCount=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+  if(_atEl){_atEl.textContent=_atCount;_atEl.style.color=_atCount>0?'#E24B4A':'#1D2E6B';}
+  document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
+
+}
+function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
+
+// START MODAL
+function val(id){const el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
+function setVal(id,value){const el=document.getElementById(id);if(el&&typeof el.value==='string')el.value=value;}
+function show(id,display){const el=document.getElementById(id);if(el)el.style.display=display;}
+function txt(id,value){const el=document.getElementById(id);if(el)el.textContent=value;}
+function openStart(){
+  openModalWithFleetList();show('mod-start','flex');show('mod-ep','none');show('btn-snd','none');show('btn-gen','inline-flex');['mv','me','mo','md'].forEach(id=>setVal(id,''));}
+
+async function genEmail(){
+  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
+  if(!v||!e){alert('Please enter vessel name and master email.');return;}
+  show('mod-ep','block');show('mod-al','flex');txt('mod-ep-txt','');show('btn-gen','none');
+  draft=`Dear Master,
+
+My name is ${user.name||user.email}, and I am an Operations Specialist at Orca AI. We are preparing for the installation of the Orca AI system on board your vessel as part of the fleet-wide deployment program, and I will be your point of contact for the coordination process.
+
+The Orca AI system is designed to enhance situational awareness on the bridge and support the Officer of the Watch alongside existing navigation systems such as radar and ECDIS.
+
+Installation Process
+Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes 12–18 hours and includes system installation, technical validation, and crew training.
+
+To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong>
+
+Information and Preparations Required
+
+1. Cable Routing
+Please confirm that suitable cable penetrations can be prepared for:
+• Two outdoor cables from the compass deck to the bridge console.
+• One cable from the bridge console to the VSAT rack or business switch.
+
+2. Proposed monitor location photos
+Please provide:
+• Photographs of the proposed monitor location(s) for the Orca AI 24-inch monitor.
+• Ideally, the monitor should be located close to the ECDIS or radar.
+• If available, we recommend a location on the center console.
+
+3. Bridge Console Compartments
+Please provide photographs of the following bridge console compartments with the doors open:
+• Center console compartment
+• Port console compartment
+• Starboard console compartment
+
+4. Proposed Seapod Location
+Please provide photographs of:
+• The forward compass deck rail
+• The proposed Seapod installation location
+
+Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:
+• A clear 225-degree view at the designated location
+• An unobstructed forward field of view
+• Installation below and clear of all radars
+• A minimum distance of 4 meters from the magnetic compass
+
+If any structure or mounting bracket is required, we kindly ask that it be prepared before the engineer's visit.
+
+Requested Response
+To help us finalize the installation plan, we would appreciate receiving:
+☐ Proposed monitor location photos
+☐ Center console photo
+☐ Port console photo
+☐ Starboard console photo
+☐ Proposed Seapod location photos
+☐ Confirmation regarding cable penetrations
+
+Relevant installation documents can be found here: ${d||'[ORCA AI Installation Documents Link]'}
+
+Please do not hesitate to contact us if you have any questions. We look forward to working with you and your crew.
+
+Kind regards,
+${user.name||user.email}
+Operations Specialist
+Orca AI`;
+  show('mod-al','none');txt('mod-ep-txt',draft);show('btn-snd','inline-flex');
+}
+
+async function sendAndSaveNew(){
+  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
+  if(!v||!e){alert('Please enter vessel name and master email.');return;}
+  const btn=document.getElementById('btn-snd');
+  const oldHtml=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
+  try{
+    const htmlBody=buildHtmlEmail(draft,'ORCA AI OPS',d);
+    const cc=val('mcc')||'',bcc=val('mbcc')||'';
+    const result=await sendGmail(e,'Orca AI Installation Coordination - '+v,htmlBody,true,cc,bcc);
+    if(!result)return;
+    // Capture Gmail thread ID + message ID so fetchInboxByThreads can link this entry
+    const gmailThreadId=result.threadId||null;
+    const gmailMsgId=result.id||null;
+    const now=new Date().toISOString();
+    const nv={
+      id:Date.now(),
+      name:v,
+      email:e,
+      owner:o,
+      fleet:getSelectedFleet(),
+      docs:d,
+      status:'waiting',
+      progress:0,
+      risk:'medium',
+      lastContact:now,
+      lastEmailDate:now,
+      firstEmailDate:now,
+      lastActivity:now,
+      emailsSent:1,
+      emailsReceived:0,
+      assignedTo:(user&&user.email)||'rami@orca-ai.io',
+      nextAction:'Wait for master reply',
+      receivedItems:[],
+      missingItems:[...REQUIRED_ITEMS],
+      timeline:[],
+      gmailThreadId  // stored so fetchInboxByThreads() can look up replies precisely
+    };
+    // Store gmailMsgId so fetchInboxByThreads won't add a duplicate "Email sent to captain" entry
+    if(typeof addTimeline==='function')addTimeline(nv,'sent','Initial email sent',`Sent to ${e}`,'',gmailMsgId);
+    vessels.push(nv);
+    await saveVessels();
+    try{updateMetrics();}catch(e){console.warn(e);}
+    try{renderTable();}catch(e){console.error('renderTable failed',e);}
+    try{populateSel();}catch(e){console.warn(e);}
+    try{if(typeof renderAdmin==='function')renderAdmin();}catch(e){console.warn(e);}
+    show('mod-start','none');
+    showTab('dashboard');
+    /* success: close modal and return to dashboard without popup */
+  }catch(err){
+    console.error(err);
+    alert('Email was sent, but saving/updating the dashboard failed: '+(err.message||err));
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML=oldHtml||'<i class="ti ti-send"></i> Send via Gmail + Save';}
+  }
+}
+
+// GMAIL
+
+function buildFollowupHtmlEmail(followupText, docsLink){
+  // Dedicated wrapper for follow-up emails. Never uses the initial installation template.
+  const bodyText=String(followupText||'').trim();
+  const htmlBody=bodyText
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f0f0ed;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0ed;padding:20px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #dddddd">
+<tr><td style="background:#1D2E6B;padding:24px 36px">
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:30px;font-weight:700;letter-spacing:2px;line-height:1">ORCA AI</div>
+</td></tr>
+<tr><td style="padding:34px 36px;color:#111111;font-size:14px;line-height:1.7">
+${htmlBody}
+</td></tr>
+</table>
+</td></tr>
+</table>
+
+</body></html>`;
+}
+function nextFollowupNumber(v){return Number(v.followupsSent||0)+1;}
+function saveFollowupMeta(v,body){
+  v.followupsSent=nextFollowupNumber(v);
+  v.lastFollowupPreview=String(body||'').slice(0,500);
+  addTimeline(v,'sent',`Follow-up #${v.followupsSent} sent`,String(body||'').split('\n').find(x=>x.trim().startsWith('•'))||'Missing items requested',body);
+}
+
+function buildHtmlEmail(plainText, senderName, docsLink) {
+  const safeText = String(plainText||'');
+  const contentHtml = /<\w+[^>]*>/.test(safeText) ? safeText : safeText.replace(/\n/g,'<br>');
+  const logo = "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VmbarzXKUSaCmJ2d8UC/PPOUj794+AdymtAbDQ9onVfL8bYVV174b3HNeN77w9rvi/MKLjOld14YySgmJmZmm+65cc4lM/btW98erbOzXXst8ox+bIGrhTFDoNnQzPNxOlxJy4AP0e70aJW7ELP6Rc9TUsNPCHONtc5FBUV/wtnOvbbyAdVgeCLVuMEFHdkmEkFR54eoTQitCb3gFGu090V+OLL+UZnXDU0zpr3EBTKFE0U0GvVvFRb3H3Owdu3vqHlHTiP79j1VD45u5moafp+/cMd3Rx8icVK9/48tR+qrpg8s7He1oBe+JokhphkNW4eWFI4+VPv8I9EyeEN4XF5mRI3WN54x47rdJAGs1spDBo1zAdfC5cmcfHz9xEdNEmH7z+giBPD7iSshNMSSJfPe53UcOzGSSzzbudeED138T7nWurItGFJfSTUgEFCPR44FgdSnBU4kzc1VDXUN6+eWVxQOy8pM/zWYTO/BFxjVXASHYbteEHZAZOz3JSB0jjZUXbl79+P7SB/B6Wp9CrQftmPZTxYUFy5MyKT4+tun3r7ltvnn9MvJvMqUbtoA7xNtwqyoNwjf0jlmgwcPvKiuYcMl/9z5yPckRsaMWXqG1yeOZbXD+79utU5KSBubPn263yP6mI5un9c3Ytv7P5xJksSepgMXixrmoz5NeJEkSOAzYE807ejwnH/55b+NOS9LSa+tK0QdykHj2eIkfuolr1K2B2tEWxljlT6flJXKSDb/+McfaBkJmuD26BVXPJj39VfflWblZA1oO+Esdrs9nTODdbwg5Q2wHBM9voOedt/RHxqfa6J+huYkGZc6zvcefGaqc6o4wp5rpUZz82ZHWfHNt7W1Oc9Sa5cgpKcTuISLTQUvdmqyvDFnzovmjz/+cKhBpy9xOtynPi8QTJ50U9oPnF76zmwe0FRdbe2oT2Bev16fZkg3GR9htRv0hoTMlBC5eTkvudpdzICc1+dKmubjESWvyWRkap2C5EsstBpkQFHOmpPNjjpWe2OjQzXBM90ovCpzvGo0TPb7v015nk8ICLdXhcLt8KNf0Gx/qSq8nS5jLE4ViFAVuXxynmXOfJlIG1hjEQT58dFrmo8cyOXRaBc30FwfP/HRPIiwZYjBRraHpCT3I9J8EARh04tml0QrGHa+lhWh9S4CSYaySrTLTwSbQEQbfc0TsU/l+SAIkhi9ZnZRci2zp3KdpTXCp1dQlFMsWuybevW4EATpfXp1IXu6kCC7lRYWk1fQNbYIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgiAIgsTF/wE3Qs+q6cuh+QAAAABJRU5ErkJggg==";
+  const icon = "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";
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 2);
+  const dateStr = dueDate.toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'});
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f0f0ed;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0ed;padding:20px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #ddddd9">
+  <!-- HEADER -->
+  <tr><td style="background:#1D2E6B;padding:24px 36px">
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:30px;font-weight:700;letter-spacing:2px;line-height:1">
+    ORCA AI
+  </div>
+</td></tr>
+
+  <!-- GREETING -->
+  <tr><td style="padding:32px 36px 0 36px;font-size:14px;color:#1a1a1a;line-height:1.75">
+    <p style="margin:0 0 14px 0">Dear Master,</p>
+    <p style="margin:0 0 10px 0">We are the Operations team at Orca AI, currently preparing for the installation of the Orca AI system on board your vessel .</p>
+    <p style="margin:0 0 10px 0">The Orca AI system is designed to enhance situational awareness on the bridge and support the Officer of the Watch alongside existing navigation systems such as radar and ECDIS.</p>
+  </td></tr>
+
+  <!-- INSTALLATION PROCESS -->
+  <tr><td style="padding:20px 36px 0 36px">
+    <p style="margin:0 0 8px 0;font-size:14px;font-weight:bold;color:#1D2E6B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1D2E6B;padding-bottom:5px">Installation Process</p>
+    <p style="margin:8px 0 0 0;font-size:14px;color:#333;line-height:1.75">Once the installation date is confirmed, an Orca AI Service Engineer will board the vessel to perform the installation. The process typically takes <strong>12–18 hours</strong> and includes system installation, technical validation, and crew training.</p>
+    <p style="margin:10px 0 0 0;font-size:14px;color:#333;line-height:1.75">To ensure a smooth installation, we kindly request your assistance with the items below.<br><br><strong></strong></p>
+  </td></tr>
+
+  <!-- SECTION TITLE -->
+  <tr><td style="padding:20px 36px 12px 36px">
+    <p style="margin:0;font-size:14px;font-weight:bold;color:#1D2E6B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1D2E6B;padding-bottom:5px">Information and Preparations Required</p>
+  </td></tr>
+
+  <!-- 1. UPCOMING PORT CALLS -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">1. Upcoming Port Calls</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Could you kindly share the next 2–3 upcoming port calls, along with the corresponding agent details for each port?</p>
+  </td></tr>
+
+  <!-- 2. CABLE ROUTING -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">2. Cable Routing</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please confirm that suitable cable penetrations can be prepared for:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Two outdoor cables from the compass deck to the bridge console</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; One cable from the bridge console to the VSAT rack or business switch</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 2. MONITOR LOCATION -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">3. Monitor Location</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A photograph of the preferred installation location for the Orca AI 24" monitor</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Ideally located close to ECDIS or radar — preferably on the center console</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 3. BRIDGE CONSOLE -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">4. Bridge Console Compartments</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of the following compartments with the doors open:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 0 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Center console compartment</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Port console compartment</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Starboard console compartment</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 4. SEAPOD -->
+  <tr><td style="padding:0 36px 16px 36px">
+    <p style="margin:0 0 8px 0;font-size:13px;font-weight:bold;color:#1a1a1a;text-decoration:underline">5. Proposed Seapod Location</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#444;line-height:1.6">Please provide photographs of:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The forward compass deck rail</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; The proposed Seapod installation location</td></tr>
+    </table>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#444;line-height:1.6">Please note that a clear view of 225 degrees is mandatory at the designated location. The camera requires:</p>
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 8px 10px">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A clear 225-degree view at the designated location</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; An unobstructed forward field of view</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; Installation below and clear of all radars</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0;line-height:1.6">&#9658;&nbsp; A minimum distance of 4 meters from the magnetic compass</td></tr>
+    </table>
+    <p style="margin:0;font-size:13px;color:#444;font-style:italic">If any structure or mounting bracket is required, we kindly ask that it be prepared before the engineer's visit.</p>
+  </td></tr>
+
+  <!-- CHECKLIST -->
+  <tr><td style="padding:8px 36px 16px 36px;background:#f7f7f5;border-top:1px solid #e5e5e2;border-bottom:1px solid #e5e5e2">
+    <p style="margin:0 0 10px 0;font-size:13px;font-weight:bold;color:#1D2E6B">Requested Response</p>
+    <p style="margin:0 0 8px 0;font-size:13px;color:#444">To help us finalize the installation plan, we would appreciate receiving:</p>
+    <table cellpadding="0" cellspacing="0">
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Next 2–3 upcoming port calls + corresponding agent details for each port</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Vessel GA</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Bridge Console GA</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Proposed monitor location photos</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Center console photo</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Port console photo</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Starboard console photo</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Proposed Seapod location photos</td></tr>
+      <tr><td style="font-size:13px;color:#444;padding:2px 0">&#9744;&nbsp; Confirmation regarding cable penetrations</td></tr>
+    </table>
+    <p style="margin:10px 0 0 0;font-size:13px;color:#444">We would appreciate receiving the above information by <strong>${dateStr}</strong>.</p>
+    
+  </td></tr>
+
+  <!-- CLOSING -->
+  <tr><td style="padding:20px 36px 8px 36px;font-size:14px;color:#333;line-height:1.75">
+    <p style="margin:0 0 10px 0">Please do not hesitate to contact us if you have any questions. We look forward to working with you and your crew.</p>
+  </td></tr>
+
+  <!-- SIGNATURE -->
+  <tr><td style="padding:8px 36px 28px 36px;border-top:1px solid #e5e5e2">
+    <p style="margin:0 0 2px 0;font-size:13px;color:#555">Kind regards,</p>
+    <p style="margin:6px 0 2px 0;font-size:14px;font-weight:bold;color:#1a1a1a">Orca AI - OPS Department</p>
+    <img src="data:image/png;base64,${logo}" alt="Orca AI" height="28" style="display:block;margin-top:10px"/>
+  </td></tr>
+
+  <!-- FOOTER -->
+  <tr><td style="background:#1D2E6B;padding:12px 36px;text-align:center">
+    <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.55)">Orca AI Installation Coordinator &nbsp;|&nbsp; This email was sent via the Orca AI Operations Portal</p>
+  </td></tr>
+
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+function stripHtmlForText(s){
+  return String(s||'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
+}
+
+async function sendGmail(to, subj, body, isHtml=false, cc="", bcc="") {
+  if(!token){alert('Not authenticated.');return false;}
+  const html = isHtml ? body : body.replace(/\n/g,'<br>');
+  const boundary = 'orca_boundary_' + Date.now();
+  const mime = [
+    `From: ORCA AI OPS <${user.email}>`,
+    `To: ${to}`,
+    ...(cc?[`Cc: ${cc}`]:[]),
+    ...(bcc?[`Bcc: ${bcc}`]:[]),
+    `Subject: ${subj}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/plain; charset=utf-8`,
+    ``,
+    body,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/html; charset=utf-8`,
+    ``,
+    html,
+    ``,
+    `--${boundary}--`
+  ].join('\r\n');
+  const raw = btoa(unescape(encodeURIComponent(mime))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  try{
+    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw})});
+    if(!r.ok){const e=await r.json();alert('Gmail error: '+JSON.stringify(e.error?.message||e));return false;}
+    // Return the full response — callers check truthiness (object = truthy, false = failure)
+    // threadId is used to track the exact Gmail conversation thread per vessel
+    return await r.json(); // { id, threadId, labelIds }
+  } catch(e){alert('Send error: '+e);return false;}
+}
+
+// INBOX
+
+
+function inboxNorm(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function inboxEmail(s){return String(s||'').toLowerCase().trim();}
+function inboxWhen(v){
+  const d=new Date(v&&(v.updatedAt||v.lastActivity||v.lastContact||v.createdAt||0)).getTime();
+  return Number.isFinite(d)?d:0;
+}function inboxNameHit(m,v){
+  const n=inboxNorm(v&&v.name);
+  if(!n||n.length<3)return false;
+  const s=inboxNorm(m&&(m.subj||m.subject));
+  // Must match on subject line AND subject must look like an Orca coordination email
+  const isOrcaSubject=s.includes('orca')||s.includes('installation coordination')||s.includes('installation co');
+  return isOrcaSubject && s.includes(n);
+}// Escape HTML special characters to prevent XSS when using innerHTML
+function escapeHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Split raw email body into captain's reply and quoted chain.
+// Returns { reply: string, quoted: string }
+function parseEmailBody(raw){
+  const text=String(raw||'').replace(/\r/g,'').trim();
+  const lines=text.split('\n');
+  const replyLines=[],quoteLines=[];
+  let foundQuote=false;
+  for(const line of lines){
+    const trimmed=line.trim();
+    if(!foundQuote&&(trimmed.startsWith('>')||/^On .{5,} wrote:$/i.test(trimmed))){
+      foundQuote=true;
+    }
+    if(foundQuote){
+      // Strip leading > markers so the quoted email reads cleanly
+      quoteLines.push(line.replace(/^>+\s?/,''));
+    } else {
+      replyLines.push(line);
+    }
+  }
+  return{
+    reply:replyLines.join('\n').trim(),
+    quoted:quoteLines.join('\n').trim()
+  };
+}
+
+async function openInboxReply(idx){
+  await new Promise(r=>setTimeout(r,0));
+  const item=(ibItems||[])[idx];
+  if(!item){await orcaAlert('Reply not found. Please click Check inbox again.');return;}
+  const v=item.vessel||{};
+  document.getElementById('view-reply-vessel').textContent=v.name||'Vessel';
+  document.getElementById('view-reply-from').textContent='From: '+(item.from||'')+'  ·  '+(item.date||'');
+  document.getElementById('view-reply-subj').textContent=item.subj||'';
+
+  const parsed=parseEmailBody(item.body||'');
+  const replyText=parsed.reply||'(no message content)';
+
+  // Option B: clean reply at top + collapsible quoted chain below
+  // Captain's reply — prominent, easy to read
+  let html=`
+    <div style="margin-bottom:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Captain's message</div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:20px 22px;font-size:14px;line-height:1.85;white-space:pre-wrap;font-family:inherit;color:#1a1a1a;min-height:60px">${escapeHtml(replyText)||'<span style="color:var(--faint);font-style:italic">(no message content)</span>'}</div>`;
+
+  if(parsed.quoted){
+    const qid='qblock_'+Date.now();
+    html+=`
+    <div style="margin-top:16px">
+      <button onclick="var el=document.getElementById('${qid}');var open=el.style.display!=='none';el.style.display=open?'none':'block';this.querySelector('.qic').className='qic ti '+(open?'ti-chevron-right':'ti-chevron-down')"
+        style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:6px 0;font-family:inherit;display:inline-flex;align-items:center;gap:6px;font-weight:500;letter-spacing:.01em">
+        <i class="qic ti ti-chevron-right"></i> Show original email
+      </button>
+      <div id="${qid}" style="display:none;margin-top:8px;padding:16px 18px;background:#f7f7f5;border:1px solid var(--border);border-left:3px solid #c5cfe8;border-radius:0 8px 8px 0;font-size:13px;line-height:1.75;white-space:pre-wrap;font-family:inherit;color:#555;max-height:50vh;overflow-y:auto">${escapeHtml(parsed.quoted)}</div>
+    </div>`;
+  }
+
+  document.getElementById('view-reply-body').innerHTML=html;
+  document.getElementById('mod-view-reply').style.display='flex';
+}
+function updateReceivedStatsFromInbox(){
+  if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
+  vessels.forEach(v=>{
+    const name=(v.name||'').toLowerCase();
+    const email=(v.email||'').toLowerCase();
+    const matches=ibItems.filter(m=>{
+      // Match strictly by email only — vessel name matching causes false positives
+      const from=(m.fe||'').toLowerCase()||(m.from||'').toLowerCase();
+      return email && from.includes(email);
+    });
+    if(matches.length){
+      v.emailsReceived=matches.length;
+      const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(t=>Number.isFinite(t)).sort((a,b)=>b-a)[0];
+      v.lastReceivedDate=new Date(latest||Date.now()).toISOString();
+      if(v.status==='waiting')v.status='followup';
+      v.nextAction='Analyze reply and send follow-up';
+    }else{
+      v.emailsReceived=v.emailsReceived||0;
+      v.lastReceivedDate=v.lastReceivedDate||'';
+    }
+  });
+}
+
+
+function renderInlineInbox(){
+  const box=document.getElementById('dash-inbox-inline');
+  const list=document.getElementById('dash-inbox-list');
+  if(!box||!list)return;
+  box.style.display=window.showInlineInboxPanel?'block':'none';
+  if(!window.showInlineInboxPanel)return;
+  if(!ibItems||!ibItems.length){
+    list.innerHTML='<div class="empty" style="padding:1rem">No new inbox replies found for the current vessels.</div>';
+    return;
+  }
+  list.innerHTML=ibItems.map((it,i)=>{
+    const v=it.vessel||{};
+    const isNew=it.isNew===true;
+    const cardStyle=isNew
+      ?'border:1px solid #a8c8f0;border-radius:var(--rs);padding:12px 14px;margin-bottom:8px;background:linear-gradient(135deg,#e8f4ff 0%,#d4ebff 100%);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-left:4px solid #1D6B3E'
+      :'border:1px solid #d0d8e8;border-radius:var(--rs);padding:12px 14px;margin-bottom:8px;background:#f8f9fc;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-left:4px solid #aab';
+    const newBadge=isNew?'<span style="font-size:10px;background:#1D6B3E;color:#fff;border-radius:4px;padding:1px 7px;margin-left:6px;font-weight:700;vertical-align:middle">NEW</span>':'';
+    return `<div style="${cardStyle}">
+    <div style="min-width:0">
+      <div style="font-weight:700;font-size:13px">${it.vessel?.name||'Vessel reply'}${newBadge}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">${it.from||''} · ${it.date||''}</div>
+      <div style="font-size:12px;color:var(--navy);font-style:italic;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${it.subj||''}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:650px">${(it.body||'').replace(/\s+/g,' ').slice(0,180)}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="var _i=${i};setTimeout(function(){openInboxReply(_i);},0)"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="var _i=${i};setTimeout(function(){openIbModalSend(_i);},0)"><i class="ti ti-cpu"></i> Analyze</button><button class="btn btn-s" onclick="var _vi=${it.vi};setTimeout(function(){openLatestStatus(_vi);},0)" style="background:#f4f6fb;border-color:#c5cfe8;color:#1D2E6B"><i class="ti ti-report-analytics"></i> Status</button></div>
+  </div>`;
+  }).join('');
+}
+
+async function checkInbox(silent=false){
+  const buttons=[document.getElementById('btn-chk'),document.getElementById('btn-chk-inbox-page')].filter(Boolean);
+  if(!silent){
+    buttons.forEach(b=>{b.disabled=true;b.innerHTML='<i class="ti ti-refresh" style="animation:spin .7s linear infinite"></i> Checking...';});
+  }
+  // Yield to browser so UI updates (spinner) before heavy work starts - fixes INP blocking
+  await new Promise(r=>setTimeout(r,0));
+  await fetchInbox();
+  window.showInlineInboxPanel=true;
+  updateReceivedStatsFromInbox();
+  if(!silent){
+    buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
+  }
+  renderInlineInbox();renderInbox();renderTable();updateMetrics();saveVessels();
+  // Update the auto-checked timestamp label
+  const lbl=document.getElementById('last-refresh-label');
+  if(lbl) lbl.textContent='Auto-checked: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  // Show toast only when triggered manually
+  if(!silent){
+    const _t=document.createElement('div');
+    _t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1D2E6B;color:#fff;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+    const _cnt=typeof ibItems!=='undefined'?ibItems.length:0;
+    _t.innerHTML=_cnt>0?'\u{1F4EC} Inbox checked \u2014 '+_cnt+' new repl'+(_cnt===1?'y':'ies')+' found':'\u2705 Inbox checked \u2014 no new replies';
+    document.body.appendChild(_t);setTimeout(()=>_t.remove(),3500);
+  }
+}
+
+
+// ── Google Sheets shared inbox ──
+const INBOX_SHEET_NAME='inbox';
+const INBOX_SHEET_URL=`https://sheets.googleapis.com/v4/spreadsheets/1Aveudwg5B8D-XrO04L33WibwtzWEaMVhLfDOMyNb3Y4/values/${encodeURIComponent(INBOX_SHEET_NAME)}`;
+
+async function sheetsInboxSave(item){
+  if(!token||!hasSharedDb())return;
+  try{
+    const row=[
+      item.msgId||'',
+      item.from||'',
+      item.fe||'',
+      item.subj||'',
+      item.date||'',
+      (item.body||'').substring(0,1000),
+      item.vessel?.name||'',
+      '',
+      new Date().toISOString(),
+      user?.email||''
+    ];
+    await fetch(INBOX_SHEET_URL+'!A1:append?valueInputOption=RAW',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({values:[row]})
+    });
+  }catch(e){
+    console.error('sheetsInboxSave failed - check Sheets scope',e);
+    // Show warning in UI
+    const lbl=document.getElementById('last-refresh-label');
+    if(lbl)lbl.textContent='⚠️ Could not save reply to shared sheet: '+( e?.message||e);
+  }
+}
+
+async function sheetsInboxLoad(){
+  if(!token||!hasSharedDb())return [];
+  try{
+    const r=await fetch(INBOX_SHEET_URL+'!A:J',{headers:{'Authorization':'Bearer '+token}});
+    if(!r.ok)return [];
+    const d=await r.json();
+    const rows=(d.values||[]).slice(1); // skip header
+    return rows.map(row=>{
+      const vesselName=row[6]||'';
+      // Match by name only - vi index differs per user
+      const v=vessels.find(_v=>(_v.name||'').toLowerCase()===(vesselName||'').toLowerCase())||null;
+      if(!v)return null;
+      return {msgId:row[0],from:row[1],fe:row[2],subj:row[3],date:row[4],body:row[5],vessel:v,vi:vessels.indexOf(v)};
+    }).filter(Boolean);
+  }catch(e){console.warn('sheetsInboxLoad failed',e);return [];}
+}
+
+async function sheetsInboxInit(){
+  // Ensure inbox sheet exists with headers
+  if(!token||!hasSharedDb())return;
+  try{
+    const r=await fetch(INBOX_SHEET_URL+'!A1',{headers:{'Authorization':'Bearer '+token}});
+    const d=await r.json();
+    if(!d.values){
+      // Create header row
+      await fetch(INBOX_SHEET_URL+'!A1:append?valueInputOption=RAW',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({values:[['msgId','from','fe','subj','date','body','vesselName','vi','savedAt','savedBy']]})
+      });
+    }
+  }catch(e){}
+}
+
+async function mergeSharedInbox(){
+  const shared=await sheetsInboxLoad();
+  if(!shared.length)return;
+  const existingIds=new Set((ibItems||[]).map(i=>i.msgId));
+  const myEmail=normEmail(user?.email||'');
+  const isSuperAdmin=SUPER_ADMINS.includes(myEmail);
+  let added=0;
+  for(const item of shared){
+    if(existingIds.has(item.msgId))continue;
+    // Validate: vessel must exist in portal
+    if(!item.vessel)continue;
+    // Super Admin sees all replies; others see only their assigned vessels
+    if(!isSuperAdmin){
+      const assignedTo=normEmail(item.vessel.assignedTo||'');
+      if(assignedTo!==myEmail)continue;
+    }
+    // Strict subject filter: must be "Re: Orca AI Installation Coordination - VESSELNAME"
+    const subj=(item.subj||'').toLowerCase();
+    if(!subj.includes('re:'))continue;
+    if(!subj.includes('orca ai installation coordination'))continue;
+    // Vessel name must appear in subject
+    const vn=(item.vessel.name||'').toLowerCase().trim();
+    if(vn.length>1&&!subj.includes(vn))continue;
+    // Validate: reply must be after first portal email
+    const firstSent=item.vessel.firstEmailDate||item.vessel.lastEmailDate||null;
+    if(firstSent&&item.date&&new Date(item.date)<new Date(firstSent))continue;
+    ibItems.push(item);
+    added++;
+  }
+  if(added>0){
+    renderInlineInbox();renderInbox();
+    const badge=document.getElementById('ib-count');
+    if(badge){badge.textContent=ibItems.length;badge.style.display=ibItems.length?'inline':'none';}
+  }
+}
+// ── NEW: Thread-based inbox fetch ─────────────────────────────────────────────
+// For each vessel that has a stored gmailThreadId, fetch the exact Gmail thread
+// and find any messages NOT sent by the ops team (i.e. captain replies).
+// This replaces the old subject+email search approach which caused cross-contamination.
+async function fetchInboxByThreads(){
+  if(!token||!vessels.length)return;
+  const myEmail=normEmail(user&&user.email);
+  const _isSuper=isSuperAdmin(myEmail);
+  const myVessels=_isSuper?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')===myEmail);
+  // Only process vessels that have a stored Gmail thread ID
+  const threadVessels=myVessels.filter(v=>v.gmailThreadId);
+  if(!threadVessels.length)return;
+
+  for(const vessel of threadVessels){
+    try{
+      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${vessel.gmailThreadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
+      if(!r.ok)continue;
+      const thread=await r.json();
+      const messages=(thread.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
+      const vi=vessels.indexOf(vessel);
+      for(let msgIdx=0;msgIdx<messages.length;msgIdx++){
+        const msg=messages[msgIdx];
+        const hdr=(msg.payload&&msg.payload.headers)||[];
+        const from=hdr.find(h=>h.name==='From')?.value||'';
+        const subj=hdr.find(h=>h.name==='Subject')?.value||'';
+        const date=hdr.find(h=>h.name==='Date')?.value||'';
+        const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
+        // Portal emails always set From: "ORCA AI OPS <email>".
+        // Captain replies never contain "ORCA AI OPS" — even in self-test scenarios.
+        // This is more reliable than the SENT label which also flags captain replies
+        // when the same Gmail account is used for both ops and testing.
+        const isOpsMsg=from.toLowerCase().includes('orca ai ops');
+        // Use decodeGmailBody which handles UTF-8 correctly (bullets, dashes, quotes etc.)
+        const rawBody=msg.payload?decodeGmailBody(msg.payload):'';
+        // Clean the body before storing — strip quoted chain so timeline shows only real content
+        const body=isOpsMsg?rawBody:cleanCaptainReplyText(rawBody);
+        const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
+        // First message in thread = initial sent email.
+        // Skip if already logged as "Initial email sent" (old vessels lack msgId on that entry).
+        if(msgIdx===0&&isOpsMsg){
+          const hasInitialEntry=(vessels[vi].timeline||[]).some(t=>t.type==='sent'&&t.title==='Initial email sent');
+          if(logged||hasInitialEntry)continue;
+        }
+        // Add EVERY message in the thread to the timeline (full conversation view)
+        if(!logged){
+          if(isOpsMsg){
+            // Outbound — follow-up from ops
+            addTimeline(vessels[vi],'sent','Email sent to captain',from,body.substring(0,2000),msg.id);
+          } else {
+            // Inbound — captain reply
+            vessels[vi].emailsReceived=(vessels[vi].emailsReceived||0)+1;
+            vessels[vi].lastReceivedDate=new Date(date||Date.now()).toISOString();
+            vessels[vi].lastActivity=new Date().toISOString();
+            addTimeline(vessels[vi],'reply','Captain replied',from,body.substring(0,2000),msg.id);
+          }
+        }
+        // Only add captain replies to ibItems (inbox badge + panel + analyze)
+        if(!isOpsMsg){
+          const alreadyInItems=(ibItems||[]).some(i=>i.msgId===msg.id);
+          if(!alreadyInItems){
+            const item={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000),vessel,vi,isNew:!logged};
+            if(!logged)sheetsInboxSave(item);
+            ibItems.push(item);
+          }
+        }
+      }
+    }catch(e){
+      console.warn('[fetchInboxByThreads] Thread fetch failed for vessel:',vessel.name,e);
+    }
+  }
+}
+
+async function fetchInbox(){
+  if(!ibItems) ibItems=[];
+  const badge=document.getElementById('ib-count');
+  if(badge){badge.textContent='0';badge.style.display='none';}
+  if(!token||!vessels.length)return;
+
+  // Each user only sees replies for vessels assigned to them. Super admin sees all.
+  const myEmail=normEmail(user&&user.email);
+  const _isSuper=isSuperAdmin(myEmail);
+  const myVessels=_isSuper?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')===myEmail);
+  if(!myVessels.length)return;
+
+  try{
+    // ── NEW: Thread-based approach (vessels created after this update) ──────────
+    // Fetches replies from the exact Gmail thread stored on each vessel.
+    // Zero cross-contamination — no subject/email guessing needed.
+    await fetchInboxByThreads();
+
+    // ── OLD: Subject+email search approach (grayed out — kept for reference) ────
+    // This searched Gmail globally for all captain emails and matched by subject.
+    // Caused false positives when captain emails or vessel names overlapped.
+    // Replaced by fetchInboxByThreads() above for vessels with a stored threadId.
+    //
+    // const emails=[...new Set(myVessels.map(v=>String(v.email||'').trim().toLowerCase()).filter(Boolean))];
+    // if(!emails.length)return;
+    // const qParts=[];
+    // emails.slice(0,20).forEach(e=>qParts.push('from:'+e));
+    // const q=qParts.join(' OR ');
+    // const q2=q+' newer_than:30d';
+    // const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q2)}&maxResults=100&includeSpamTrash=false`,{headers:{Authorization:'Bearer '+token}});
+    // const d=await r.json();if(!d.messages)return;
+    // for(const msg of d.messages){
+    //   const dr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+    //   const dd=await dr.json();
+    //   const hdr=(dd.payload&&dd.payload.headers)||[];
+    //   const from=hdr.find(h=>h.name==='From')?.value||'';
+    //   const subj=hdr.find(h=>h.name==='Subject')?.value||'';
+    //   const date=hdr.find(h=>h.name==='Date')?.value||'';
+    //   const eb=(p)=>{if(p.mimeType==='text/plain'&&p.body?.data)return atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));if(p.parts)for(const pp of p.parts){const rr=eb(pp);if(rr)return rr;}return'';};
+    //   const body=dd.payload?eb(dd.payload):'';
+    //   const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
+    //   const subjLower=subj.toLowerCase().trim();
+    //   if(!subjLower.includes('re:'))continue;
+    //   if(!subjLower.includes('orca ai installation coordination'))continue;
+    //   if(subjLower.startsWith('orca ai installation coordination'))continue;
+    //   const vesselForSubj=myVessels.find(v=>{
+    //     const vn=(v.name||'').toLowerCase().trim();
+    //     const ve=(v.email||'').toLowerCase().trim();
+    //     return vn.length>1 && subjLower.includes(vn) && ve && (fe===ve || from.toLowerCase().includes(ve));
+    //   });
+    //   if(!vesselForSubj)continue;
+    //   const temp={msgId:msg.id,from,fe,subj,date,body:body.substring(0,2000)};
+    //   const vessel=vesselForSubj;
+    //   if(vessel){
+    //     const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
+    //     const firstSent=vessel.firstEmailDate||vessel.lastEmailDate||vessel.createdAt||null;
+    //     const vesselCutoff=firstSent?new Date(firstSent).getTime():0;
+    //     const msgDate=new Date(date).getTime();
+    //     const isAfterVesselCreation=!vesselCutoff||!msgDate||msgDate>=vesselCutoff;
+    //     const alreadyInItems=(ibItems||[]).some(i=>i.msgId===msg.id);
+    //     if(isAfterVesselCreation&&!alreadyInItems){
+    //       const vi=vessels.indexOf(vessel);
+    //       const item={...temp,vessel,vi,isNew:!logged};
+    //       if(!logged)sheetsInboxSave(item);
+    //       if(!logged){
+    //         vessels[vi].emailsReceived=(vessels[vi].emailsReceived||0)+1;
+    //         vessels[vi].lastReceivedDate=new Date(date||Date.now()).toISOString();
+    //         vessels[vi].lastActivity=new Date().toISOString();
+    //         addTimeline(vessels[vi],'reply','Captain replied',temp.from,temp.body.substring(0,300),msg.id);
+    //       }
+    //       ibItems.push(item);
+    //     }
+    //   }
+    // }
+    // ── END OLD approach ─────────────────────────────────────────────────────────
+
+    // Save vessel stats updates to shared Sheet
+    saveVessels();
+    // Merge inbox items from other team members via Google Sheets
+    mergeSharedInbox();
+    if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
+  }catch(e){
+    console.error('fetchInbox error', e);
+    const msg = e?.message || (e?.status ? 'API error ' + e.status : 'Unknown error');
+    const label = document.getElementById('last-refresh-label');
+    if(label) label.textContent = '⚠️ Inbox error: ' + msg;
+  }
+}
+function renderInbox(){
+  updateReceivedStatsFromInbox();
+  const list=document.getElementById('ib-list'),empty=document.getElementById('ib-empty');
+  if(!ibItems.length){list.innerHTML='';if(empty)empty.style.display='block';return;}
+  empty.style.display='none';
+  const _superInbox=isSuperAdmin(user&&user.email);
+  list.innerHTML=ibItems.map((item,i)=>{
+    const assignedTag=_superInbox&&item.vessel.assignedTo?`<span style="font-size:10px;background:#e8eaf6;color:#1D2E6B;border-radius:4px;padding:1px 8px;margin-left:6px;font-weight:600">${item.vessel.assignedTo.split('@')[0]}</span>`:'';
+    return `<div style="border:1px solid #a8c8f0;border-radius:var(--rs);padding:14px;margin-bottom:10px;background:linear-gradient(135deg,#f0f7ff 0%,#e8f2fd 100%);border-left:4px solid #1D2E6B"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-weight:600;font-size:14px">${item.vessel.name}${assignedTag}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${item.from} · ${item.date}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;font-style:italic">"${item.subj}"</div><div style="font-size:12px;color:var(--faint);margin-top:6px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.body.substring(0,120)}...</div></div><div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-s" onclick="var _i=${i};setTimeout(function(){openInboxReply(_i);},0)"><i class="ti ti-eye"></i> View reply</button><button class="btn btn-p btn-s" onclick="var _i=${i};setTimeout(function(){openIbModalSend(_i);},0)"><i class="ti ti-cpu"></i> Analyze</button><button class="btn btn-s" onclick="var _vi=${item.vi};setTimeout(function(){openLatestStatus(_vi);},0)" style="background:#f4f6fb;border-color:#c5cfe8;color:#1D2E6B"><i class="ti ti-report-analytics"></i> Status</button></div></div></div>`;
+  }).join('');
+}
+
+
+
+async function sendFromViewModal(){
+  const v=vessels[window._mvIdx];
+  if(!v){await orcaAlert('Vessel not found.','Error');return;}
+  const fuEl=document.getElementById('mv-followup-draft');
+  const body=fuEl&&fuEl.value.trim()?fuEl.value.trim():buildFollowupEmail(v,v.missingItems||[]);
+  const btn=document.querySelector('#mod-view .btn-g');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true);
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
+  if(!ok)return;
+  // Save to timeline and vessel
+  vessels[window._mvIdx].emailsSent=(vessels[window._mvIdx].emailsSent||0)+1;
+  vessels[window._mvIdx].lastEmailDate=new Date().toISOString();
+  vessels[window._mvIdx].lastContact=new Date().toISOString();
+  saveFollowupMeta(vessels[window._mvIdx],body);
+  saveVessels();updateMetrics();renderTable();
+  document.getElementById('mod-view').style.display='none';
+  await orcaAlert('Follow-up sent to '+v.email,'✅ Sent');
+}function openIbModal(i){
+  const raw=ibItems[i];
+  if(!raw||!raw.vessel){alert('Reply item not found. Please click Check inbox again.');return;}
+  // Clean body before storing — strips quoted chain so AI only sees captain's actual words
+  curIb={...raw,body:cleanCaptainReplyText(raw.body||'')};
+  ibAna=null;
+  const v=curIb.vessel;
+
+  // Populate header
+  document.getElementById('mib-v').textContent=v.name;
+  document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
+  document.getElementById('mib-b').textContent=curIb.body;
+
+  // Populate status panel
+  // 1. Days since first email sent to captain
+  const firstSent=v.lastEmailDate||v.createdAt||v.lastContact||null;
+  const daysSinceFirst=firstSent?Math.floor((Date.now()-new Date(firstSent))/86400000):null;
+  document.getElementById('mib-stat-first').textContent=daysSinceFirst!==null?daysSinceFirst:'—';
+
+  // 2. Response time: days from last sent email to this reply
+  const replyDate=curIb.date?new Date(curIb.date).getTime():null;
+  const lastSent=v.lastEmailDate||v.lastContact||null;
+  const lastSentMs=lastSent?new Date(lastSent).getTime():null;
+  let respDays='—';
+  if(replyDate&&lastSentMs&&replyDate>lastSentMs){
+    respDays=Math.floor((replyDate-lastSentMs)/86400000);
+    if(respDays===0)respDays='<1';
+  }
+  document.getElementById('mib-stat-resp').textContent=respDays;
+
+  // 3. Readiness score + status
+  const score=typeof readinessScore==='function'?readinessScore(v):v.progress||0;
+  document.getElementById('mib-stat-ready').textContent=score+'%';
+  const statusLabels={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
+  document.getElementById('mib-stat-status').textContent=statusLabels[v.status]||v.status||'—';
+
+  document.getElementById('mib-al').style.display='none';document.getElementById('mib-res').style.display='none';
+  document.getElementById('mib-abtn').style.display='inline-flex';document.getElementById('mib-sbtn').style.display='none';
+  document.getElementById('mod-ib').style.display='flex';
+}
+
+function openIbModalSend(i){
+  // Opens modal pre-loaded for UPDATE (send) - runs analyze first if not done
+  openIbModal(i);
+  // Auto-trigger analyze so UPDATE button is ready
+  setTimeout(()=>{
+    if(!ibAna && typeof runIbAnalysis==='function') runIbAnalysis();
+  }, 100);
+}
+async function runIbAnalysis(){
+  if(!curIb)return;
+  // Always work on the cleaned body — strips quoted chain regardless of how curIb was set
+  const cleanedBody=cleanCaptainReplyText(curIb.body||'');
+  const v=curIb.vessel,mis=(v.missingItems||[]).join(', '),d=ds(v.lastContact);
+  document.getElementById('mib-al').style.display='flex';document.getElementById('mib-abtn').style.display='none';
+  const prompt=`You are Orca AI Installation Coordinator analyzing a vessel reply.\nVessel: ${v.name}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${cleanedBody}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. CRITICAL RULES - READ CAREFULLY:
+- ONLY mark an item as received if the captain EXPLICITLY sent/attached THAT SPECIFIC item
+- "Center console photo" = NOT "Bridge Console GA" and NOT "Proposed monitor location photos"
+- "Starboard console photo" = NOT any of the required items unless it matches exactly
+- "Port console photo" = NOT "Next 2-3 upcoming port calls"
+- "X is done" = NOT received. "X attached" = received
+- Photos of consoles/starboard/port are NOT the same as "Proposed monitor location photos"
+- "Proposed monitor location photos" = photos showing WHERE the monitor will be placed
+- "Proposed Seapod location photos" = photos showing WHERE the Seapod camera will be placed
+- If you're not 100% sure an item matches, put it in missing[], not received[]
+- When in doubt: missing[]. Never over-report received items. Photos=pending review. CRITICAL RULES - READ CAREFULLY:
+- ONLY mark an item as received if the captain EXPLICITLY sent/attached THAT SPECIFIC item
+- "Center console photo" = NOT "Bridge Console GA" and NOT "Proposed monitor location photos"
+- "Starboard console photo" = NOT any of the required items unless it matches exactly
+- "Port console photo" = NOT "Next 2-3 upcoming port calls"
+- "X is done" = NOT received. "X attached" = received
+- Photos of consoles/starboard/port are NOT the same as "Proposed monitor location photos"
+- "Proposed monitor location photos" = photos showing WHERE the monitor will be placed
+- "Proposed Seapod location photos" = photos showing WHERE the Seapod camera will be placed
+- If you're not 100% sure an item matches, put it in missing[], not received[]
+- When in doubt: missing[]. Never over-report received items.`;
+  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
+  catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
+  // Always normalize: infer keywords override empty AI result — use cleaned body only
+  ibAna=normalizeAnalysisResult(v,cleanedBody,ibAna);
+  // Rebuild followup email using ONLY current reply's received items for the
+  // "thank you" section — never merge with stale stored receivedItems.
+  // The "still require" section uses ibAna.missing which is now computed from
+  // ALL REQUIRED_ITEMS minus everything ever received.
+  ibAna.followup_email=buildFollowupEmail({...v,receivedItems:ibAna.received||[]},ibAna.missing||[]);
+  document.getElementById('mib-al').style.display='none';
+  document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
+  document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
+  document.getElementById('mib-fu').value=ibAna.followup_email||'';
+  document.getElementById('mib-res').style.display='block';
+
+  // ANALYZE saves vessel status immediately - without sending email
+  const _idx=curIb.vi;
+  if(_idx!==null&&_idx!==undefined&&vessels[_idx]){
+    // Accumulate only items explicitly detected in replies (never inverse-of-missing)
+    const _prevDetected=Array.isArray(vessels[_idx].detectedItems)?vessels[_idx].detectedItems:[];
+    const _newDetected=[...new Map([..._prevDetected,...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
+    vessels[_idx]={...vessels[_idx],
+      status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,
+      missingItems:ibAna.missing||[],
+      detectedItems:_newDetected,
+      receivedItems:_newDetected,
+      lastContact:new Date().toISOString()
+    };
+    cleanTimeline(vessels[_idx]);
+    addTimeline(vessels[_idx],'reply','Reply analyzed',`Received: ${(ibAna.received||[]).join(', ')||'—'}`);
+    saveVessels();updateMetrics();renderTable();
+  }
+
+  // Show UPDATE button, hide ANALYZE button
+  document.getElementById('mib-abtn').style.display='none';
+  document.getElementById('mib-sbtn').style.display='inline-flex';
+}
+async function sendIbFollowUp(){
+  if(!ibAna||!curIb)return;
+  // Read edited text from textarea - user may have modified it
+  const fuEl=document.getElementById('mib-fu');
+  const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);
+  if(!ok)return;
+  const idx=curIb.vi;
+  const _prevDet2=Array.isArray(vessels[idx].detectedItems)?vessels[idx].detectedItems:[];
+  const _newDet2=[...new Map([..._prevDet2,...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
+  vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],detectedItems:_newDet2,receivedItems:_newDet2,lastContact:new Date().toISOString()};
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'reply','Reply received from captain',curIb.from||v.email,curIb.body||'');
+  saveFollowupMeta(vessels[idx],followBody);
+  vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
+  saveVessels();updateMetrics();renderTable();
+  document.getElementById('mod-ib').style.display='none';
+  ibItems=ibItems.filter(function(it){return it!==curIb;});
+  const badge=document.getElementById('ib-count');
+  if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else badge.style.display='none';
+  renderInbox();renderInlineInbox();
+}
+
+// ANALYZE (manual)
+async function analyzeReply(){
+  const idx=document.getElementById('ra-sel').value,reply=document.getElementById('ra-reply').value.trim();
+  if(!reply){alert("Please paste the captain's reply.");return;}
+  const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
+  document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
+  const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. CRITICAL RULES - READ CAREFULLY:
+- ONLY mark an item as received if the captain EXPLICITLY sent/attached THAT SPECIFIC item
+- "Center console photo" = NOT "Bridge Console GA" and NOT "Proposed monitor location photos"
+- "Starboard console photo" = NOT any of the required items unless it matches exactly
+- "Port console photo" = NOT "Next 2-3 upcoming port calls"
+- "X is done" = NOT received. "X attached" = received
+- Photos of consoles/starboard/port are NOT the same as "Proposed monitor location photos"
+- "Proposed monitor location photos" = photos showing WHERE the monitor will be placed
+- "Proposed Seapod location photos" = photos showing WHERE the Seapod camera will be placed
+- If you're not 100% sure an item matches, put it in missing[], not received[]
+- When in doubt: missing[]. Never over-report received items.`;
+  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ana=JSON.parse(raw);ana.vi=idx!==''?parseInt(idx):null;}
+  catch(e){ana={received:[],missing:vessel?derivedMissing(vessel):[...REQUIRED_ITEMS],status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:vessel?buildFollowupEmail(vessel,derivedMissing(vessel)):'Dear Master,\n\nThank you.\n\nKind regards,\nORCA AI OPS',vi:idx!==''?parseInt(idx):null};}
+  if(vessel)ana=normalizeAnalysisResult(vessel,reply,ana);
+  document.getElementById('a-load').style.display='none';
+  document.getElementById('a-recv').innerHTML=(ana.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
+  document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
+  document.getElementById('a-stat').innerHTML=`<div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Status</div>${sb(ana.status)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Risk</div>${rb(ana.risk)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Progress</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div class="prog" style="width:100px"><div class="prog-f" style="width:${ana.progress}%"></div></div><span style="font-size:13px;font-weight:700">${ana.progress}%</span></div></div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Next action</div><span style="font-size:12px">${ana.nextAction||'—'}</span></div>${(ana.flags&&ana.flags.length)?ana.flags.map(f=>`<div class="flag-item"><i class="ti ti-flag"></i>${f}</div>`).join(''):''}`;
+  document.getElementById('a-fu').textContent=ana.followup_email||'';
+  document.getElementById('a-out').style.display='block';
+}
+async function saveAnalyzeOnly(){
+  // Save status update WITHOUT sending email
+  if(!ana)return;
+  const idx=ana.vi;
+  if(idx===null||idx===undefined||!vessels[idx]){await orcaAlert('No vessel selected.','Error');return;}
+  const v=vessels[idx];
+  const _prevDet3=Array.isArray(v.detectedItems)?v.detectedItems:[];
+  const _newDet3=[...new Map([..._prevDet3,...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
+  vessels[idx]={...v,
+    status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,
+    missingItems:ana.missing||[],
+    detectedItems:_newDet3,
+    receivedItems:_newDet3,
+    lastContact:new Date().toISOString()
+  };
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'ai','Status updated from reply',`Received: ${(ana.received||[]).join(', ')||'—'}`);
+  saveVessels();updateMetrics();renderTable();
+  await orcaAlert('Status saved successfully. No email was sent.','✅ Saved');
+}
+async function saveAndSend(){
+  if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
+  const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);if(!ok)return;
+  const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
+  const _newDet4=[...new Map([..._prevDet4,...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
+  vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],detectedItems:_newDet4,receivedItems:_newDet4,lastContact:new Date().toISOString()};
+  cleanTimeline(vessels[idx]);
+  addTimeline(vessels[idx],'ai','Reply analyzed by AI',v.email);
+  saveFollowupMeta(vessels[idx],followBody);
+  vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
+  saveVessels();updateMetrics();renderTable();document.getElementById('ra-reply').value='';document.getElementById('a-out').style.display='none';showTab('dashboard');
+}
+
+// VESSEL DETAIL
+
+function openLatestStatus(idx){
+  const v=vessels[idx];if(!v)return;
+  document.getElementById('ls-vessel-name').textContent=v.name;
+
+  // Days since first email
+  const firstSent=v.lastEmailDate||v.createdAt||v.lastContact||null;
+  const daysSinceFirst=firstSent?Math.floor((Date.now()-new Date(firstSent))/86400000):null;
+  document.getElementById('ls-days-first').textContent=daysSinceFirst!==null?daysSinceFirst:'—';
+  document.getElementById('ls-date-first').textContent=firstSent?new Date(firstSent).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';
+
+  // Response time
+  const lastRecv=v.lastReceivedDate||null;
+  const lastSent=v.lastEmailDate||v.lastContact||null;
+  let respDays='—';
+  if(lastRecv&&lastSent){
+    const diff=Math.floor((new Date(lastRecv)-new Date(lastSent))/86400000);
+    respDays=diff<=0?'<1':String(diff);
+  }
+  document.getElementById('ls-resp-days').textContent=respDays;
+
+  // Readiness
+  const score=typeof readinessScore==='function'?readinessScore(v):v.progress||0;
+  document.getElementById('ls-readiness').textContent=score+'%';
+  const statusLabels={waiting:'Waiting for reply',followup:'Follow-up required',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
+  document.getElementById('ls-status-label').textContent=statusLabels[v.status]||v.status||'—';
+
+  // Received items
+  const recv=v.receivedItems||[];
+  const recvEl=document.getElementById('ls-received');
+  recvEl.innerHTML=recv.length
+    ?recv.map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0faf4;border-radius:6px;margin-bottom:5px;font-size:13px;font-weight:600;color:#003d1a"><i class="ti ti-circle-check"></i>${r}</div>`).join('')
+    :`<div style="font-size:13px;color:var(--faint);padding:6px">Nothing received yet.</div>`;
+
+  // Missing items
+  const miss=v.missingItems||REQUIRED_ITEMS;
+  const missEl=document.getElementById('ls-missing');
+  missEl.innerHTML=miss.length
+    ?miss.map(m=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff5f5;border-radius:6px;margin-bottom:5px;font-size:13px;color:#c0392b"><i class="ti ti-circle-x"></i>${m}</div>`).join('')
+    :`<div style="font-size:13px;color:#003d1a;padding:6px">✓ All items received!</div>`;
+
+  document.getElementById('mod-latest-status').style.display='flex';
+}
+function openV(idx){
+  const v=vessels[idx];if(!v)return;
+  cleanTimeline(v);
+  v.missingItems=derivedMissing(v);
+  window._mvIdx=idx;
+
+  // Populate modal header
+  document.getElementById('mv-name').textContent=v.name;
+  document.getElementById('mv-email').textContent=v.email||'';
+  document.getElementById('mv-status-badge').innerHTML=sb(v.status);
+
+  // Stats
+  const firstDate=v.createdAt||v.lastEmailDate||v.lastContact||null;
+  const daysActive=firstDate?Math.floor((Date.now()-new Date(firstDate))/86400000):0;
+  document.getElementById('mv-days-active').textContent=daysActive;
+  document.getElementById('mv-start-date').textContent=firstDate?new Date(firstDate).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}):'—';
+  document.getElementById('mv-sent').textContent=v.emailsSent||0;
+  document.getElementById('mv-recv-count').textContent=v.emailsReceived||0;
+  const score=readinessScore(v)||v.progress||0;
+  document.getElementById('mv-progress').textContent=score+'%';
+  const riskLabels={low:'Low risk',medium:'Medium risk',high:'High risk'};
+  document.getElementById('mv-risk-label').textContent=riskLabels[v.risk||'medium']||'—';
+  document.getElementById('mv-next-action').textContent=v.nextAction||'—';
+  document.getElementById('mv-prog-bar').style.width=score+'%';
+
+  // Received / Missing
+  const recv=v.receivedItems||[];
+  const miss=v.missingItems||REQUIRED_ITEMS;
+  document.getElementById('mv-received').innerHTML=recv.length
+    ?recv.map(r=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#f0faf4;border-radius:6px;margin-bottom:4px;font-size:13px;font-weight:600;color:#003d1a"><i class="ti ti-circle-check" style="margin-top:1px;flex-shrink:0"></i>${r}</div>`).join('')
+    :`<div style="font-size:13px;color:var(--faint);padding:6px 0">Nothing received yet.</div>`;
+  document.getElementById('mv-missing').innerHTML=miss.length
+    ?miss.map(m=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#fff5f5;border-radius:6px;margin-bottom:4px;font-size:13px;color:#c0392b"><i class="ti ti-circle-x" style="margin-top:1px;flex-shrink:0"></i>${m}</div>`).join('')
+    :`<div style="font-size:13px;color:#003d1a;padding:6px 0">✓ All items received!</div>`;
+
+  // Timeline
+  seedTimeline(v);
+  const tl=document.getElementById('mv-timeline');
+  if(tl)tl.innerHTML=renderTimeline(v);
+
+  // Populate editable follow-up draft
+  const _mvMiss=v.missingItems||[];
+  const _mvRecv=v.receivedItems||[];
+  let _mvDraft;
+  if(_mvMiss.length===0&&_mvRecv.length>0){
+    // All items received - send a completion confirmation
+    _mvDraft='Dear Master,\n\nThank you for providing all the required information for '+v.name+'.\n\nWe now have everything needed to proceed with the installation coordination:\n'+_mvRecv.map(x=>'• '+x).join('\n')+'\n\nOur team will be in touch shortly to confirm the installation schedule.\n\nKind regards,\nORCA AI OPS';
+  } else {
+    _mvDraft=buildFollowupEmail(v,_mvMiss);
+  }
+  const mvFu=document.getElementById('mv-followup-draft');
+  if(mvFu)mvFu.value=_mvDraft;
+
+  document.getElementById('mod-view').style.display='flex';
+  // Bind clickable rows after modal is visible
+  setTimeout(function(){
+    document.querySelectorAll('#mod-view .tl-clickable:not([data-tl-bound])').forEach(function(row){
+      row.setAttribute('data-tl-bound','1');
+      row.addEventListener('click',function(){tlToggle(this.getAttribute('data-eid'),this.getAttribute('data-arid'));});
+      row.addEventListener('mouseenter',function(){this.style.background='#f4f6fb';});
+      row.addEventListener('mouseleave',function(){this.style.background='';});
+    });
+  },50);
+}
+
+// ADMIN
+function renderAdmin(){
+  const roleBox=document.getElementById('current-role-info');if(roleBox&&user)roleBox.textContent=`You are signed in as ${user.email} — ${roleLabel(user.email)}`;const dbBox=document.getElementById('shared-db-status');if(dbBox)dbBox.textContent='Database mode: '+(hasSharedDb()?'Shared Google Sheet':'Local browser only');
+  if(!isAdmin(user&&user.email))return;
+  const stored=Object.values(lu());
+  const map=new Map();
+  TEAM_USERS.forEach(u=>map.set(normEmail(u.email),u));
+  stored.forEach(u=>map.set(normEmail(u.email),{...u,role:roleLabel(u.email)}));
+  if(user&&user.email)map.set(normEmail(user.email),{...user,role:roleLabel(user.email)});
+  const users=Array.from(map.values()).sort((a,b)=>{
+    const ar=isSuperAdmin(a.email)?0:isAdmin(a.email)?1:2;
+    const br=isSuperAdmin(b.email)?0:isAdmin(b.email)?1:2;
+    return ar-br || String(a.name||a.email).localeCompare(String(b.name||b.email));
+  });
+  document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{
+    const role=roleLabel(u.email);
+    const cls=role==='Super Admin'?'bn':role==='Admin L2'?'bb':'bg';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/>
+      <span style="flex:1">${u.name||u.email}<br><span style="font-size:11px;color:var(--faint)">${u.email}</span></span>
+      <span class="badge ${cls}">${role}</span>
+    </div>`;
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No users yet.</span>';
+  document.getElementById('adm-v').innerHTML=vessels.length?vessels.map((v,i)=>{
+    const del=isAdmin()?`<button class="btn btn-s btn-d" onclick="deleteVessel(${i})"><i class="ti ti-trash"></i> Delete</button>`:'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="flex:1;font-weight:600">${v.name}<br><span style="font-size:11px;color:var(--faint)">${v.email||''}</span></span>
+      ${sb(v.status)}
+      <select onchange="setVesselStatus(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${statusOptions(v.status)}</select>
+      <select onchange="assignVessel(${i},this.value)" style="width:170px;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
+      <span style="font-size:11px;color:var(--faint)">${v.progress||0}%</span>
+      ${del}
+    </div>`;
+  }).join(''):'<span style="font-size:13px;color:var(--faint)">No vessels yet.</span>';
+  const superOnly=document.getElementById('super-admin-actions');
+  if(superOnly)superOnly.style.display=isSuperAdmin(user&&user.email)?'flex':'none';
+  const resetBtn=document.getElementById('btn-reset-db');
+  if(resetBtn)resetBtn.style.display=isSuperAdmin(user&&user.email)?'inline-flex':'none';
+}
+function resetInboxUi(){
+  ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const empty=document.getElementById('ib-empty');if(empty)if(empty)empty.style.display='block';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+}
+async function resetSharedDatabase(){
+  if(typeof isSuperAdmin==='function' && !isSuperAdmin(user&&user.email)){
+    await orcaAlert('Super Admin only.','Access Denied');
+    return;
+  }
+  if(typeof isAdmin==='function' && !isAdmin()){
+    await orcaAlert('Admin only.','Access Denied');
+    return;
+  }
+  const ok=await orcaConfirm('This will delete ALL vessels from the shared database for EVERYONE. Continue?','⚠️ Reset Shared DB');
+  if(!ok)return;
+  const ok2=await orcaConfirm('Final confirmation: reset the shared Google Sheet database now?','⚠️ Final Confirmation');
+  if(!ok2)return;
+  // Yield to browser before heavy work - prevents INP blocking
+  await new Promise(r=>setTimeout(r,0));
+  try{
+    const resetAt=new Date().toISOString();
+    vessels=[];
+    ibItems=[];
+    setLocalResetAt(resetAt);
+
+    // clear local cache/history for current user
+    Object.keys(localStorage).forEach(k=>{
+      const kk=k.toLowerCase();
+      if(kk.includes('vessel')||kk.includes('timeline')||kk.includes('history')){
+        localStorage.removeItem(k);
+      }
+    });
+    localStorage.setItem('orca_shared_reset_at',resetAt);
+    if(typeof saveLocal==='function')saveLocal();
+
+    // write reset marker to the shared sheet
+    if(typeof saveSharedVessels==='function'){
+      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
+      if(!saved){
+        const saved2=await saveSharedVessels([]);
+        if(!saved2)throw new Error('saveSharedVessels failed');
+      }
+    }else{
+      throw new Error('saveSharedVessels is missing');
+    }
+
+    if(typeof render==='function')render();
+    await orcaAlert('Shared database reset successfully. Ask all users to Hard Refresh and click Sync.','Done');
+  }catch(e){
+    console.error(e);
+    await orcaAlert('Shared database reset failed. Check Google Sheet permission.','Error');
+  }
+}
+async function clearAllCacheAndHistory(){
+  if(!isSuperAdmin()){await orcaAlert('Only Super Admin can clear cache and history.','Access Denied');return;}
+  const ok=await orcaConfirm('This will clear ALL local cache and history on this browser. Continue?','⚠️ Clear Cache & History');
+  if(!ok)return;
+  await new Promise(r=>setTimeout(r,0));
+  // Clear localStorage
+  try{
+    localStorage.removeItem(VKEY);localStorage.removeItem(UKEY);
+    localStorage.removeItem('orca_v3');localStorage.removeItem('orca_v2');localStorage.removeItem('orca_v1');
+    sessionStorage.clear();
+  }catch(e){}
+  vessels=[];ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
+  const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
+  const list=document.getElementById('ib-list');if(list)list.innerHTML='';
+  const dash=document.getElementById('dash-inbox-list');if(dash)dash.innerHTML='';
+  await new Promise(r=>setTimeout(r,0));
+  updateMetrics();renderTable();populateSel();renderInbox();renderInlineInbox();renderAdmin();
+  await orcaAlert('Cache and history cleared successfully.','✅ Done');
+}
+
+// ── Non-blocking async alert/confirm replacements ──
+function orcaAlert(msg, title=''){
+  return new Promise(resolve=>{
+    const overlay=document.getElementById('orca-modal-overlay');
+    document.getElementById('orca-modal-title').textContent=title||'Notice';
+    document.getElementById('orca-modal-msg').textContent=msg;
+    document.getElementById('orca-modal-cancel').style.display='none';
+    document.getElementById('orca-modal-ok').textContent='OK';
+    overlay.classList.add('show');
+    const ok=document.getElementById('orca-modal-ok');
+    const done=()=>{overlay.classList.remove('show');ok.removeEventListener('click',done);resolve();};
+    ok.addEventListener('click',done);
+  });
+}
+function orcaConfirm(msg, title=''){
+  return new Promise(resolve=>{
+    const overlay=document.getElementById('orca-modal-overlay');
+    document.getElementById('orca-modal-title').textContent=title||'Confirm';
+    document.getElementById('orca-modal-msg').textContent=msg;
+    const cancel=document.getElementById('orca-modal-cancel');
+    const ok=document.getElementById('orca-modal-ok');
+    cancel.style.display='inline-block';
+    cancel.textContent='Cancel';
+    ok.textContent='Confirm';
+    overlay.classList.add('show');
+    const cleanup=()=>overlay.classList.remove('show');
+    const onOk=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(true);};
+    const onCancel=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(false);};
+    ok.addEventListener('click',onOk);
+    cancel.addEventListener('click',onCancel);
+  });
+}
+function trySilentSignIn(){
+  try{
+    // 1. Try to restore from sessionStorage first (instant, no network)
+    const sess=loadSession();
+    if(sess&&sess.token&&sess.user){
+      token=sess.token;
+      user=sess.user;
+      applyUserRole();
+      su&&su(user);
+      loadVessels().then(()=>{
+        document.getElementById('auth-screen').style.display='none';
+        document.getElementById('app').style.display='block';
+        document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
+        if(user.pic)document.getElementById('uav').src=user.pic;
+        document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
+        renderTable();updateMetrics();populateSel();
+        sheetsInboxInit().then(()=>checkInbox(true));
+        scheduleTokenRefresh();
+      });
+      return;
+    }
+    // 2. Try silent OAuth refresh
+    if(typeof google==='undefined'||!google.accounts){
+      setTimeout(trySilentSignIn,300);
+      return;
+    }
+    const approved=localStorage.getItem('orca_google_consent_ok')==='1';
+    const savedEmail=localStorage.getItem('orca_last_email')||'';
+    if(approved&&savedEmail){
+      if(!tc) initG();
+      tc.requestAccessToken({prompt:'', login_hint: savedEmail});
+    }
+  }catch(e){console.warn('Silent sign-in skipped',e);}
+}
+window.onload=()=>{
+  setTimeout(trySilentSignIn,200);
+};
+setInterval(async () => {
+  if(!token) return;
+  try {
+    await checkInbox(true);
+  } catch(e){ console.warn('Auto-refresh error',e); }
+}, 30 * 1000);
+
