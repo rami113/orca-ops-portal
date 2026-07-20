@@ -488,12 +488,43 @@ function statusOptions(selected){
   return statuses.map(([v,l])=>`<option value="${v}" ${v===selected?'selected':''}>${l}</option>`).join('');
 }
 
-function assignVessel(i,email){
+async function assignVessel(i,email){
   if(!vessels[i])return;
   const old=vessels[i].assignedTo||'Unassigned';
+  if(old===email)return; // no change
   vessels[i].assignedTo=email;
   addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
   saveVessels();renderTable();renderAdmin();
+  // Send notification email to new owner (same as transferOwnership)
+  if(token&&email&&email.includes('@')){
+    const v=vessels[i];
+    const vname=v.name||'vessel';
+    const vemail=v.email||'';
+    const newOwnerName=TEAM_USERS.find(u=>u.email===email)?.name||email.split('@')[0];
+    const fromName=(user&&user.name)||'Orca AI Ops';
+    const missing=v.missingItems||[];
+    const received=v.receivedItems||[];
+    const progress=v.progress||0;
+    const notifHtml=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:10px;border:1px solid #e0e0dc;overflow:hidden">
+      <div style="background:#1D2E6B;padding:20px 28px">
+        <div style="color:#fff;font-size:18px;font-weight:700">Orca AI — Vessel Assigned</div>
+      </div>
+      <div style="padding:24px 28px">
+        <p style="font-size:14px;color:#1a1a1a;margin:0 0 16px">Dear ${newOwnerName},</p>
+        <p style="font-size:14px;color:#1a1a1a;margin:0 0 20px">You have been assigned as coordinator for the following vessel:</p>
+        <div style="background:#f4f6fb;border-radius:8px;padding:16px 20px;margin-bottom:20px;border:1px solid #dde3f0">
+          <div style="font-size:16px;font-weight:700;color:#1D2E6B;margin-bottom:4px">${vname}</div>
+          <div style="font-size:13px;color:#6b6b6b">${vemail}</div>
+          <div style="font-size:13px;color:#6b6b6b;margin-top:8px">Readiness: <strong>${progress}%</strong> &nbsp;|&nbsp; Previous owner: <strong>${old}</strong></div>
+        </div>
+        ${missing.length?`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#c0392b;margin-bottom:8px">Still missing (${missing.length} items)</div>${missing.map(m=>`<div style="font-size:13px;color:#c0392b;padding:5px 0;border-bottom:1px solid #fce8e8">${m}</div>`).join('')}</div>`:''}
+        ${received.length?`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#1D6B4A;margin-bottom:8px">Already received (${received.length} items)</div>${received.map(r=>`<div style="font-size:13px;color:#1D6B4A;padding:5px 0;border-bottom:1px solid #eaf3de">${r}</div>`).join('')}</div>`:''}
+        <p style="font-size:13px;color:#6b6b6b;margin:20px 0 0">Please log in to the <a href="https://orca-ops-portal.vercel.app" style="color:#1D2E6B;font-weight:600">Orca AI Ops Portal</a> to review and continue the coordination.</p>
+        <p style="font-size:13px;color:#6b6b6b;margin:8px 0 0">Assigned by: <strong>${fromName}</strong></p>
+      </div>
+    </div>`;
+    sendGmail(email,`[Orca AI] Vessel assigned to you: ${vname}`,notifHtml,true).catch(()=>{});
+  }
 }
 
 
@@ -1458,6 +1489,14 @@ function renderTable(){
   setTimeout(_renderTableImpl, 0);
 }
 function _renderTableImpl(){
+  // Don't re-render the table while the user has a dropdown or input focused inside it —
+  // that would collapse the open select and disrupt whatever they are editing.
+  const active=document.activeElement;
+  if(active&&(active.tagName==='SELECT'||active.tagName==='INPUT')&&active.closest('#vtb,table.tbl')){
+    // Retry after the user is done interacting
+    setTimeout(_renderTableImpl, 1000);
+    return;
+  }
   const tb=getVesselTbody(),empty=getVesselEmpty();
   if(!tb){console.warn('Vessel table body not found');return;}
   const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==window.dashSearch)searchEl.value=window.dashSearch||'';
@@ -1961,8 +2000,8 @@ function updateReceivedStatsFromInbox(){
       v.emailsReceived=matches.length;
       const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(t=>Number.isFinite(t)).sort((a,b)=>b-a)[0];
       v.lastReceivedDate=new Date(latest||Date.now()).toISOString();
-      if(v.status==='waiting')v.status='followup';
-      v.nextAction='Analyze reply and send follow-up';
+      // Do NOT auto-change status here — user sets status manually or via Analyze.
+      // Auto-changing to 'followup' here was overriding user's manual status every 5s.
     }else{
       v.emailsReceived=v.emailsReceived||0;
       v.lastReceivedDate=v.lastReceivedDate||'';
