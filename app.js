@@ -895,9 +895,12 @@ function onAttachTag(sel,attachmentId,vesselIdx){
   if(tag)_attTags[attachmentId]=tag;
   else delete _attTags[attachmentId];
   if(tag){
-    const prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
-    const merged=[...new Map([...prev,tag].map(x=>[itemKey(x),x])).values()];
-    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
+    // Do NOT add to detectedItems — that is only for keyword detection hits.
+    // Compute receivedItems = keyword-detected (detectedItems) + all current attachment tags.
+    const _allTagVals=Object.values(_attTags).filter(t=>t&&t!=='Other / Not a required item');
+    const _kwOnly=Array.isArray(v.detectedItems)?v.detectedItems:[];
+    const merged=[...new Map([..._kwOnly,..._allTagVals].map(x=>[itemKey(x),x])).values()];
+    vessels[idx]={...v,attachmentTags:_attTags,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
     saveVessels().then(()=>console.log('[tag] saved',_attTags,'for vessel idx',idx)).catch(e=>console.error('[tag] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
@@ -921,12 +924,12 @@ function onAttachTag(sel,attachmentId,vesselIdx){
       }
     }
   } else {
-    // Tag cleared — recompute received/missing from remaining tags + keyword detection
-    const _remainingTags=Object.values(_attTags).filter(Boolean);
-    const _textRec=curIb?inferReceivedFromReply(curIb.body||''):[];
-    const _allStillRec=[...new Map([..._textRec,..._remainingTags].map(x=>[itemKey(x),x])).values()];
+    // Tag cleared — recompute receivedItems from keyword detectedItems + remaining tags (no detectedItems mutation)
+    const _remainingTags=Object.values(_attTags).filter(t=>t&&t!=='Other / Not a required item');
+    const _kwOnly2=Array.isArray(v.detectedItems)?v.detectedItems:[];
+    const _allStillRec=[...new Map([..._kwOnly2,..._remainingTags].map(x=>[itemKey(x),x])).values()];
     const _miss=REQUIRED_ITEMS.filter(r=>!hasItem(_allStillRec,r));
-    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:_allStillRec,receivedItems:_allStillRec,missingItems:_miss};
+    vessels[idx]={...v,attachmentTags:_attTags,receivedItems:_allStillRec,missingItems:_miss};
     saveVessels().catch(e=>console.error('[tag clear] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
@@ -2693,9 +2696,20 @@ function openV(idx){
   document.getElementById('mv-next-action').textContent=v.nextAction||'—';
   document.getElementById('mv-prog-bar').style.width=score+'%';
 
-  // Received / Missing
-  const recv=v.receivedItems||[];
-  const miss=v.missingItems||REQUIRED_ITEMS;
+  // Received / Missing — computed live, never from stale stored receivedItems
+  // Source of truth: keyword detection on latest reply body + current attachment tags
+  const _ibV=(ibItems||[]).find(it=>String(it.vi)===String(idx));
+  let recv,miss;
+  const _savedTagItems=Object.values(v.attachmentTags||{}).filter(t=>t&&t!=='Other / Not a required item');
+  if(_ibV&&_ibV.body){
+    const _kwRec=inferReceivedFromReply(_ibV.body);
+    const _autoTags=(_ibV.attachments||[]).map(a=>autoTagFromFilename(a.filename)).filter(t=>t&&t!=='Other / Not a required item');
+    recv=[...new Map([..._kwRec,..._savedTagItems,..._autoTags].map(x=>[itemKey(x),x])).values()];
+  } else {
+    // No current reply in memory — combine stored keyword detections + saved tags
+    recv=[...new Map([...(v.detectedItems||[]),..._savedTagItems].map(x=>[itemKey(x),x])).values()];
+  }
+  miss=REQUIRED_ITEMS.filter(r=>!hasItem(recv,r));
   document.getElementById('mv-received').innerHTML=recv.length
     ?recv.map(r=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#f0faf4;border-radius:6px;margin-bottom:4px;font-size:13px;font-weight:600;color:#003d1a"><i class="ti ti-circle-check" style="margin-top:1px;flex-shrink:0"></i>${r}</div>`).join('')
     :`<div style="font-size:13px;color:var(--faint);padding:6px 0">Nothing received yet.</div>`;
@@ -2708,15 +2722,12 @@ function openV(idx){
   const tl=document.getElementById('mv-timeline');
   if(tl)tl.innerHTML=renderTimeline(v);
 
-  // Populate editable follow-up draft
-  const _mvMiss=v.missingItems||[];
-  const _mvRecv=v.receivedItems||[];
+  // Populate editable follow-up draft — consistent with live computed recv/miss
   let _mvDraft;
-  if(_mvMiss.length===0&&_mvRecv.length>0){
-    // All items received - send a completion confirmation
-    _mvDraft='Dear Master,\n\nThank you for providing all the required information for '+v.name+'.\n\nWe now have everything needed to proceed with the installation coordination:\n'+_mvRecv.map(x=>'• '+x).join('\n')+'\n\nOur team will be in touch shortly to confirm the installation schedule.\n\nKind regards,\nORCA AI OPS';
+  if(miss.length===0&&recv.length>0){
+    _mvDraft='Dear Master,\n\nThank you for providing all the required information for '+v.name+'.\n\nWe now have everything needed to proceed with the installation coordination:\n'+recv.map(x=>'• '+x).join('\n')+'\n\nOur team will be in touch shortly to confirm the installation schedule.\n\nKind regards,\nORCA AI OPS';
   } else {
-    _mvDraft=buildFollowupEmail(v,_mvMiss);
+    _mvDraft=buildFollowupEmail({...v,receivedItems:recv},miss);
   }
   const mvFu=document.getElementById('mv-followup-draft');
   if(mvFu)mvFu.value=_mvDraft;
