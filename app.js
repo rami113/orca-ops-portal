@@ -488,6 +488,24 @@ function statusOptions(selected){
   return statuses.map(([v,l])=>`<option value="${v}" ${v===selected?'selected':''}>${l}</option>`).join('');
 }
 
+// Build the HTML block showing the latest captain reply — shared by assign + transfer emails
+function _buildLatestReplyBlock(vesselIdx){
+  const _ib=(ibItems||[]).find(it=>String(it.vi)===String(vesselIdx));
+  if(!_ib||!_ib.body)return'';
+  const _body=escapeHtml((_ib.body||'').slice(0,800)).replace(/\n/g,'<br>');
+  const _from=escapeHtml(_ib.from||'Captain');
+  const _date=_ib.date||'';
+  const _atts=(_ib.attachments||[]).filter(a=>a.filename);
+  const _attHtml=_atts.length?`<div style="margin-top:10px;font-size:12px;color:#6b6b6b"><strong>Attachments (${_atts.length}):</strong> ${_atts.map(a=>escapeHtml(a.filename)).join(', ')}</div>`:'';
+  return`<div style="margin:20px 0;border:1px solid #dde3f0;border-radius:8px;overflow:hidden">
+    <div style="background:#f4f6fb;padding:10px 16px;border-bottom:1px solid #dde3f0">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#1D2E6B">Latest Captain Reply</div>
+      <div style="font-size:11px;color:#6b6b6b;margin-top:2px">From: ${_from} &nbsp;·&nbsp; ${_date}</div>
+    </div>
+    <div style="padding:14px 16px;font-size:13px;color:#1a1a1a;line-height:1.6;background:#fff">${_body}${_attHtml}</div>
+  </div>`;
+}
+
 async function assignVessel(i,email){
   if(!vessels[i])return;
   const old=vessels[i].assignedTo||'Unassigned';
@@ -495,7 +513,7 @@ async function assignVessel(i,email){
   vessels[i].assignedTo=email;
   addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
   saveVessels();renderTable();renderAdmin();
-  // Send notification email to new owner (same as transferOwnership)
+  // Send notification email to new owner with full context including latest captain reply
   if(token&&email&&email.includes('@')){
     const v=vessels[i];
     const vname=v.name||'vessel';
@@ -505,7 +523,8 @@ async function assignVessel(i,email){
     const missing=v.missingItems||[];
     const received=v.receivedItems||[];
     const progress=v.progress||0;
-    const notifHtml=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:10px;border:1px solid #e0e0dc;overflow:hidden">
+    const replyBlock=_buildLatestReplyBlock(i);
+    const notifHtml=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:10px;border:1px solid #e0e0dc;overflow:hidden">
       <div style="background:#1D2E6B;padding:20px 28px">
         <div style="color:#fff;font-size:18px;font-weight:700">Orca AI — Vessel Assigned</div>
       </div>
@@ -519,6 +538,7 @@ async function assignVessel(i,email){
         </div>
         ${missing.length?`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#c0392b;margin-bottom:8px">Still missing (${missing.length} items)</div>${missing.map(m=>`<div style="font-size:13px;color:#c0392b;padding:5px 0;border-bottom:1px solid #fce8e8">${m}</div>`).join('')}</div>`:''}
         ${received.length?`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#1D6B4A;margin-bottom:8px">Already received (${received.length} items)</div>${received.map(r=>`<div style="font-size:13px;color:#1D6B4A;padding:5px 0;border-bottom:1px solid #eaf3de">${r}</div>`).join('')}</div>`:''}
+        ${replyBlock}
         <p style="font-size:13px;color:#6b6b6b;margin:20px 0 0">Please log in to the <a href="https://orca-ops-portal.vercel.app" style="color:#1D2E6B;font-weight:600">Orca AI Ops Portal</a> to review and continue the coordination.</p>
         <p style="font-size:13px;color:#6b6b6b;margin:8px 0 0">Assigned by: <strong>${fromName}</strong></p>
       </div>
@@ -1876,7 +1896,7 @@ function stripHtmlForText(s){
   return String(s||'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
 }
 
-async function sendGmail(to, subj, body, isHtml=false, cc="", bcc="") {
+async function sendGmail(to, subj, body, isHtml=false, cc="", bcc="", threadId="") {
   if(!token){alert('Not authenticated.');return false;}
   const html = isHtml ? body : body.replace(/\n/g,'<br>');
   const boundary = 'orca_boundary_' + Date.now();
@@ -1902,8 +1922,10 @@ async function sendGmail(to, subj, body, isHtml=false, cc="", bcc="") {
     `--${boundary}--`
   ].join('\r\n');
   const raw = btoa(unescape(encodeURIComponent(mime))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  // Pass threadId to keep follow-ups in the same Gmail thread as the original coordination email
+  const payload = threadId ? {raw, threadId} : {raw};
   try{
-    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw})});
+    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if(!r.ok){const e=await r.json();alert('Gmail error: '+JSON.stringify(e.error?.message||e));return false;}
     // Return the full response — callers check truthiness (object = truthy, false = failure)
     // threadId is used to track the exact Gmail conversation thread per vessel
@@ -2397,10 +2419,11 @@ async function sendFromViewModal(){
   const body=fuEl&&fuEl.value.trim()?fuEl.value.trim():buildFollowupEmail(v,v.missingItems||[]);
   const btn=document.querySelector('#mod-view .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,'','',v.gmailThreadId||'');
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
   if(!ok)return;
-  // Save to timeline and vessel
+  // Save to timeline and vessel — update gmailThreadId from response in case it changed
+  if(ok.threadId&&!v.gmailThreadId)vessels[window._mvIdx].gmailThreadId=ok.threadId;
   vessels[window._mvIdx].emailsSent=(vessels[window._mvIdx].emailsSent||0)+1;
   vessels[window._mvIdx].lastEmailDate=new Date().toISOString();
   vessels[window._mvIdx].lastContact=new Date().toISOString();
@@ -2548,9 +2571,10 @@ async function sendIbFollowUp(){
   // Read edited text from textarea - user may have modified it
   const fuEl=document.getElementById('mib-fu');
   const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,'','',v.gmailThreadId||'');
   if(!ok)return;
   const idx=curIb.vi;
+  if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet2=Array.isArray(vessels[idx].detectedItems)?vessels[idx].detectedItems:[];
   const _newDet2=[...new Map([..._prevDet2,...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
   vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],detectedItems:_newDet2,receivedItems:_newDet2,lastContact:new Date().toISOString()};
@@ -2616,7 +2640,8 @@ async function saveAnalyzeOnly(){
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
   const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true);if(!ok)return;
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,'','',v.gmailThreadId||'');if(!ok)return;
+  if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
   const _newDet4=[...new Map([..._prevDet4,...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
   vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],detectedItems:_newDet4,receivedItems:_newDet4,lastContact:new Date().toISOString()};
