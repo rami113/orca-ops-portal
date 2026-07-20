@@ -84,10 +84,168 @@ const VKEY='orca_v3',UKEY='orca_u2';
 // Example URL: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
 const SHARED_SHEET_ID='1Aveudwg5B8D-XrO04L33WibwtzWEaMVhLfDOMyNb3Y4';
 const SHARED_SHEET_NAME='vessels';
+const ATAGS_SHEET_NAME='atags';     // dedicated tab for attachment tags — no vessel blob race conditions
+const ARCHIVE_SHEET_NAME='archive'; // dedicated tab for completed/archived vessels
+const TIMELINE_MAX=50;              // max timeline entries per vessel kept in active blob
 let sharedDbReady=false;
 let sharedDbLastSync=null;
 
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
+let _sharedAttTags={};  // in-memory cache of atags Sheet — { "vesselId_attachmentId": {tag,filename,userEmail,ts} }
+
+// ── Generic Sheet tab URL helper ──────────────────────────────────────────────
+function sheetTabUrl(tabName,range){
+  return`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(tabName)}!${range}`;
+}
+
+// ── Ensure a Sheet tab exists, create it if not ───────────────────────────────
+async function ensureSheetTab(tabName){
+  if(!token||!hasSharedDb())return false;
+  try{
+    const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}?fields=sheets.properties.title`,{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok)return false;
+    const d=await r.json();
+    const exists=(d.sheets||[]).some(s=>s.properties&&s.properties.title===tabName);
+    if(!exists){
+      const cr=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}:batchUpdate`,{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({requests:[{addSheet:{properties:{title:tabName}}}]})
+      });
+      if(!cr.ok){console.error('ensureSheetTab failed for',tabName);return false;}
+    }
+    return true;
+  }catch(e){console.error('ensureSheetTab error',e);return false;}
+}
+
+// ── Attachment Tags — atags Sheet tab ─────────────────────────────────────────
+// Stored as one JSON object in atags!A1: { "vesselId_attachmentId": {tag,filename,userEmail,ts} }
+// Completely independent of the vessel blob — no race conditions between users.
+
+async function loadSharedAttTags(){
+  if(!token||!hasSharedDb())return;
+  try{
+    const r=await fetch(sheetTabUrl(ATAGS_SHEET_NAME,'A1'),{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok)return;
+    const d=await r.json();
+    const raw=(d.values||[])[0]?.[0]||'{}';
+    _sharedAttTags=JSON.parse(raw);
+    // Populate vessel.attachmentTags from shared tags so all existing code works seamlessly
+    _applySharedAttTagsToVessels();
+  }catch(e){console.warn('loadSharedAttTags failed',e);}
+}
+
+function _applySharedAttTagsToVessels(){
+  vessels.forEach(v=>{
+    const vid=v.id||v.name;if(!vid)return;
+    const vt={};
+    Object.entries(_sharedAttTags).forEach(([k,t])=>{
+      if(k.startsWith(vid+'_')&&t&&t.tag){const aid=k.slice(vid.length+1);vt[aid]=t.tag;}
+    });
+    // Merge: shared Sheet → localStorage override (most recent local action wins)
+    const lsTags=_loadAttTagsLocal(v);
+    v.attachmentTags=Object.assign({},v.attachmentTags||{},vt,lsTags);
+  });
+}
+
+async function saveSharedAttTag(vesselId,attachmentId,filename,tag){
+  if(!token||!hasSharedDb())return;
+  try{
+    const key=vesselId+'_'+attachmentId;
+    if(tag&&tag!=='Other / Not a required item'){
+      _sharedAttTags[key]={tag,filename:filename||'',userEmail:(user&&user.email)||'',ts:new Date().toISOString()};
+    } else {
+      delete _sharedAttTags[key];
+    }
+    const body={range:`${ATAGS_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(_sharedAttTags)]]};
+    const r=await fetch(sheetTabUrl(ATAGS_SHEET_NAME,'A1')+'?valueInputOption=RAW',{
+      method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    if(!r.ok)console.warn('saveSharedAttTag HTTP error',r.status);
+  }catch(e){console.warn('saveSharedAttTag failed',e);}
+}
+
+// ── Archive — archive Sheet tab ───────────────────────────────────────────────
+// Archived vessels stored as JSON array in archive!A1. Loaded only on demand.
+
+async function loadArchivedVessels(){
+  if(!token||!hasSharedDb())return[];
+  try{
+    const r=await fetch(sheetTabUrl(ARCHIVE_SHEET_NAME,'A1'),{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok)return[];
+    const d=await r.json();
+    const raw=(d.values||[])[0]?.[0]||'[]';
+    const parsed=JSON.parse(raw);
+    return Array.isArray(parsed)?parsed:[];
+  }catch(e){console.warn('loadArchivedVessels failed',e);return[];}
+}
+
+async function archiveVesselFromView(){
+  const idx=window._mvIdx;
+  if(idx===undefined||idx===null)return;
+  const v=vessels[idx];if(!v)return;
+  const go=await orcaConfirm(
+    `Archive "${v.name}"?\n\nIt will be removed from the active list but fully preserved in the archive with all history, tags and timeline.`,
+    'Archive Vessel'
+  );
+  if(!go)return;
+  document.getElementById('mod-view').style.display='none';
+  await archiveVessel(idx);
+}
+async function archiveVessel(idx){
+  const v=vessels[idx];if(!v)return;
+  try{
+    const existing=await loadArchivedVessels();
+    existing.push({...v,archivedAt:new Date().toISOString(),archivedBy:(user&&user.email)||''});
+    const body={range:`${ARCHIVE_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(existing)]]};
+    await fetch(sheetTabUrl(ARCHIVE_SHEET_NAME,'A1')+'?valueInputOption=RAW',{
+      method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    // Remove from active vessels
+    vessels.splice(idx,1);
+    saveVessels();renderTable();updateMetrics();
+    await orcaAlert(`${v.name} has been archived. You can view it in the Archive panel.`,'✅ Archived');
+  }catch(e){console.error('archiveVessel failed',e);await orcaAlert('Archive failed. Please try again.','Error');}
+}
+
+// ── Timeline size management ──────────────────────────────────────────────────
+// Keeps vessel timeline lean — cap at TIMELINE_MAX, always preserve milestones.
+function trimTimeline(v){
+  if(!v||!Array.isArray(v.timeline))return;
+  if(v.timeline.length<=TIMELINE_MAX)return;
+  // Milestones always kept: first sent, status changes, transfers, sends
+  const milestones=new Set(['sent','status','assignment']);
+  const keep=v.timeline.filter(e=>milestones.has(e.type));
+  const rest=v.timeline.filter(e=>!milestones.has(e.type));
+  // Fill remaining slots from most recent non-milestone entries
+  const slots=Math.max(0,TIMELINE_MAX-keep.length);
+  v.timeline=[...keep,...rest.slice(-slots)].sort((a,b)=>new Date(a.ts||0)-new Date(b.ts||0));
+}
+
+// ── JSON blob size guard ──────────────────────────────────────────────────────
+// Called before every Sheet write to prevent exceeding cell limits (~50KB practical max).
+const BLOB_SIZE_WARN=35000;  // warn at 35KB
+const BLOB_SIZE_MAX=45000;   // trim at 45KB to stay safely under the 50KB cell limit
+function guardBlobSize(arr){
+  let json=JSON.stringify(arr);
+  if(json.length<=BLOB_SIZE_WARN)return arr;
+  if(json.length>BLOB_SIZE_WARN&&json.length<=BLOB_SIZE_MAX){
+    console.warn('[blobGuard] Vessel blob approaching limit:',json.length,'chars — trimming timelines');
+  }
+  // Trim timelines progressively until under limit
+  let trimmed=[...arr.map(v=>({...v,timeline:[...(v.timeline||[])]}))];
+  let pass=0;
+  while(JSON.stringify(trimmed).length>BLOB_SIZE_MAX&&pass<10){
+    trimmed.forEach(v=>{if(v.timeline&&v.timeline.length>5)v.timeline=v.timeline.slice(-Math.max(5,v.timeline.length-5));});
+    pass++;
+  }
+  json=JSON.stringify(trimmed);
+  if(json.length>BLOB_SIZE_MAX){
+    console.error('[blobGuard] Blob still too large after trimming:',json.length,'chars');
+  }
+  return trimmed;
+}
 
 
 function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
@@ -152,7 +310,9 @@ function parseSharedPayload(raw){
 async function saveSharedVessels(data){
   if(!hasSharedDb()||!token)return false;
   try{
-    const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(data||[])]]};
+    // Trim timelines and guard blob size before every write
+    const safeData=guardBlobSize((data||[]).map(v=>{trimTimeline(v);return v;}));
+    const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(safeData)]]};
     const r=await fetch(sharedDbUrl('A1')+'?valueInputOption=RAW',{
       method:'PUT',
       headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -406,7 +566,10 @@ async function handleToken(r){
   if(user.pic)document.getElementById('uav').src=user.pic;
   document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
   renderTable();updateMetrics();populateSel();
+  // Initialise dedicated Sheet tabs and load shared tags on startup
   sheetsInboxInit();
+  ensureSheetTab(ATAGS_SHEET_NAME).then(()=>loadSharedAttTags());
+  ensureSheetTab(ARCHIVE_SHEET_NAME);
   checkInbox(true);
 }
 function signOut(){
@@ -952,9 +1115,15 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _att=(curIb&&curIb.attachments||[]).find(a=>a.attachmentId===attachmentId);
     if(_att)_existingMeta[attachmentId]={filename:_att.filename,mimeType:_att.mimeType,size:_att.size,tag};
     vessels[idx]={...v,attachmentTags:_attTags,attachmentMeta:_existingMeta,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
-    // Write to localStorage immediately — instant backup regardless of async Sheet save
+    // Layer 1: localStorage — instant, no network, survives modal reopen
     _saveAttTagsLocal(vessels[idx],_attTags);
-    saveVessels().then(()=>console.log('[tag] saved',_attTags,'for vessel idx',idx)).catch(e=>console.error('[tag] save FAILED',e));
+    // Layer 2: dedicated atags Sheet tab — shared across ALL users, no vessel blob race condition
+    const _vesselId=v.id||v.name||'';
+    const _att2=(curIb&&curIb.attachments||[]).find(a=>a.attachmentId===attachmentId);
+    saveSharedAttTag(_vesselId,attachmentId,_att2?.filename||'',tag)
+      .catch(e=>console.warn('[atag] Sheet save failed',e));
+    // Layer 3: vessel blob — kept in sync but NOT the authoritative source for tags
+    saveVessels().catch(e=>console.warn('[tag] vessel blob save failed',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
     // Re-render attachments panel to update warning (tagged file no longer "unidentified")
@@ -992,7 +1161,9 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _miss=REQUIRED_ITEMS.filter(r=>!hasItem(_allStillRec,r));
     vessels[idx]={...v,attachmentTags:_attTags,receivedItems:_allStillRec,missingItems:_miss};
     _saveAttTagsLocal(vessels[idx],_attTags);
-    saveVessels().catch(e=>console.error('[tag clear] save FAILED',e));
+    const _vesselId2=v.id||v.name||'';
+    saveSharedAttTag(_vesselId2,attachmentId,'','').catch(e=>console.warn('[atag clear] Sheet save failed',e));
+    saveVessels().catch(e=>console.warn('[tag clear] vessel blob save failed',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
     const _ap2=document.getElementById('mib-attachments');
@@ -2842,6 +3013,10 @@ function openV(idx){
   const mvFu=document.getElementById('mv-followup-draft');
   if(mvFu)mvFu.value=_mvDraft;
 
+  // Show Archive button only for completed vessels (admin only)
+  const _archBtn=document.getElementById('mv-archive-btn');
+  if(_archBtn)_archBtn.style.display=(v.status==='completed'&&isAdmin())?'inline-flex':'none';
+
   document.getElementById('mod-view').style.display='flex';
   // Bind clickable rows after modal is visible
   setTimeout(function(){
@@ -3041,8 +3216,10 @@ window.onload=()=>{
 (function(){
   const ACTIVE_INTERVAL=5000;   // 5s when tab is visible
   const VESSEL_INTERVAL=8000;   // 8s between vessel data syncs (separate from inbox)
+  const ATAGS_INTERVAL=30000;   // 30s for shared attachment tags (changes less frequently)
   let _inboxTimer=null;
   let _vesselTimer=null;
+  let _atagsTimer=null;
   let _tabActive=!document.hidden;
 
   async function pollInbox(){
@@ -3093,10 +3270,12 @@ window.onload=()=>{
   function startPolling(){
     if(!_inboxTimer)_inboxTimer=setInterval(pollInbox,ACTIVE_INTERVAL);
     if(!_vesselTimer)_vesselTimer=setInterval(pollVessels,VESSEL_INTERVAL);
+    if(!_atagsTimer)_atagsTimer=setInterval(()=>{if(token&&_tabActive)loadSharedAttTags();},ATAGS_INTERVAL);
   }
   function stopPolling(){
     clearInterval(_inboxTimer);_inboxTimer=null;
     clearInterval(_vesselTimer);_vesselTimer=null;
+    clearInterval(_atagsTimer);_atagsTimer=null;
   }
 
   // React to tab visibility changes
