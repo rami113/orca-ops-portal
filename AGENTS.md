@@ -35,11 +35,22 @@ There are **no build steps, no package manager, no test suite**.
 - `User` — standard access, own assigned vessels only
 
 ### Storage
-- **Primary:** Google Sheets (`SHARED_SHEET_ID`) — single cell A1 stores JSON blob.
-- **Fallback:** `localStorage` key `orca_v3` for vessels, `orca_u2` for user.
-- **Attachment tags backup:** `localStorage` key `orca_atags_{vessel.id}` — instant
-  per-device backup so tags survive modal reopen without depending on async Sheet save.
+- **Primary vessel blob:** Google Sheets (`SHARED_SHEET_ID`) tab `vessels` — cell A1 stores JSON array.
+- **Attachment tags:** Separate Sheet tab `atags` — cell A1 stores JSON object
+  `{ "vesselId_attachmentId": {tag,filename,userEmail,ts} }`. Completely independent
+  of the vessel blob — no race conditions between users tagging simultaneously.
+- **Archive:** Separate Sheet tab `archive` — completed vessels stored as JSON array.
+  Loaded on demand only (not on every page load). Never affects vessel blob size.
+- **Tag cache (localStorage):** `orca_atags_{vessel.id}` — instant per-device layer.
+  Written immediately on every tag change. Sheet is authoritative; localStorage is cache.
+- **Vessel fallback:** `localStorage` keys `orca_v3`/`orca_u2` when Sheet unavailable.
+- **Blob size guard:** `guardBlobSize()` called before every Sheet write — trims oldest
+  timeline entries if JSON exceeds 45KB. Warns at 35KB.
+- **Timeline cap:** `trimTimeline()` caps each vessel at `TIMELINE_MAX=50` entries,
+  always preserving milestones (sent, status changes, transfers).
 - Always call `saveVessels()` after mutating the `vessels` array.
+- For tag changes: call `saveSharedAttTag()` to write to atags tab AND `saveVessels()`
+  to keep vessel blob in sync. Never rely on vessel blob alone for tag persistence.
 
 ### CC Email
 - `OPS_CC_EMAIL = 'ops@orca-ai.io'` — CC'd on ALL coordination emails (initial + follow-ups).
@@ -326,6 +337,18 @@ When in doubt, fix the bug conservatively and document it in the Recent Fix Log 
   `v.detectedItems`. All four save sites updated.
 - Also tightened `inferReceivedFromReply`: port calls require `strictAttach`,
   VSAT routing requires `strictAttach`, `hereAre` requires item keyword.
+
+**Phase 1 — Jul 2026 (storage architecture overhaul)**
+- Added `atags` Sheet tab: all attachment tags stored independently of vessel blob.
+  `saveSharedAttTag()` / `loadSharedAttTags()` / `_applySharedAttTagsToVessels()`.
+  Tags refresh every 30s via poll. All users share same tag data with no race conditions.
+- Added `archive` Sheet tab: completed vessels moved here via Archive button in View modal
+  (admin only, visible when status=completed). `archiveVessel()` / `loadArchivedVessels()`.
+- Added `guardBlobSize()`: checks JSON size before every Sheet write, trims oldest
+  timeline entries progressively to stay under 45KB cell limit.
+- Added `trimTimeline()`: caps vessel timeline at `TIMELINE_MAX=50`, preserves milestones.
+- Tag save is now 3-layer: localStorage (instant) → atags Sheet tab (shared) → vessel blob (cache).
+- `ensureSheetTab()`: generic function to create a Sheet tab if it doesn't exist yet.
 
 **Session — Jul 2026 (second session)**
 - Added full attachment system: `extractAttachments`, `autoTagFromFilename`,
