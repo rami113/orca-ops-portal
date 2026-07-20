@@ -1123,12 +1123,9 @@ async function openCaseAnalyze(i){
   try{
     let replyText='',replyFrom='',replyDate='',replyAtts=[];
     if(Array.isArray(ibItems)&&ibItems.length){
-      const email=String(vessel.email||'').toLowerCase();
-      // Find the single ibItem for this vessel (one per vessel since our fix)
-      const ex=ibItems.find(item=>{
-        const from=String(item.fe||item.from||'').toLowerCase();
-        return item.vi===i||item.vessel===vessel||(email&&from.includes(email));
-      });
+      // Match strictly by vessel index — one ibItem per vessel, never by email
+      // (email match would pick the wrong vessel if two vessels share the same captain address)
+      const ex=ibItems.find(item=>item.vi===i||item.vessel===vessel);
       if(ex){
         if(ex.body)replyText=cleanCaptainReplyText(ex.body);
         replyFrom=ex.from||'';replyDate=ex.date||'';
@@ -2033,14 +2030,10 @@ async function openInboxReply(idx){
 }
 function updateReceivedStatsFromInbox(){
   if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
-  vessels.forEach(v=>{
-    const name=(v.name||'').toLowerCase();
-    const email=(v.email||'').toLowerCase();
-    const matches=ibItems.filter(m=>{
-      // Match strictly by email only — vessel name matching causes false positives
-      const from=(m.fe||'').toLowerCase()||(m.from||'').toLowerCase();
-      return email && from.includes(email);
-    });
+  vessels.forEach((v,vi)=>{
+    // Match strictly by vessel index — prevents two vessels with the same captain
+    // email from sharing each other's inbox stats.
+    const matches=ibItems.filter(m=>m.vi===vi||m.vessel===v);
     if(matches.length){
       v.emailsReceived=matches.length;
       const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(t=>Number.isFinite(t)).sort((a,b)=>b-a)[0];
