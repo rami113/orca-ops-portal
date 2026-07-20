@@ -938,14 +938,17 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     // Re-render attachments panel to update warning (tagged file no longer "unidentified")
     const _ap=document.getElementById('mib-attachments');
     if(_ap&&curIb)_ap.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',idx);
-    // Update ibAna and refresh Received/Missing panels + draft in the open modal
+    // Update ibAna and refresh Received/Missing panels + draft in the open modal.
+    // Recompute from scratch using keyword hits + current _attTags so that changing
+    // a tag from one item to another correctly removes the old one.
     if(ibAna){
-      const _allRec=[...new Map([...(ibAna.received||[]),tag].map(x=>[itemKey(x),x])).values()];
-      ibAna.received=_allRec;
-      ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_allRec,r));
+      const _kwHits=curIb?inferReceivedFromReply(curIb.body||''):[];
+      const _freshRec=[...new Map([..._kwHits,..._allTagVals].map(x=>[itemKey(x),x])).values()];
+      ibAna.received=_freshRec;
+      ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_freshRec,r));
       const recvEl=document.getElementById('mib-recv');
       const missEl=document.getElementById('mib-miss');
-      if(recvEl)recvEl.innerHTML=_allRec.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+      if(recvEl)recvEl.innerHTML=_freshRec.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
       if(missEl)missEl.innerHTML=ibAna.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
       // Regenerate follow-up draft to match updated received/missing
       const _fuEl=document.getElementById('mib-fu');
