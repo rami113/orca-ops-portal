@@ -483,7 +483,10 @@ function setVesselStatus(i,status){
   if(status==='ready'){vessels[i].nextAction='Coordinate installation window';vessels[i].progress=Math.max(vessels[i].progress||0,75);}
   if(status==='scheduled'){vessels[i].nextAction='Installation scheduled';vessels[i].progress=Math.max(vessels[i].progress||0,90);}
   if(status==='completed'){vessels[i].nextAction='Installation completed';vessels[i].progress=100;vessels[i].risk='low';}
-  if(old!==status)addTimeline(vessels[i],'status','Status changed',`${sbText(old)} → ${sbText(status)}`);
+  if(old!==status){
+    vessels[i].lastActivity=new Date().toISOString();
+    addTimeline(vessels[i],'status','Status changed',`${sbText(old)} → ${sbText(status)}`);
+  }
   saveVessels();updateMetrics();renderTable();renderAdmin();populateSel();
 }
 function statusOptions(selected){
@@ -857,8 +860,15 @@ function autoTagFromFilename(filename){
 
 // localStorage key for attachment tags — instant backup, survives modal open/close
 function _attTagsLsKey(v){return'orca_atags_'+(v&&(v.id||v.name)||'');}
-function _saveAttTagsLocal(v,tags){try{if(v)localStorage.setItem(_attTagsLsKey(v),JSON.stringify(tags));}catch(_){}}
-function _loadAttTagsLocal(v){try{const s=localStorage.getItem(_attTagsLsKey(v));return s?JSON.parse(s):{};}catch(_){return{};}}
+function _saveAttTagsLocal(v,tags){
+  try{
+    if(v){const k=_attTagsLsKey(v);localStorage.setItem(k,JSON.stringify(tags));console.log('[attTag ls-save]',k,tags);}
+  }catch(e){console.error('[attTag ls-save FAILED]',e);}
+}
+function _loadAttTagsLocal(v){
+  try{const s=localStorage.getItem(_attTagsLsKey(v));const t=s?JSON.parse(s):{};if(s)console.log('[attTag ls-load]',_attTagsLsKey(v),t);return t;}
+  catch(_){return{};}
+}
 
 // Restore saved tags from vessel.attachmentTags (Sheet) OR localStorage backup.
 // Returns a NEW array with tags applied — never mutates the source array.
@@ -3061,8 +3071,11 @@ window.onload=()=>{
           // (e.g. Jacob tagging a file) are not wiped by Leon's local empty tags.
           // Local wins on conflicts (same attachmentId tagged differently).
           const _mergedAttTags=Object.assign({},sv.attachmentTags||{},local.attachmentTags||{});
-          const keep={status:local.status,risk:local.risk,progress:local.progress,
-            missingItems:local.missingItems,
+          // status/risk/progress are intentionally NOT in keep — when another user
+          // changes these and saves (updating lastActivity), svNewer becomes true and
+          // we take their values from the Sheet. This enables live status updates
+          // across users without a page refresh.
+          const keep={missingItems:local.missingItems,
             receivedItems:local.receivedItems,detectedItems:local.detectedItems,
             attachmentTags:_mergedAttTags};
           // Merge timelines
