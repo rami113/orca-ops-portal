@@ -2098,6 +2098,9 @@ async function checkInbox(silent=false){
     buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
   }
   renderInlineInbox();renderInbox();renderTable();updateMetrics();saveVessels();
+  // Update badge smoothly after fetch — never reset to 0 mid-fetch
+  const _badge=document.getElementById('ib-count');
+  if(_badge){const _n=ibItems?ibItems.length:0;_badge.textContent=_n;_badge.style.display=_n?'inline':'none';}
   // Update the auto-checked timestamp label
   const lbl=document.getElementById('last-refresh-label');
   if(lbl) lbl.textContent='Auto-checked: '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
@@ -2323,8 +2326,8 @@ async function fetchInboxByThreads(){
 
 async function fetchInbox(){
   if(!ibItems) ibItems=[];
-  const badge=document.getElementById('ib-count');
-  if(badge){badge.textContent='0';badge.style.display='none';}
+  // Do NOT reset badge here — it causes visible flicker every 5s during auto-poll.
+  // Badge is updated after fetch completes (in checkInbox / renderInbox).
   if(!token||!vessels.length)return;
 
   // Each user only sees replies for vessels assigned to them. Super admin sees all.
