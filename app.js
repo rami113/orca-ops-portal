@@ -820,11 +820,13 @@ function extractAttachments(payload, msgId){
     if(fn&&aid){
       const cid=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-id');
       const disp=String((hdrs.find(h=>String(h.name||'').toLowerCase()==='content-disposition')||{}).value||'').toLowerCase();
-      // Skip embedded assets: has Content-ID AND not explicitly Content-Disposition: attachment
-      const isEmbedded=!!cid&&!disp.includes('attachment');
-      // Also skip our own logo by filename (safety net)
+      // Skip our own logo by filename — always embedded, never a captain attachment
       const isOrcaLogo=/^orca\s*ai$/i.test(fn.trim());
-      if(!isEmbedded&&!isOrcaLogo){
+      // Skip truly embedded assets: has Content-ID AND Content-Disposition is explicitly "inline"
+      // Do NOT skip if disposition is "attachment" or missing — Gmail sometimes adds Content-IDs
+      // to regular user attachments (e.g. image(1).png), and we must keep those.
+      const isInline=!!cid&&disp.includes('inline')&&!disp.includes('attachment');
+      if(!isInline&&!isOrcaLogo){
         results.push({filename:fn,mimeType:part.mimeType||'application/octet-stream',attachmentId:aid,msgId:msgId||'',size:part.body.size||0});
       }
     }
