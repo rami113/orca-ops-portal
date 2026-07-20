@@ -511,6 +511,7 @@ async function assignVessel(i,email){
   const old=vessels[i].assignedTo||'Unassigned';
   if(old===email)return; // no change
   vessels[i].assignedTo=email;
+  vessels[i].lastActivity=new Date().toISOString();
   addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
   saveVessels();renderTable();renderAdmin();
   // Send notification email to new owner with full context including latest captain reply
@@ -695,6 +696,7 @@ async function transferOwnership(idx){
   vessels[idx].assignedTo=result;
   vessels[idx].lastTransferTo=result;
   vessels[idx].lastTransferAt=new Date().toISOString();
+  vessels[idx].lastActivity=new Date().toISOString();
   addTimeline(vessels[idx],'assignment','Ownership transferred','From: '+prevOwner+' → To: '+result);
   saveVessels();renderTable();
   // Send notification email to new owner
@@ -920,7 +922,12 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _allTagVals=Object.values(_attTags).filter(t=>t&&t!=='Other / Not a required item');
     const _kwOnly=Array.isArray(v.detectedItems)?v.detectedItems:[];
     const merged=[...new Map([..._kwOnly,..._allTagVals].map(x=>[itemKey(x),x])).values()];
-    vessels[idx]={...v,attachmentTags:_attTags,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
+    // Store attachment filename metadata on the vessel so other users can see received files
+    // even when they don't have Gmail access to the original thread.
+    const _existingMeta=v.attachmentMeta||{};
+    const _att=(curIb&&curIb.attachments||[]).find(a=>a.attachmentId===attachmentId);
+    if(_att)_existingMeta[attachmentId]={filename:_att.filename,mimeType:_att.mimeType,size:_att.size,tag};
+    vessels[idx]={...v,attachmentTags:_attTags,attachmentMeta:_existingMeta,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
     saveVessels().then(()=>console.log('[tag] saved',_attTags,'for vessel idx',idx)).catch(e=>console.error('[tag] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
@@ -2742,6 +2749,33 @@ function openV(idx){
     ?miss.map(m=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#fff5f5;border-radius:6px;margin-bottom:4px;font-size:13px;color:#c0392b"><i class="ti ti-circle-x" style="margin-top:1px;flex-shrink:0"></i>${m}</div>`).join('')
     :`<div style="font-size:13px;color:#003d1a;padding:6px 0">✓ All items received!</div>`;
 
+  // Attachment files panel — live from ibItems if available, else from stored metadata
+  const _mvAtEl=document.getElementById('mv-attachments');
+  if(_mvAtEl){
+    if(_ibV&&(_ibV.attachments||[]).length){
+      _mvAtEl.innerHTML=renderAttachmentsPanel(_ibV.attachments,_ibV.body||'',idx);
+    } else {
+      // No live Gmail access — show stored attachment metadata (tagged by original coordinator)
+      const _meta=Object.entries(v.attachmentMeta||{});
+      if(_meta.length){
+        const _metaCards=_meta.map(([aid,m])=>{
+          const iTag=m.tag&&m.tag!=='Other / Not a required item'?`<span style="font-size:11px;background:#e8f4ff;color:#1D2E6B;border-radius:4px;padding:2px 8px;margin-left:6px;font-weight:600">${m.tag}</span>`:'';
+          const sizeKb=m.size?Math.round(m.size/1024)+'KB':'';
+          return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:#fafbff">
+            <i class="ti ti-paperclip" style="color:var(--navy);font-size:16px;flex-shrink:0"></i>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.filename||'File')}</div>
+              <div style="font-size:11px;color:var(--muted)">${sizeKb}${iTag}</div>
+            </div>
+          </div>`;
+        }).join('');
+        _mvAtEl.innerHTML=`<div style="margin-bottom:1rem"><div class="sl" style="margin-bottom:8px">Attachments received <span style="font-size:10px;background:var(--navy-l);color:var(--navy);border-radius:99px;padding:1px 8px;font-weight:700;margin-left:4px">${_meta.length}</span><span style="font-size:11px;color:var(--muted);margin-left:8px">(preview unavailable — original Gmail account required)</span></div>${_metaCards}</div>`;
+      } else {
+        _mvAtEl.innerHTML='';
+      }
+    }
+  }
+
   // Timeline
   seedTimeline(v);
   const tl=document.getElementById('mv-timeline');
@@ -2979,9 +3013,11 @@ window.onload=()=>{
         const local=vessels[idx];
         const svNewer=new Date(sv.lastActivity||0)>new Date(local.lastActivity||0);
         if(svNewer){
-          // Preserve local unsaved edits to key fields, take rest from Sheet
+          // Preserve local unsaved edits to key fields, take rest from Sheet.
+          // assignedTo is intentionally NOT in keep — ownership changes from
+          // other users (e.g. transfer back) must propagate live via the Sheet.
           const keep={status:local.status,risk:local.risk,progress:local.progress,
-            assignedTo:local.assignedTo,missingItems:local.missingItems,
+            missingItems:local.missingItems,
             receivedItems:local.receivedItems,detectedItems:local.detectedItems,
             attachmentTags:local.attachmentTags};
           // Merge timelines
