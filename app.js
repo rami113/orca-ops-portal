@@ -19,6 +19,10 @@ const GOOGLE_CLIENT_IDS={
 const DEFAULT_CLIENT_ID='150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com';
 const CLIENT_ID=GOOGLE_CLIENT_IDS[window.location.hostname]||DEFAULT_CLIENT_ID;
 const SCOPES='https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/spreadsheets profile email';
+// CC this address on every coordination email so all ops team members
+// have the full thread in their Gmail — solves cross-user attachment access on transfer.
+const OPS_CC_EMAIL='ops@orca-ai.io';
+
 const SUPER_ADMINS=['rami@orca-ai.io'];
 const SUPER_ADMIN='rami@orca-ai.io'; // backwards compatibility
 const ADMIN=SUPER_ADMIN; // backwards compatibility
@@ -1682,7 +1686,8 @@ async function sendAndSaveNew(){
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
   try{
     const htmlBody=buildHtmlEmail(draft,'ORCA AI OPS',d);
-    const cc=val('mcc')||'',bcc=val('mbcc')||'';
+    const cc=[val('mcc')||'',OPS_CC_EMAIL].filter(Boolean).join(',');
+    const bcc=val('mbcc')||'';
     const result=await sendGmail(e,'Orca AI Installation Coordination - '+v,htmlBody,true,cc,bcc);
     if(!result)return;
     // Capture Gmail thread ID + message ID so fetchInboxByThreads can link this entry
@@ -2426,7 +2431,7 @@ async function sendFromViewModal(){
   const body=fuEl&&fuEl.value.trim()?fuEl.value.trim():buildFollowupEmail(v,v.missingItems||[]);
   const btn=document.querySelector('#mod-view .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,'','',v.gmailThreadId||'');
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,OPS_CC_EMAIL,'',v.gmailThreadId||'');
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
   if(!ok)return;
   // Save to timeline and vessel — update gmailThreadId from response in case it changed
@@ -2578,7 +2583,7 @@ async function sendIbFollowUp(){
   // Read edited text from textarea - user may have modified it
   const fuEl=document.getElementById('mib-fu');
   const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,'','',v.gmailThreadId||'');
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,OPS_CC_EMAIL,'',v.gmailThreadId||'');
   if(!ok)return;
   const idx=curIb.vi;
   if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
@@ -2647,7 +2652,7 @@ async function saveAnalyzeOnly(){
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
   const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,'','',v.gmailThreadId||'');if(!ok)return;
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,OPS_CC_EMAIL,'',v.gmailThreadId||'');if(!ok)return;
   if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
   const _newDet4=[...new Map([..._prevDet4,...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
