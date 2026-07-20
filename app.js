@@ -818,15 +818,12 @@ function extractAttachments(payload, msgId){
       if(ct){const m=String(ct.value||'').match(/name\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i);if(m)fn=decodeURIComponent(m[1].trim().replace(/['"]/g,''));}
     }
     if(fn&&aid){
-      const cid=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-id');
-      const disp=String((hdrs.find(h=>String(h.name||'').toLowerCase()==='content-disposition')||{}).value||'').toLowerCase();
-      // Skip our own logo by filename — always embedded, never a captain attachment
+      // Only skip our own Orca AI logo — identified by filename alone.
+      // Do NOT filter by Content-Disposition or Content-ID: Gmail marks inline-pasted
+      // images as "inline" in CC recipients' mailboxes but as unrestricted in the
+      // sender's — filtering by disposition causes cross-user inconsistency.
       const isOrcaLogo=/^orca\s*ai$/i.test(fn.trim());
-      // Skip truly embedded assets: has Content-ID AND Content-Disposition is explicitly "inline"
-      // Do NOT skip if disposition is "attachment" or missing — Gmail sometimes adds Content-IDs
-      // to regular user attachments (e.g. image(1).png), and we must keep those.
-      const isInline=!!cid&&disp.includes('inline')&&!disp.includes('attachment');
-      if(!isInline&&!isOrcaLogo){
+      if(!isOrcaLogo){
         results.push({filename:fn,mimeType:part.mimeType||'application/octet-stream',attachmentId:aid,msgId:msgId||'',size:part.body.size||0});
       }
     }
