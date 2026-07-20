@@ -215,8 +215,10 @@ async function saveVessels(){
         // fields only changed by other users are preserved from Sheet.
         // SAFE fields to always take from local (user just edited them):
         const _localOwned=['status','risk','progress','nextAction','missingItems','receivedItems',
-          'detectedItems','attachmentTags','followupsSent','lastFollowupPreview','assignedTo',
+          'detectedItems','followupsSent','lastFollowupPreview','assignedTo',
           'lastContact','lastEmailDate','emailsSent'];
+        // attachmentTags is NOT in _localOwned — it gets a special merge below
+        // so tags set by different users on different devices are preserved.
         // SAFE fields to merge from Sheet if Sheet version is newer (other user's changes):
         const _sheetOwned=['timeline','emailsReceived','lastReceivedDate','lastActivity'];
         const mergedVessels=[];
@@ -227,6 +229,9 @@ async function saveVessels(){
           // Both exist — merge fields
           const sheetNewer=new Date(sheet.lastActivity||0)>new Date(local.lastActivity||0);
           const merged={...local};
+          // Always merge attachmentTags from Sheet + local so tags set by any user
+          // on any device are preserved. Local wins on conflicts (same attachmentId).
+          merged.attachmentTags=Object.assign({},sheet.attachmentTags||{},local.attachmentTags||{});
           // Take sheet-owned fields only if sheet is newer (another user updated them)
           if(sheetNewer){
             _sheetOwned.forEach(f=>{if(sheet[f]!==undefined)merged[f]=sheet[f];});
@@ -3052,10 +3057,14 @@ window.onload=()=>{
           // Preserve local unsaved edits to key fields, take rest from Sheet.
           // assignedTo is intentionally NOT in keep — ownership changes from
           // other users (e.g. transfer back) must propagate live via the Sheet.
+          // attachmentTags: MERGE Sheet + local so tags set by other users
+          // (e.g. Jacob tagging a file) are not wiped by Leon's local empty tags.
+          // Local wins on conflicts (same attachmentId tagged differently).
+          const _mergedAttTags=Object.assign({},sv.attachmentTags||{},local.attachmentTags||{});
           const keep={status:local.status,risk:local.risk,progress:local.progress,
             missingItems:local.missingItems,
             receivedItems:local.receivedItems,detectedItems:local.detectedItems,
-            attachmentTags:local.attachmentTags};
+            attachmentTags:_mergedAttTags};
           // Merge timelines
           const tl=[...(local.timeline||[]),...(sv.timeline||[])];
           const seen=new Set();
