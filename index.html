@@ -227,8 +227,13 @@
 <!-- START MODAL -->
 <div id="mod-start" class="modal-bg" style="display:none">
   <div class="modal modal-start">
-    <div class="modal-t"><i class="ti ti-rocket" style="color:var(--navy)"></i> Start Coordination</div>
-    <div class="modal-s">Enter vessel details. An initial email will be generated and sent directly from your Gmail.</div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.5rem">
+      <div>
+        <div class="modal-t" style="margin-bottom:0"><i class="ti ti-rocket" style="color:var(--navy)"></i> Start Coordination</div>
+        <div class="modal-s" style="margin-top:4px">Enter vessel details. An initial email will be generated and sent directly from your Gmail.</div>
+      </div>
+      <button class="btn" style="flex-shrink:0;margin-left:12px" onclick="document.getElementById('mod-start').style.display='none'" title="Close (Esc)"><i class="ti ti-x"></i></button>
+    </div>
     <div class="fg">
       <div class="fr"><label>Vessel name *</label><input id="mv" placeholder="MV Ocean Star"/></div>
       <div class="fr"><label>Master email *</label><input id="me" type="email" placeholder="master@vessel.com"/></div>
@@ -266,8 +271,13 @@
 <!-- INBOX ANALYZE MODAL -->
 <div id="mod-ib" class="modal-bg" style="display:none">
   <div class="modal modal-analyze">
-    <div class="modal-t"><i class="ti ti-inbox" style="color:var(--navy)"></i> Reply — <span id="mib-v"></span></div>
-    <div class="modal-s" id="mib-m"></div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.25rem">
+      <div>
+        <div class="modal-t" style="margin-bottom:0"><i class="ti ti-inbox" style="color:var(--navy)"></i> Reply — <span id="mib-v"></span></div>
+        <div class="modal-s" id="mib-m" style="margin-top:4px"></div>
+      </div>
+      <button class="btn" style="flex-shrink:0;margin-left:12px" onclick="document.getElementById('mod-ib').style.display='none'" title="Close (Esc)"><i class="ti ti-x"></i></button>
+    </div>
     <div id="mib-attachments"></div>
 
     <!-- Status timeline panel -->
@@ -396,7 +406,10 @@
 <!-- VIEW REPLY modal - simple captain reply viewer -->
 <div id="mod-view-reply" class="modal-bg" style="display:none">
   <div class="modal modal-email">
-    <div class="modal-t"><i class="ti ti-eye" style="color:var(--navy)"></i> Captain's Reply — <span id="view-reply-vessel"></span></div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.25rem">
+      <div class="modal-t" style="margin-bottom:0"><i class="ti ti-eye" style="color:var(--navy)"></i> Captain's Reply — <span id="view-reply-vessel"></span></div>
+      <button class="btn" style="flex-shrink:0;margin-left:12px" onclick="document.getElementById('mod-view-reply').style.display='none'" title="Close (Esc)"><i class="ti ti-x"></i></button>
+    </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:4px" id="view-reply-from"></div>
     <div style="font-size:13px;color:var(--navy);font-style:italic;margin-bottom:14px" id="view-reply-subj"></div>
     <div id="view-reply-body" style="background:#f7f8fc;border:1px solid var(--border);border-radius:8px;padding:18px;overflow-y:auto;max-height:62vh"></div>
@@ -409,7 +422,10 @@
 <!-- LATEST STATUS modal -->
 <div id="mod-latest-status" class="modal-bg" style="display:none">
   <div class="modal" style="max-width:620px">
-    <div class="modal-t"><i class="ti ti-report-analytics" style="color:var(--navy)"></i> Latest Status — <span id="ls-vessel-name"></span></div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.25rem">
+      <div class="modal-t" style="margin-bottom:0"><i class="ti ti-report-analytics" style="color:var(--navy)"></i> Latest Status — <span id="ls-vessel-name"></span></div>
+      <button class="btn" style="flex-shrink:0;margin-left:12px" onclick="document.getElementById('mod-latest-status').style.display='none'" title="Close (Esc)"><i class="ti ti-x"></i></button>
+    </div>
 
     <!-- Stats row -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;padding:14px;background:#f4f6fb;border-radius:8px;border:1px solid #dde3f0">

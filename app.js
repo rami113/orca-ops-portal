@@ -3076,3 +3076,24 @@ window.onload=()=>{
   },1000);
 })();
 
+// ── ESC key closes any open modal ─────────────────────────────────────────────
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape')return;
+  // Don't interfere with the custom alert/confirm overlay
+  const overlay=document.getElementById('orca-modal-overlay');
+  if(overlay&&overlay.classList.contains('show')){
+    // ESC on confirm/alert = cancel (safe default)
+    const cancel=document.getElementById('orca-modal-cancel');
+    const ok=document.getElementById('orca-modal-ok');
+    if(cancel&&cancel.style.display!=='none')cancel.click();
+    else if(ok)ok.click();
+    return;
+  }
+  // Close whichever modal-bg is currently visible
+  const modals=['mod-ib','mod-view','mod-start','mod-view-reply','mod-latest-status'];
+  for(const id of modals){
+    const el=document.getElementById(id);
+    if(el&&el.style.display!=='none'){el.style.display='none';break;}
+  }
+});
+
