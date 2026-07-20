@@ -866,8 +866,7 @@ function onAttachTag(sel,attachmentId,vesselIdx){
   if(tag){
     const prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
     const merged=[...new Map([...prev,tag].map(x=>[itemKey(x),x])).values()];
-    // Update lastActivity so pollVessels svNewer check won't overwrite our local tag change
-    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r)),lastActivity:new Date().toISOString()};
+    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
     saveVessels().then(()=>console.log('[tag] saved',_attTags,'for vessel idx',idx)).catch(e=>console.error('[tag] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
@@ -896,7 +895,7 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _textRec=curIb?inferReceivedFromReply(curIb.body||''):[];
     const _allStillRec=[...new Map([..._textRec,..._remainingTags].map(x=>[itemKey(x),x])).values()];
     const _miss=REQUIRED_ITEMS.filter(r=>!hasItem(_allStillRec,r));
-    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:_allStillRec,receivedItems:_allStillRec,missingItems:_miss,lastActivity:new Date().toISOString()};
+    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:_allStillRec,receivedItems:_allStillRec,missingItems:_miss};
     saveVessels().catch(e=>console.error('[tag clear] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
@@ -1472,7 +1471,8 @@ function _renderTableImpl(){
   tb.innerHTML=arr.map(v=>{
     const idx=v.__i;
     seedTimeline(vessels[idx]);
-    const d=ds(v.lastContact);
+    // Reply Age = days since captain last replied (lastReceivedDate), not since ops last acted
+    const d=ds(v.lastReceivedDate);
     const adminDelete=(user&&isAdmin())?`<button class="btn btn-s btn-d" title="Delete case" onclick="event.stopPropagation();deleteVessel(${idx})"><i class="ti ti-trash"></i> Delete</button>`:'';
     const _allDone=(v.missingItems||[]).length===0&&(v.receivedItems||[]).length>0;
     return `<tr class="cl" style="${_allDone?'background:#f0faf4;border-left:3px solid #003d1a':''}">
