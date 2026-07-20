@@ -853,13 +853,19 @@ function autoTagFromFilename(filename){
   return '';
 }
 
-// Restore saved tags from vessel.attachmentTags onto an attachments array.
-// Returns a NEW array with tags applied — never mutates the source array
-// so ibItems attachments are not affected by the 5s poll replacement.
+// localStorage key for attachment tags — instant backup, survives modal open/close
+function _attTagsLsKey(v){return'orca_atags_'+(v&&(v.id||v.name)||'');}
+function _saveAttTagsLocal(v,tags){try{if(v)localStorage.setItem(_attTagsLsKey(v),JSON.stringify(tags));}catch(_){}}
+function _loadAttTagsLocal(v){try{const s=localStorage.getItem(_attTagsLsKey(v));return s?JSON.parse(s):{};}catch(_){return{};}}
+
+// Restore saved tags from vessel.attachmentTags (Sheet) OR localStorage backup.
+// Returns a NEW array with tags applied — never mutates the source array.
 function restoreAttachmentTags(attachments, vesselIdx){
   const v=vessels[parseInt(vesselIdx)];
   if(!Array.isArray(attachments))return [];
-  const savedTags=(v&&v.attachmentTags)||{};
+  // Merge Sheet tags + localStorage backup — Sheet wins if both present
+  const lsTags=_loadAttTagsLocal(v);
+  const savedTags=Object.assign({},lsTags,(v&&v.attachmentTags)||{});
   return attachments.map(a=>({
     ...a,
     tag:savedTags[a.attachmentId]||a.tag||''
@@ -934,6 +940,8 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _att=(curIb&&curIb.attachments||[]).find(a=>a.attachmentId===attachmentId);
     if(_att)_existingMeta[attachmentId]={filename:_att.filename,mimeType:_att.mimeType,size:_att.size,tag};
     vessels[idx]={...v,attachmentTags:_attTags,attachmentMeta:_existingMeta,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
+    // Write to localStorage immediately — instant backup regardless of async Sheet save
+    _saveAttTagsLocal(vessels[idx],_attTags);
     saveVessels().then(()=>console.log('[tag] saved',_attTags,'for vessel idx',idx)).catch(e=>console.error('[tag] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
@@ -971,6 +979,7 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _allStillRec=[...new Map([..._kwOnly2,..._remainingTags].map(x=>[itemKey(x),x])).values()];
     const _miss=REQUIRED_ITEMS.filter(r=>!hasItem(_allStillRec,r));
     vessels[idx]={...v,attachmentTags:_attTags,receivedItems:_allStillRec,missingItems:_miss};
+    _saveAttTagsLocal(vessels[idx],_attTags);
     saveVessels().catch(e=>console.error('[tag clear] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
