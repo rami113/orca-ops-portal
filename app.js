@@ -866,14 +866,15 @@ function onAttachTag(sel,attachmentId,vesselIdx){
   if(tag){
     const prev=Array.isArray(v.detectedItems)?v.detectedItems:[];
     const merged=[...new Map([...prev,tag].map(x=>[itemKey(x),x])).values()];
-    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
-    saveVessels().then(()=>console.log('[tag] saved attachmentTags',_attTags,'for vessel idx',idx));
+    // Update lastActivity so pollVessels svNewer check won't overwrite our local tag change
+    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:merged,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r)),lastActivity:new Date().toISOString()};
+    saveVessels().then(()=>console.log('[tag] saved',_attTags,'for vessel idx',idx)).catch(e=>console.error('[tag] save FAILED',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='#f0faf4';
     // Re-render attachments panel to update warning (tagged file no longer "unidentified")
     const _ap=document.getElementById('mib-attachments');
     if(_ap&&curIb)_ap.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',idx);
-    // Update ibAna and refresh Received/Missing panels in the open modal
+    // Update ibAna and refresh Received/Missing panels + draft in the open modal
     if(ibAna){
       const _allRec=[...new Map([...(ibAna.received||[]),tag].map(x=>[itemKey(x),x])).values()];
       ibAna.received=_allRec;
@@ -882,14 +883,38 @@ function onAttachTag(sel,attachmentId,vesselIdx){
       const missEl=document.getElementById('mib-miss');
       if(recvEl)recvEl.innerHTML=_allRec.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
       if(missEl)missEl.innerHTML=ibAna.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+      // Regenerate follow-up draft to match updated received/missing
+      const _fuEl=document.getElementById('mib-fu');
+      if(_fuEl&&curIb&&curIb.vessel){
+        ibAna.followup_email=buildFollowupEmail({...curIb.vessel,receivedItems:ibAna.received},ibAna.missing);
+        _fuEl.value=ibAna.followup_email;
+      }
     }
   } else {
-    // Tag cleared — update vessel without this tag
-    vessels[idx]={...v,attachmentTags:_attTags};
-    saveVessels();
+    // Tag cleared — recompute received/missing from remaining tags + keyword detection
+    const _remainingTags=Object.values(_attTags).filter(Boolean);
+    const _textRec=curIb?inferReceivedFromReply(curIb.body||''):[];
+    const _allStillRec=[...new Map([..._textRec,..._remainingTags].map(x=>[itemKey(x),x])).values()];
+    const _miss=REQUIRED_ITEMS.filter(r=>!hasItem(_allStillRec,r));
+    vessels[idx]={...v,attachmentTags:_attTags,detectedItems:_allStillRec,receivedItems:_allStillRec,missingItems:_miss,lastActivity:new Date().toISOString()};
+    saveVessels().catch(e=>console.error('[tag clear] save FAILED',e));
+    updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
     const _ap2=document.getElementById('mib-attachments');
     if(_ap2&&curIb)_ap2.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',idx);
+    // Update ibAna panels + draft
+    if(ibAna){
+      ibAna.received=_allStillRec;ibAna.missing=_miss;
+      const recvEl2=document.getElementById('mib-recv');
+      const missEl2=document.getElementById('mib-miss');
+      if(recvEl2)recvEl2.innerHTML=_allStillRec.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+      if(missEl2)missEl2.innerHTML=_miss.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+      const _fuEl2=document.getElementById('mib-fu');
+      if(_fuEl2&&curIb&&curIb.vessel){
+        ibAna.followup_email=buildFollowupEmail({...curIb.vessel,receivedItems:ibAna.received},ibAna.missing);
+        _fuEl2.value=ibAna.followup_email;
+      }
+    }
   }
 }
 
@@ -1079,9 +1104,8 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   document.getElementById('mib-stat-status').textContent=sL[v.status]||v.status||'—';
   document.getElementById('mib-recv').innerHTML=(result.received||[]).map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=(result.missing||[]).map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-  // Rebuild followup with correct received/missing
-  const _recvM=[...new Map([...(v.receivedItems||[]),...(result.received||[])].map(x=>[itemKey(x),x])).values()];
-  result.followup_email=buildFollowupEmail({...v,receivedItems:_recvM},result.missing||[]);
+  // Rebuild followup using ONLY this analysis's received — never merge stale stored receivedItems
+  result.followup_email=buildFollowupEmail({...v,receivedItems:result.received||[]},result.missing||[]);
   document.getElementById('mib-fu').value=result.followup_email||'';
   // Render attachments from curIb (set by openCaseAnalyze with all accumulated atts)
   const _apR=document.getElementById('mib-attachments');
