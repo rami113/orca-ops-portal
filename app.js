@@ -939,11 +939,16 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _ap=document.getElementById('mib-attachments');
     if(_ap&&curIb)_ap.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',idx);
     // Update ibAna and refresh Received/Missing panels + draft in the open modal.
-    // Recompute from scratch using keyword hits + current _attTags so that changing
-    // a tag from one item to another correctly removes the old one.
+    // Recompute from scratch using keyword hits + live attachment tags (a.tag already
+    // updated at line 913) + auto-tags from filename. This correctly handles:
+    //   - tag changed: old value gone (not in curIb.attachments anymore)
+    //   - auto-tagged PDF: stays via autoTagFromFilename even if not in _attTags
     if(ibAna){
       const _kwHits=curIb?inferReceivedFromReply(curIb.body||''):[];
-      const _freshRec=[...new Map([..._kwHits,..._allTagVals].map(x=>[itemKey(x),x])).values()];
+      const _liveAttTags=(curIb&&curIb.attachments||[])
+        .map(a=>a.tag||autoTagFromFilename(a.filename))
+        .filter(t=>t&&t!=='Other / Not a required item');
+      const _freshRec=[...new Map([..._kwHits,..._liveAttTags].map(x=>[itemKey(x),x])).values()];
       ibAna.received=_freshRec;
       ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_freshRec,r));
       const recvEl=document.getElementById('mib-recv');
