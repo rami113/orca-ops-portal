@@ -2227,9 +2227,28 @@ async function fetchInboxByThreads(){
 
   for(const vessel of threadVessels){
     try{
+      let thread=null;
+      // Try the stored threadId first (works for original sender's account)
       const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${vessel.gmailThreadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
-      if(!r.ok)continue;
-      const thread=await r.json();
+      if(r.ok){
+        thread=await r.json();
+      } else {
+        // Thread not in this user's Gmail (e.g. vessel was transferred to a different account).
+        // Fall back: search by subject line — works for CC recipients after transfer.
+        try{
+          const _subj=encodeURIComponent(`subject:"Orca AI Installation Coordination - ${vessel.name}"`);
+          const _sr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads?q=${_subj}&maxResults=5`,{headers:{Authorization:'Bearer '+token}});
+          if(_sr.ok){
+            const _sd=await _sr.json();
+            if(_sd.threads&&_sd.threads.length){
+              // Use the most recent matching thread found in THIS user's Gmail
+              const _tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${_sd.threads[0].id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+              if(_tr.ok)thread=await _tr.json();
+            }
+          }
+        }catch(_){/* fallback failed — skip vessel */}
+      }
+      if(!thread)continue;
       const messages=(thread.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
       const vi=vessels.indexOf(vessel);
       // _captainMsgs collects data from all captain messages in this thread
