@@ -2225,18 +2225,14 @@ async function openInboxReply(idx){
 function updateReceivedStatsFromInbox(){
   if(!Array.isArray(ibItems)||!ibItems.length||!Array.isArray(vessels))return;
   vessels.forEach((v,vi)=>{
-    // Match strictly by vessel index — prevents two vessels with the same captain
-    // email from sharing each other's inbox stats.
-    const matches=ibItems.filter(m=>m.vi===vi||m.vessel===v);
-    if(matches.length){
-      v.emailsReceived=matches.length;
-      const latest=matches.map(m=>new Date(m.date||m.internalDate||m.receivedDate||m.timestamp||Date.now()).getTime()).filter(t=>Number.isFinite(t)).sort((a,b)=>b-a)[0];
-      v.lastReceivedDate=new Date(latest||Date.now()).toISOString();
-      // Do NOT auto-change status here — user sets status manually or via Analyze.
-      // Auto-changing to 'followup' here was overriding user's manual status every 5s.
-    }else{
-      v.emailsReceived=v.emailsReceived||0;
-      v.lastReceivedDate=v.lastReceivedDate||'';
+    // Match strictly by vessel index — one ibItem per vessel since our dedup fix.
+    // NEVER overwrite emailsReceived from ibItems.length — ibItems is always 1 per vessel now.
+    // emailsReceived is correctly incremented in fetchInboxByThreads for each new reply.
+    // Here we only update lastReceivedDate from the ibItem's date.
+    const match=ibItems.find(m=>m.vi===vi||m.vessel===v);
+    if(match){
+      const t=new Date(match.date||match.internalDate||match.receivedDate||match.timestamp||0).getTime();
+      if(Number.isFinite(t)&&t>0)v.lastReceivedDate=new Date(t).toISOString();
     }
   });
 }
