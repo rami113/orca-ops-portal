@@ -2371,12 +2371,19 @@ async function sheetsInboxInit(){
 async function mergeSharedInbox(){
   const shared=await sheetsInboxLoad();
   if(!shared.length)return;
+  // Deduplicate by BOTH msgId AND vessel index (vi).
+  // fetchInboxByThreads creates one item per vessel using the latest msgId.
+  // The Sheet log may have older messages from the same thread with different msgIds.
+  // Vessel-index dedup ensures we never add a Sheet-log item when a fresher
+  // thread-fetched item already exists for that vessel.
   const existingIds=new Set((ibItems||[]).map(i=>i.msgId));
+  const existingVis=new Set((ibItems||[]).map(i=>String(i.vi)));
   const myEmail=normEmail(user?.email||'');
   const isSuperAdmin=SUPER_ADMINS.includes(myEmail);
   let added=0;
   for(const item of shared){
     if(existingIds.has(item.msgId))continue;
+    if(item.vi!==undefined&&item.vi!==null&&existingVis.has(String(item.vi)))continue;
     // Validate: vessel must exist in portal
     if(!item.vessel)continue;
     // Super Admin sees all replies; others see only their assigned vessels
@@ -2398,8 +2405,17 @@ async function mergeSharedInbox(){
     const cleanedBody=cleanCaptainReplyText(item.body||'').trim();
     if(!cleanedBody)continue;
     ibItems.push(item);
+    existingVis.add(String(item.vi)); // prevent a later shared item with same vi sneaking in
     added++;
   }
+  // Final dedup pass — one item per vessel, keep most recent by date
+  const _byVi=new Map();
+  ibItems.forEach(it=>{
+    const k=String(it.vi);
+    const existing=_byVi.get(k);
+    if(!existing||new Date(it.date||0)>new Date(existing.date||0))_byVi.set(k,it);
+  });
+  ibItems=Array.from(_byVi.values());
   if(added>0){
     renderInlineInbox();renderInbox();
     const badge=document.getElementById('ib-count');
