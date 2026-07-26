@@ -1484,9 +1484,21 @@ function computeReceivedMissing(vessel, ibItem){
   const autoTags=(ib&&ib.attachments||[])
     .map(a=>autoTagFromFilename(a.filename))
     .filter(t=>t&&t!=='Other / Not a required item');
-  // Layer 3: manually saved tags (localStorage + vessel blob + shared atags Sheet)
-  const savedTags=Object.values(v.attachmentTags||{})
-    .filter(t=>t&&t!=='Other / Not a required item');
+  // Layer 3: saved tags — filtered to files actually present in this ibItem.
+  // This prevents stale test tags (or tags from different reply sessions) from
+  // bleeding into the received list for unrelated files.
+  // If no ibItem or no attachments, fall back to all saved tags (best we can do).
+  const _ibAtts=ib&&(ib.attachments||[]);
+  let savedTags;
+  if(_ibAtts&&_ibAtts.length>0){
+    const _presentAids=new Set(_ibAtts.map(a=>a.attachmentId).filter(Boolean));
+    savedTags=Object.entries(v.attachmentTags||{})
+      .filter(([aid,t])=>_presentAids.has(aid)&&t&&t!=='Other / Not a required item')
+      .map(([,t])=>t);
+  } else {
+    savedTags=Object.values(v.attachmentTags||{})
+      .filter(t=>t&&t!=='Other / Not a required item');
+  }
   // Union all sources — deduped by canonical itemKey
   const received=[...new Map(
     [...kwHits,...autoTags,...savedTags].map(x=>[itemKey(x),x])
