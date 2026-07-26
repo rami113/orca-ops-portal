@@ -1238,8 +1238,18 @@ function onAttachTag(sel,attachmentId,vesselIdx){
 // Render the attachments panel
 function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
   const vi=vesselIdx!==undefined?String(vesselIdx):'';
-  // Always read tags from vessel.attachmentTags — single source of truth
-  const _savedTags=(vessels[parseInt(vi)]&&vessels[parseInt(vi)].attachmentTags)||{};
+  // Read tags from ALL three sources: vessel blob, shared atags cache, localStorage.
+  // This ensures the dropdown shows the correct saved tag even if async saves are pending.
+  const _v=vessels[parseInt(vi)];
+  const _vid=(_v&&(_v.id||_v.name))||'';
+  const _lsT=_loadAttTagsLocal(_v);
+  const _sharedT={};
+  if(_vid){
+    Object.entries(_sharedAttTags||{}).forEach(([k,t])=>{
+      if(k.startsWith(_vid+'_')&&t&&t.tag){const aid=k.slice(_vid.length+1);_sharedT[aid]=t.tag;}
+    });
+  }
+  const _savedTags=Object.assign({},(_v&&_v.attachmentTags)||{},_sharedT,_lsT);
   const iconMap={photo:'ti-photo',pdf:'ti-file-type-pdf',doc:'ti-file-type-doc',drawing:'ti-rulers',spreadsheet:'ti-table',other:'ti-paperclip'};
   const classify=(att)=>{
     const fn=String(att.filename||'').toLowerCase();const mt=String(att.mimeType||'').toLowerCase();
@@ -1482,27 +1492,44 @@ function hasItem(list,item){
 function computeReceivedMissing(vessel, ibItem){
   const v=vessel||{};
   const ib=ibItem||null;
+
+  // Build the most up-to-date tag map from ALL three sources — vessel blob,
+  // shared atags Sheet cache, and localStorage. This ensures we always have
+  // the freshest tags regardless of async save timing or poll cycles.
+  const _vid=v.id||v.name||'';
+  const _lsT=_loadAttTagsLocal(v);
+  const _sharedT={};
+  if(_vid){
+    Object.entries(_sharedAttTags||{}).forEach(([k,t])=>{
+      if(k.startsWith(_vid+'_')&&t&&t.tag){
+        const aid=k.slice(_vid.length+1);
+        _sharedT[aid]=t.tag;
+      }
+    });
+  }
+  // Merge: vessel blob ← shared atags ← localStorage (most recent local action wins)
+  const _allSavedTags=Object.assign({},v.attachmentTags||{},_sharedT,_lsT);
+
   // Layer 1: keyword detection on the latest reply body
   const kwHits=ib&&ib.body?inferReceivedFromReply(ib.body):[];
-  // Layer 2: tags from attachment objects — a.tag (manually set via dropdown) takes
-  // priority over autoTagFromFilename. a.tag is kept in sync by onAttachTag in memory
-  // even before the Sheet save completes, so this is always current.
+
+  // Layer 2: tags from attachment objects — a.tag (manually set) takes priority over
+  // autoTagFromFilename. a.tag is updated immediately by onAttachTag so it's always current.
   const autoTags=(ib&&ib.attachments||[])
     .map(a=>a.tag||autoTagFromFilename(a.filename))
     .filter(t=>t&&t!=='Other / Not a required item');
-  // Layer 3: saved tags — filtered to files actually present in this ibItem.
-  // This prevents stale test tags (or tags from different reply sessions) from
-  // bleeding into the received list for unrelated files.
-  // If no ibItem or no attachments, fall back to all saved tags (best we can do).
+
+  // Layer 3: saved tags from the merged map — filtered to files present in this ibItem
+  // to prevent old test tags from unrelated sessions bleeding through.
   const _ibAtts=ib&&(ib.attachments||[]);
   let savedTags;
   if(_ibAtts&&_ibAtts.length>0){
     const _presentAids=new Set(_ibAtts.map(a=>a.attachmentId).filter(Boolean));
-    savedTags=Object.entries(v.attachmentTags||{})
+    savedTags=Object.entries(_allSavedTags)
       .filter(([aid,t])=>_presentAids.has(aid)&&t&&t!=='Other / Not a required item')
       .map(([,t])=>t);
   } else {
-    savedTags=Object.values(v.attachmentTags||{})
+    savedTags=Object.values(_allSavedTags)
       .filter(t=>t&&t!=='Other / Not a required item');
   }
   // Union all sources — deduped by canonical itemKey
