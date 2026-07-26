@@ -2584,7 +2584,10 @@ async function fetchInboxByThreads(){
       }
       if(!thread)continue;
       const messages=(thread.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
-      const vi=vessels.indexOf(vessel);
+      // Find by id/name — never by object reference. onAttachTag replaces vessels[idx]
+      // with a new object ({...v,...}), so indexOf(oldRef) would return -1 after any tag save,
+      // causing ibItems to get vi=-1 and onAttachTag to silently fail forever after.
+      const vi=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
       // _captainMsgs collects data from all captain messages in this thread
       // so we can build ONE ibItem per vessel after processing all messages
       const _captainMsgs={};
