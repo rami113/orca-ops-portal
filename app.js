@@ -1193,24 +1193,15 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     // updated at line 913) + auto-tags from filename. This correctly handles:
     //   - tag changed: old value gone (not in curIb.attachments anymore)
     //   - auto-tagged PDF: stays via autoTagFromFilename even if not in _attTags
-    if(ibAna){
-      const _kwHits=curIb?inferReceivedFromReply(curIb.body||''):[];
-      const _liveAttTags=(curIb&&curIb.attachments||[])
-        .map(a=>a.tag||autoTagFromFilename(a.filename))
-        .filter(t=>t&&t!=='Other / Not a required item');
-      const _freshRec=[...new Map([..._kwHits,..._liveAttTags].map(x=>[itemKey(x),x])).values()];
-      ibAna.received=_freshRec;
-      ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_freshRec,r));
+    if(ibAna&&curIb){
+      // Recompute via single source of truth — tag change already applied to curIb.attachments
+      const _rm3=computeReceivedMissing(curIb.vessel||vessels[idx],curIb);
+      ibAna.received=_rm3.received;ibAna.missing=_rm3.missing;ibAna.followup_email=_rm3.draft;
       const recvEl=document.getElementById('mib-recv');
       const missEl=document.getElementById('mib-miss');
-      if(recvEl)recvEl.innerHTML=_freshRec.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
-      if(missEl)missEl.innerHTML=ibAna.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-      // Regenerate follow-up draft to match updated received/missing
-      const _fuEl=document.getElementById('mib-fu');
-      if(_fuEl&&curIb&&curIb.vessel){
-        ibAna.followup_email=buildFollowupEmail({...curIb.vessel,receivedItems:ibAna.received},ibAna.missing);
-        _fuEl.value=ibAna.followup_email;
-      }
+      if(recvEl)recvEl.innerHTML=_rm3.received.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+      if(missEl)missEl.innerHTML=_rm3.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+      const _fuEl=document.getElementById('mib-fu');if(_fuEl)_fuEl.value=_rm3.draft;
     }
   } else {
     // Tag cleared — recompute receivedItems from keyword detectedItems + remaining tags (no detectedItems mutation)
@@ -1227,18 +1218,15 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
     const _ap2=document.getElementById('mib-attachments');
     if(_ap2&&curIb)_ap2.innerHTML=renderAttachmentsPanel(curIb.attachments||[],curIb.body||'',idx);
-    // Update ibAna panels + draft
-    if(ibAna){
-      ibAna.received=_allStillRec;ibAna.missing=_miss;
+    // Recompute via single source of truth after tag cleared
+    if(ibAna&&curIb){
+      const _rm4=computeReceivedMissing(curIb.vessel||vessels[idx],curIb);
+      ibAna.received=_rm4.received;ibAna.missing=_rm4.missing;ibAna.followup_email=_rm4.draft;
       const recvEl2=document.getElementById('mib-recv');
       const missEl2=document.getElementById('mib-miss');
-      if(recvEl2)recvEl2.innerHTML=_allStillRec.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
-      if(missEl2)missEl2.innerHTML=_miss.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-      const _fuEl2=document.getElementById('mib-fu');
-      if(_fuEl2&&curIb&&curIb.vessel){
-        ibAna.followup_email=buildFollowupEmail({...curIb.vessel,receivedItems:ibAna.received},ibAna.missing);
-        _fuEl2.value=ibAna.followup_email;
-      }
+      if(recvEl2)recvEl2.innerHTML=_rm4.received.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+      if(missEl2)missEl2.innerHTML=_rm4.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
+      const _fuEl2=document.getElementById('mib-fu');if(_fuEl2)_fuEl2.value=_rm4.draft;
     }
   }
 }
@@ -1424,10 +1412,14 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   document.getElementById('mib-stat-ready').textContent=score+'%';
   const sL={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
   document.getElementById('mib-stat-status').textContent=sL[v.status]||v.status||'—';
-  document.getElementById('mib-recv').innerHTML=(result.received||[]).map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
-  document.getElementById('mib-miss').innerHTML=(result.missing||[]).map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-  // Rebuild followup using ONLY this analysis's received — never merge stale stored receivedItems
-  result.followup_email=buildFollowupEmail({...v,receivedItems:result.received||[]},result.missing||[]);
+  // Use computeReceivedMissing as single source of truth
+  const _rm2=computeReceivedMissing(v,curIb);
+  result.received=_rm2.received;
+  result.missing=_rm2.missing;
+  result.followup_email=_rm2.draft;
+  ibAna=result;
+  document.getElementById('mib-recv').innerHTML=result.received.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
+  document.getElementById('mib-miss').innerHTML=result.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
   document.getElementById('mib-fu').value=result.followup_email||'';
   // Render attachments from curIb (set by openCaseAnalyze with all accumulated atts)
   const _apR=document.getElementById('mib-attachments');
@@ -1475,6 +1467,38 @@ function hasItem(list,item){
   const k=itemKey(item);
   return (list||[]).some(x=>itemKey(x)===k || normTxt(x).includes(k) || normTxt(item).includes(itemKey(x)));
 }
+// ── computeReceivedMissing — single source of truth ──────────────────────────
+// Called by EVERY path that needs to know what a captain has sent:
+//   Analyze modal (all entry points), View modal, onAttachTag panel refresh.
+// Sources merged in priority order (last wins on conflict):
+//   1. vessel.detectedItems  — keyword hits accumulated across all replies
+//   2. attachment auto-tags  — from filenames of current ibItem attachments
+//   3. attachment saved tags — from vessel.attachmentTags + _sharedAttTags
+// Returns { received[], missing[], draft }
+function computeReceivedMissing(vessel, ibItem){
+  const v=vessel||{};
+  const ib=ibItem||null;
+  // Layer 1: keyword detection on the latest reply body
+  const kwHits=ib&&ib.body?inferReceivedFromReply(ib.body):[];
+  // Layer 2: auto-tags from attachment filenames
+  const autoTags=(ib&&ib.attachments||[])
+    .map(a=>autoTagFromFilename(a.filename))
+    .filter(t=>t&&t!=='Other / Not a required item');
+  // Layer 3: manually saved tags (localStorage + vessel blob + shared atags Sheet)
+  const savedTags=Object.values(v.attachmentTags||{})
+    .filter(t=>t&&t!=='Other / Not a required item');
+  // Union all sources — deduped by canonical itemKey
+  const received=[...new Map(
+    [...kwHits,...autoTags,...savedTags].map(x=>[itemKey(x),x])
+  ).values()];
+  const missing=REQUIRED_ITEMS.filter(r=>!hasItem(received,r));
+  const complete=missing.length===0;
+  const draft=complete
+    ?`Dear Master,\n\nThank you for providing all the required information. We will review the details and coordinate the next steps for the Orca AI installation.\n\nKind regards,\nORCA AI OPS`
+    :buildFollowupEmail({...v,receivedItems:received},missing);
+  return {received,missing,draft};
+}
+
 function derivedMissing(v){
   const recv=v&&Array.isArray(v.receivedItems)?v.receivedItems:[];
   const current=v&&Array.isArray(v.missingItems)&&v.missingItems.length?v.missingItems:REQUIRED_ITEMS;
@@ -2814,23 +2838,17 @@ async function runIbAnalysis(){
 - When in doubt: missing[]. Never over-report received items.`;
   try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});const dd=await r.json();const raw=dd.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim();ibAna=JSON.parse(raw);}
   catch(e){ibAna={received:[],missing:derivedMissing(v),status:'followup',risk:'medium',progress:0,nextAction:'Send follow-up',flags:[],followup_email:buildFollowupEmail(v,derivedMissing(v))};}
-  // Always normalize: infer keywords override empty AI result — use cleaned body only
+  // Always normalize via keyword matching — AI result ignored (no key configured)
   ibAna=normalizeAnalysisResult(v,cleanedBody,ibAna);
-  // Merge in items detected from attachment filenames (auto-tagged files)
-  const _attRec=(curIb.attachments||[]).map(a=>a.tag||autoTagFromFilename(a.filename)).filter(Boolean);
-  if(_attRec.length){
-    const _merged=[...new Map([...(ibAna.received||[]),..._attRec].map(x=>[itemKey(x),x])).values()];
-    ibAna.received=_merged;
-    ibAna.missing=REQUIRED_ITEMS.filter(r=>!hasItem(_merged,r));
-  }
-  // Rebuild followup email using ONLY current reply's received items for the
-  // "thank you" section — never merge with stale stored receivedItems.
-  // The "still require" section uses ibAna.missing which is now computed from
-  // ALL REQUIRED_ITEMS minus everything ever received.
-  ibAna.followup_email=buildFollowupEmail({...v,receivedItems:ibAna.received||[]},ibAna.missing||[]);
+  // Use computeReceivedMissing as single source of truth — replaces the old
+  // per-path received/missing logic with one consistent computation.
+  const _rm=computeReceivedMissing(v,curIb);
+  ibAna.received=_rm.received;
+  ibAna.missing=_rm.missing;
+  ibAna.followup_email=_rm.draft;
   document.getElementById('mib-al').style.display='none';
-  document.getElementById('mib-recv').innerHTML=(ibAna.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
-  document.getElementById('mib-miss').innerHTML=(ibAna.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
+  document.getElementById('mib-recv').innerHTML=ibAna.received.map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
+  document.getElementById('mib-miss').innerHTML=ibAna.missing.map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
   document.getElementById('mib-fu').value=ibAna.followup_email||'';
   document.getElementById('mib-res').style.display='block';
 
@@ -3021,20 +3039,10 @@ function openV(idx){
   document.getElementById('mv-next-action').textContent=v.nextAction||'—';
   document.getElementById('mv-prog-bar').style.width=score+'%';
 
-  // Received / Missing — computed live, never from stale stored receivedItems
-  // Source of truth: keyword detection on latest reply body + current attachment tags
+  // Received / Missing — via single source of truth (same as Analyze modal)
   const _ibV=(ibItems||[]).find(it=>String(it.vi)===String(idx));
-  let recv,miss;
-  const _savedTagItems=Object.values(v.attachmentTags||{}).filter(t=>t&&t!=='Other / Not a required item');
-  if(_ibV&&_ibV.body){
-    const _kwRec=inferReceivedFromReply(_ibV.body);
-    const _autoTags=(_ibV.attachments||[]).map(a=>autoTagFromFilename(a.filename)).filter(t=>t&&t!=='Other / Not a required item');
-    recv=[...new Map([..._kwRec,..._savedTagItems,..._autoTags].map(x=>[itemKey(x),x])).values()];
-  } else {
-    // No current reply in memory — combine stored keyword detections + saved tags
-    recv=[...new Map([...(v.detectedItems||[]),..._savedTagItems].map(x=>[itemKey(x),x])).values()];
-  }
-  miss=REQUIRED_ITEMS.filter(r=>!hasItem(recv,r));
+  const _rmV=computeReceivedMissing(v,_ibV||null);
+  const recv=_rmV.received,miss=_rmV.missing;
   document.getElementById('mv-received').innerHTML=recv.length
     ?recv.map(r=>`<div style="display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:#f0faf4;border-radius:6px;margin-bottom:4px;font-size:13px;font-weight:600;color:#003d1a"><i class="ti ti-circle-check" style="margin-top:1px;flex-shrink:0"></i>${r}</div>`).join('')
     :`<div style="font-size:13px;color:var(--faint);padding:6px 0">Nothing received yet.</div>`;
@@ -3074,15 +3082,9 @@ function openV(idx){
   const tl=document.getElementById('mv-timeline');
   if(tl)tl.innerHTML=renderTimeline(v);
 
-  // Populate editable follow-up draft — consistent with live computed recv/miss
-  let _mvDraft;
-  if(miss.length===0&&recv.length>0){
-    _mvDraft='Dear Master,\n\nThank you for providing all the required information for '+v.name+'.\n\nWe now have everything needed to proceed with the installation coordination:\n'+recv.map(x=>'• '+x).join('\n')+'\n\nOur team will be in touch shortly to confirm the installation schedule.\n\nKind regards,\nORCA AI OPS';
-  } else {
-    _mvDraft=buildFollowupEmail({...v,receivedItems:recv},miss);
-  }
+  // Follow-up draft from computeReceivedMissing — always matches Analyze modal
   const mvFu=document.getElementById('mv-followup-draft');
-  if(mvFu)mvFu.value=_mvDraft;
+  if(mvFu)mvFu.value=_rmV.draft;
 
   // Show Archive button only for completed vessels (admin only)
   const _archBtn=document.getElementById('mv-archive-btn');
