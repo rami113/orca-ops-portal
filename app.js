@@ -1174,6 +1174,9 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _att=(curIb&&curIb.attachments||[]).find(a=>a.attachmentId===attachmentId);
     if(_att)_existingMeta[attachmentId]={filename:_att.filename,mimeType:_att.mimeType,size:_att.size,tag};
     vessels[idx]={...v,attachmentTags:_attTags,attachmentMeta:_existingMeta,receivedItems:merged,missingItems:REQUIRED_ITEMS.filter(r=>!hasItem(merged,r))};
+    // Keep curIb.vessel in sync — onAttachTag creates a new vessel object, curIb.vessel
+    // must point to it so computeReceivedMissing reads the updated attachmentTags.
+    if(curIb&&curIb.vi===idx)curIb.vessel=vessels[idx];
     // Layer 1: localStorage — instant, no network, survives modal reopen
     _saveAttTagsLocal(vessels[idx],_attTags);
     // Layer 2: dedicated atags Sheet tab — shared across ALL users, no vessel blob race condition
@@ -1210,6 +1213,7 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     const _allStillRec=[...new Map([..._kwOnly2,..._remainingTags].map(x=>[itemKey(x),x])).values()];
     const _miss=REQUIRED_ITEMS.filter(r=>!hasItem(_allStillRec,r));
     vessels[idx]={...v,attachmentTags:_attTags,receivedItems:_allStillRec,missingItems:_miss};
+    if(curIb&&curIb.vi===idx)curIb.vessel=vessels[idx]; // keep curIb.vessel in sync
     _saveAttTagsLocal(vessels[idx],_attTags);
     const _vesselId2=v.id||v.name||'';
     saveSharedAttTag(_vesselId2,attachmentId,'','').catch(e=>console.warn('[atag clear] Sheet save failed',e));
@@ -1480,9 +1484,11 @@ function computeReceivedMissing(vessel, ibItem){
   const ib=ibItem||null;
   // Layer 1: keyword detection on the latest reply body
   const kwHits=ib&&ib.body?inferReceivedFromReply(ib.body):[];
-  // Layer 2: auto-tags from attachment filenames
+  // Layer 2: tags from attachment objects — a.tag (manually set via dropdown) takes
+  // priority over autoTagFromFilename. a.tag is kept in sync by onAttachTag in memory
+  // even before the Sheet save completes, so this is always current.
   const autoTags=(ib&&ib.attachments||[])
-    .map(a=>autoTagFromFilename(a.filename))
+    .map(a=>a.tag||autoTagFromFilename(a.filename))
     .filter(t=>t&&t!=='Other / Not a required item');
   // Layer 3: saved tags — filtered to files actually present in this ibItem.
   // This prevents stale test tags (or tags from different reply sessions) from
