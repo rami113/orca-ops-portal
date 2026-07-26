@@ -502,40 +502,107 @@ function signIn(){
     alert('Sign-in failed: '+(e.message||e));
   }
 }
-// ── Session token helpers ──
+// ── Session token helpers ─────────────────────────────────────────────────────
+// Session stored in localStorage so it survives tab close and browser restart.
+// Token itself expires after 60 min — scheduleTokenRefresh silently renews it.
+// User profile cached separately (no expiry) for instant UI on next visit.
+
 function saveSession(accessToken, userObj){
   try{
     const expiry=Date.now()+(55*60*1000); // 55 min (token lives 60)
     const sess={token:accessToken,user:userObj,expiry};
-    sessionStorage.setItem('orca_session',JSON.stringify(sess));
+    localStorage.setItem('orca_session',JSON.stringify(sess));
+    // Profile cache — no expiry, used for instant UI before token refreshes
+    localStorage.setItem('orca_user_cache',JSON.stringify({
+      email:userObj.email,name:userObj.name,pic:userObj.pic,role:userObj.role
+    }));
     localStorage.setItem('orca_google_consent_ok','1');
     localStorage.setItem('orca_last_email',userObj.email||'');
   }catch(e){}
 }
 function loadSession(){
   try{
-    const raw=sessionStorage.getItem('orca_session');
+    const raw=localStorage.getItem('orca_session');
     if(!raw)return null;
     const sess=JSON.parse(raw);
-    if(!sess||Date.now()>sess.expiry){sessionStorage.removeItem('orca_session');return null;}
+    if(!sess||Date.now()>sess.expiry){localStorage.removeItem('orca_session');return null;}
     return sess;
   }catch(e){return null;}
 }
+function loadCachedUser(){
+  // Returns last known user profile even if token has expired.
+  // Used to populate UI instantly while silent token refresh runs in background.
+  try{const r=localStorage.getItem('orca_user_cache');return r?JSON.parse(r):null;}
+  catch(e){return null;}
+}
 function clearSession(){
-  try{sessionStorage.removeItem('orca_session');}catch(e){}
+  try{
+    localStorage.removeItem('orca_session');
+    localStorage.removeItem('orca_user_cache');
+  }catch(e){}
 }
 function scheduleTokenRefresh(){
-  // Auto-refresh token 5 min before expiry
+  // Auto-refresh token 5 min before expiry (at 50 min mark)
   setTimeout(async()=>{
     if(!tc)return;
     const savedEmail=localStorage.getItem('orca_last_email')||'';
     tc.requestAccessToken({prompt:'',login_hint:savedEmail});
-  }, 50*60*1000); // 50 min
+  }, 50*60*1000);
 }
+
+// ── 401 auto-retry — intercept all Google API calls globally ─────────────────
+// Patches window.fetch so every googleapis.com call automatically retries once
+// on a 401 (expired token) by silently refreshing the token first.
+// No changes needed at individual call sites — all existing code benefits.
+let _tokenRefreshPending=false;
+let _tokenRefreshCallbacks=[];
+
+function _resolveTokenRefresh(newToken){
+  // Called by handleToken() after a successful OAuth refresh.
+  // Unblocks all queued fetch calls that were waiting for the new token.
+  token=newToken;
+  _tokenRefreshPending=false;
+  const cbs=[..._tokenRefreshCallbacks];
+  _tokenRefreshCallbacks=[];
+  cbs.forEach(r=>r());
+}
+
+(function patchFetchFor401(){
+  const _orig=window.fetch.bind(window);
+  window.fetch=async function(url,opts={}){
+    const res=await _orig(url,opts);
+    // Only intercept 401s for Google APIs — not Anthropic, not other services
+    if(res.status!==401||!String(url).includes('googleapis.com'))return res;
+    // Token expired — trigger a silent refresh if not already in progress
+    if(!_tokenRefreshPending){
+      _tokenRefreshPending=true;
+      const email=localStorage.getItem('orca_last_email')||'';
+      if(tc){
+        tc.requestAccessToken({prompt:'',login_hint:email});
+      } else {
+        // Google SDK not ready — can't refresh, unblock immediately
+        _tokenRefreshPending=false;return res;
+      }
+      // Timeout after 15s — unblock even if refresh never completes
+      setTimeout(()=>{
+        if(_tokenRefreshPending){
+          _tokenRefreshPending=false;
+          const cbs=[..._tokenRefreshCallbacks];_tokenRefreshCallbacks=[];cbs.forEach(r=>r());
+        }
+      },15000);
+    }
+    // Wait for token refresh to complete
+    await new Promise(resolve=>_tokenRefreshCallbacks.push(resolve));
+    // Replay the original request with the new token in headers
+    const newOpts={...opts,headers:{...((opts.headers)||{}),Authorization:'Bearer '+token}};
+    return _orig(url,newOpts);
+  };
+})();
 
 async function handleToken(r){
   if(r.error){console.error(r);alert('Google sign-in failed: '+(r.error_description||r.error));return;}
-  token=r.access_token;
+  // Unblock any apiFetch calls waiting for a token refresh
+  _resolveTokenRefresh(r.access_token);
   const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}});
   const p=await res.json();
   user={email:normEmail(p.email),name:p.name||p.email,pic:p.picture||''};
@@ -558,26 +625,18 @@ async function handleToken(r){
       if(tc) tc.requestAccessToken({prompt:'consent'});
     }
   }catch(e){}
-  applyUserRole();
-  su(user); await loadVessels();
-  document.getElementById('auth-screen').style.display='none';
-  document.getElementById('app').style.display='block';
-  document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
-  if(user.pic)document.getElementById('uav').src=user.pic;
-  document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
-  renderTable();updateMetrics();populateSel();
-  // Initialise dedicated Sheet tabs and load shared tags on startup
-  sheetsInboxInit();
-  ensureSheetTab(ATAGS_SHEET_NAME).then(()=>loadSharedAttTags());
-  ensureSheetTab(ARCHIVE_SHEET_NAME);
-  checkInbox(true);
+  // Remove the "signing in as..." hint if it was shown
+  const hint=document.getElementById('silent-signin-hint');if(hint)hint.remove();
+  _bootApp(token,user);
 }
 function signOut(){
-  if(token)google.accounts.oauth2.revoke(token,()=>{});
+  if(token)try{google.accounts.oauth2.revoke(token,()=>{});}catch(e){}
   token=null;user=null;vessels=[];
   clearSession();
   localStorage.removeItem('orca_google_consent_ok');
   localStorage.removeItem('orca_last_email');
+  localStorage.removeItem('orca_user_cache');
+  const hint=document.getElementById('silent-signin-hint');if(hint)hint.remove();
   document.getElementById('app').style.display='none';
   document.getElementById('auth-screen').style.display='flex';
 }
@@ -3144,7 +3203,7 @@ async function clearAllCacheAndHistory(){
   try{
     localStorage.removeItem(VKEY);localStorage.removeItem(UKEY);
     localStorage.removeItem('orca_v3');localStorage.removeItem('orca_v2');localStorage.removeItem('orca_v1');
-    sessionStorage.clear();
+    localStorage.removeItem('orca_session');localStorage.removeItem('orca_user_cache');
   }catch(e){}
   vessels=[];ibItems=[];curIb=null;ibAna=null;ana=null;draft='';
   const badge=document.getElementById('ib-count');if(badge){badge.textContent='0';badge.style.display='none';}
@@ -3187,37 +3246,57 @@ function orcaConfirm(msg, title=''){
     cancel.addEventListener('click',onCancel);
   });
 }
+function _bootApp(tokenVal, userObj){
+  // Central function: set global state and show the app.
+  // Called both from loadSession() restore and from handleToken() after OAuth.
+  token=tokenVal;user=userObj;
+  applyUserRole();su&&su(user);
+  loadVessels().then(()=>{
+    document.getElementById('auth-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
+    if(user.pic)document.getElementById('uav').src=user.pic;
+    document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
+    renderTable();updateMetrics();populateSel();
+    sheetsInboxInit();
+    ensureSheetTab(ATAGS_SHEET_NAME).then(()=>loadSharedAttTags());
+    ensureSheetTab(ARCHIVE_SHEET_NAME);
+    checkInbox(true);
+    scheduleTokenRefresh();
+  });
+}
+
 function trySilentSignIn(){
   try{
-    // 1. Try to restore from sessionStorage first (instant, no network)
+    // 1. Valid unexpired session in localStorage — restore instantly, no network call
     const sess=loadSession();
     if(sess&&sess.token&&sess.user){
-      token=sess.token;
-      user=sess.user;
-      applyUserRole();
-      su&&su(user);
-      loadVessels().then(()=>{
-        document.getElementById('auth-screen').style.display='none';
-        document.getElementById('app').style.display='block';
-        document.getElementById('uname').textContent=(user.name||user.email)+' · '+roleLabel(user.email);
-        if(user.pic)document.getElementById('uav').src=user.pic;
-        document.getElementById('tab-admin').style.display=isAdmin(user.email)?'inline-flex':'none';
-        renderTable();updateMetrics();populateSel();
-        sheetsInboxInit().then(()=>checkInbox(true));
-        scheduleTokenRefresh();
-      });
+      _bootApp(sess.token,sess.user);
       return;
     }
-    // 2. Try silent OAuth refresh
-    if(typeof google==='undefined'||!google.accounts){
-      setTimeout(trySilentSignIn,300);
-      return;
-    }
+    // 2. No valid session, but we know this user — show "signing in..." hint while
+    //    silently requesting a fresh token. No popup shown if Google session is active.
     const approved=localStorage.getItem('orca_google_consent_ok')==='1';
     const savedEmail=localStorage.getItem('orca_last_email')||'';
     if(approved&&savedEmail){
-      if(!tc) initG();
-      tc.requestAccessToken({prompt:'', login_hint: savedEmail});
+      // Show the cached user name on the login screen so they know we're resuming
+      const cachedUser=loadCachedUser();
+      if(cachedUser){
+        const hint=document.getElementById('silent-signin-hint')||document.createElement('p');
+        hint.id='silent-signin-hint';
+        hint.style.cssText='margin-top:16px;font-size:13px;color:#1D2E6B;font-weight:500';
+        hint.textContent='Signing you back in as '+savedEmail+'...';
+        const authScreen=document.getElementById('auth-screen');
+        if(authScreen&&!document.getElementById('silent-signin-hint'))authScreen.appendChild(hint);
+      }
+      if(typeof google==='undefined'||!google.accounts){setTimeout(trySilentSignIn,300);return;}
+      if(!tc)initG();
+      tc.requestAccessToken({prompt:'',login_hint:savedEmail});
+      return;
+    }
+    // 3. Unknown user — Google API not loaded yet, retry shortly
+    if(typeof google==='undefined'||!google.accounts){
+      setTimeout(trySilentSignIn,300);
     }
   }catch(e){console.warn('Silent sign-in skipped',e);}
 }
