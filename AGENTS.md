@@ -27,7 +27,14 @@ There are **no build steps, no package manager, no test suite**.
 ### Auth
 - Google Identity Services (GSI) OAuth2, scopes: Gmail send + readonly + Sheets + profile.
 - Only `@orca-ai.io` accounts are allowed (enforced in `onSignIn`).
-- Token stored in `sessionStorage` via `saveSession()` / `loadSession()`.
+- Token stored in **`localStorage`** via `saveSession()` / `loadSession()` — survives tab/browser close.
+- User profile cached separately in `orca_user_cache` (no expiry) for instant UI on next visit.
+- `trySilentSignIn()` — on every page load: restores localStorage session if valid, else attempts
+  silent OAuth refresh (`prompt:''`) for known users. No popup unless Google session expired.
+- `scheduleTokenRefresh()` — auto-renews token at 50-min mark (token lives 60 min).
+- **Global 401 auto-retry** — `window.fetch` is patched to intercept 401 responses from
+  googleapis.com, silently refresh the token, and replay the failed request. All existing
+  Google API calls benefit automatically with no changes at call sites.
 
 ### Roles
 - `SUPER_ADMINS` — full access, DB reset, see all vessels (`rami@orca-ai.io`)
@@ -337,6 +344,17 @@ When in doubt, fix the bug conservatively and document it in the Recent Fix Log 
   `v.detectedItems`. All four save sites updated.
 - Also tightened `inferReceivedFromReply`: port calls require `strictAttach`,
   VSAT routing requires `strictAttach`, `hereAre` requires item keyword.
+
+**Phase 2 — Jul 2026 (auth & session)**
+- Switched from `sessionStorage` to `localStorage` for session — users stay logged in after
+  browser/tab close. Token still expires at 60 min but is silently refreshed.
+- Added `loadCachedUser()` — stores user profile separately with no expiry so UI populates
+  instantly on next visit before the silent OAuth refresh completes.
+- Added silent sign-in flow: on page load, if user has previously consented, shows
+  "Signing you back in as..." and silently requests a new token — no popup needed.
+- Added `_resolveTokenRefresh()` and global `window.fetch` patch: all googleapis.com calls
+  automatically retry on 401 (expired token) by queuing behind a silent token refresh.
+  No call site changes needed — all existing code benefits automatically.
 
 **Phase 1 — Jul 2026 (storage architecture overhaul)**
 - Added `atags` Sheet tab: all attachment tags stored independently of vessel blob.
