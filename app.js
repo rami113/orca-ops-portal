@@ -416,20 +416,28 @@ async function saveVessels(_retrying=false){
           if(window._deletedVesselIds&&window._deletedVesselIds.has(id))continue;
           const sheet=sheetMap.get(id);
           if(!sheet){mergedVessels.push(local);continue;}
-          // Both exist — merge fields
+          // Both exist — merge using field-level timestamps where available,
+          // falling back to lastActivity for fields without individual timestamps.
           const sheetNewer=new Date(sheet.lastActivity||0)>new Date(local.lastActivity||0);
           const merged={...local};
-          // Always merge attachmentTags from Sheet + local so tags set by any user
-          // on any device are preserved. Local wins on conflicts (same attachmentId).
+          // Stamped fields: whichever side has the newer _ts_{field} wins per-field
+          STAMPED_FIELDS.forEach(f=>{
+            merged[f]=_mergeFieldWithTimestamp(local,sheet,f);
+            // Copy the winning timestamp too
+            const lts=new Date(local['_ts_'+f]||0).getTime();
+            const sts=new Date(sheet['_ts_'+f]||0).getTime();
+            merged['_ts_'+f]=lts>=sts?(local['_ts_'+f]||''):(sheet['_ts_'+f]||'');
+          });
+          // attachmentTags: always merge — no side wins entirely
           merged.attachmentTags=Object.assign({},sheet.attachmentTags||{},local.attachmentTags||{});
-          // Take sheet-owned fields only if sheet is newer (another user updated them)
+          // Sheet-owned fields: take from sheet if sheet is globally newer
           if(sheetNewer){
             _sheetOwned.forEach(f=>{if(sheet[f]!==undefined)merged[f]=sheet[f];});
-            // Merge timelines — union by ts+type
-            const tl=[...(local.timeline||[]),...(sheet.timeline||[])];
-            const seen=new Set();
-            merged.timeline=tl.filter(e=>{const k=(e.ts||'')+(e.type||'')+(e.title||'');if(seen.has(k))return false;seen.add(k);return true;});
           }
+          // Timelines: always union regardless of version
+          const tl=[...(local.timeline||[]),...(sheet.timeline||[])];
+          const seen=new Set();
+          merged.timeline=tl.filter(e=>{const k=(e.ts||'')+(e.type||'')+(e.title||'');if(seen.has(k))return false;seen.add(k);return true;});
           mergedVessels.push(merged);
         }
         // Add vessels from Sheet that don't exist locally (other users' vessels)
@@ -485,6 +493,21 @@ async function refreshSharedData(){
 }
 
 function lv(){try{vessels=loadVesselsCompat().map(normalizeVessel);}catch(e){console.error('load failed',e);vessels=[];}}
+
+// ── Field-level timestamps ────────────────────────────────────────────────────
+// Fields that multiple users may change independently. When merging two versions
+// of a vessel, whichever timestamp is newer for a given field wins.
+// Call stampField(vessel, fieldName) after changing any of these fields.
+const STAMPED_FIELDS=['status','risk','progress','assignedTo','nextAction'];
+function stampField(v,field){
+  if(v)v['_ts_'+field]=new Date().toISOString();
+}
+function _mergeFieldWithTimestamp(local,sheet,field){
+  const lts=new Date(local['_ts_'+field]||local.lastActivity||0).getTime();
+  const sts=new Date(sheet['_ts_'+field]||sheet.lastActivity||0).getTime();
+  // Whichever was changed more recently wins
+  return lts>=sts?local[field]:sheet[field];
+}
 
 function loadVesselsCompat(){
   const keys=['orca_v3','orca_v2','orca_v1','vessels'];
@@ -752,6 +775,7 @@ function setVesselStatus(i,status){
   if(status==='completed'){vessels[i].nextAction='Installation completed';vessels[i].progress=100;vessels[i].risk='low';}
   if(old!==status){
     vessels[i].lastActivity=new Date().toISOString();
+    stampField(vessels[i],'status');stampField(vessels[i],'progress');stampField(vessels[i],'nextAction');
     addTimeline(vessels[i],'status','Status changed',`${sbText(old)} → ${sbText(status)}`);
   }
   saveVessels();updateMetrics();renderTable();renderAdmin();populateSel();
@@ -791,6 +815,7 @@ async function assignVessel(i,email){
   if(old===email)return; // no change
   vessels[i].assignedTo=email;
   vessels[i].lastActivity=new Date().toISOString();
+  stampField(vessels[i],'assignedTo');
   addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
   saveVessels();renderTable();renderAdmin();
   // Send notification email to new owner with full context including latest captain reply
@@ -1904,11 +1929,9 @@ function renderTable(){
   setTimeout(_renderTableImpl, 0);
 }
 function _renderTableImpl(){
-  // Don't re-render the table while the user has a dropdown or input focused inside it —
-  // that would collapse the open select and disrupt whatever they are editing.
+  // Don't re-render while user has a dropdown or input focused — avoids collapsing selects
   const active=document.activeElement;
   if(active&&(active.tagName==='SELECT'||active.tagName==='INPUT')&&active.closest('#vtb,table.tbl')){
-    // Retry after the user is done interacting
     setTimeout(_renderTableImpl, 1000);
     return;
   }
@@ -1916,6 +1939,10 @@ function _renderTableImpl(){
   if(!tb){console.warn('Vessel table body not found');return;}
   const searchEl=document.getElementById('v-search');if(searchEl&&searchEl.value!==window.dashSearch)searchEl.value=window.dashSearch||'';
   const arr=filteredVessels();
+  // Skip re-paint if visible data hasn't changed — reduces flicker on fast polls
+  const _hash=arr.map(v=>`${v.__i}:${v.status}:${v.risk}:${v.progress}:${v.assignedTo}:${v.lastActivity}:${v.emailsReceived}`).join('|');
+  if(tb._lastHash&&tb._lastHash===_hash)return;
+  tb._lastHash=_hash;
   if(!vessels.length){
     tb.innerHTML='';
     if(empty)empty.style.display='block';
@@ -3439,29 +3466,32 @@ window.onload=()=>{
         if(idx<0){vessels.push(normalizeVessel(sv));changed=true;return;}
         const local=vessels[idx];
         const svNewer=new Date(sv.lastActivity||0)>new Date(local.lastActivity||0);
-        if(svNewer){
-          // Preserve local unsaved edits to key fields, take rest from Sheet.
-          // assignedTo is intentionally NOT in keep — ownership changes from
-          // other users (e.g. transfer back) must propagate live via the Sheet.
-          // attachmentTags: MERGE Sheet + local so tags set by other users
-          // (e.g. Jacob tagging a file) are not wiped by Leon's local empty tags.
-          // Local wins on conflicts (same attachmentId tagged differently).
-          const _mergedAttTags=Object.assign({},sv.attachmentTags||{},local.attachmentTags||{});
-          // status/risk/progress are intentionally NOT in keep — when another user
-          // changes these and saves (updating lastActivity), svNewer becomes true and
-          // we take their values from the Sheet. This enables live status updates
-          // across users without a page refresh.
-          const keep={missingItems:local.missingItems,
-            receivedItems:local.receivedItems,detectedItems:local.detectedItems,
-            attachmentTags:_mergedAttTags};
-          // Merge timelines
+        // Only merge if sheet has something newer
+        if(svNewer||STAMPED_FIELDS.some(f=>new Date(sv['_ts_'+f]||0)>new Date(local['_ts_'+f]||0))){
+          // Start from sheet version (has latest shared data)
+          const result={...sv};
+          // Stamped fields: per-field timestamp wins regardless of global lastActivity
+          STAMPED_FIELDS.forEach(f=>{
+            result[f]=_mergeFieldWithTimestamp(local,sv,f);
+            const lts=new Date(local['_ts_'+f]||0).getTime();
+            const sts=new Date(sv['_ts_'+f]||0).getTime();
+            result['_ts_'+f]=lts>=sts?(local['_ts_'+f]||''):(sv['_ts_'+f]||'');
+          });
+          // Local-only fields always come from local
+          result.missingItems=local.missingItems;
+          result.receivedItems=local.receivedItems;
+          result.detectedItems=local.detectedItems;
+          // attachmentTags: merge both sides
+          result.attachmentTags=Object.assign({},sv.attachmentTags||{},local.attachmentTags||{});
+          // Timelines: always union
           const tl=[...(local.timeline||[]),...(sv.timeline||[])];
           const seen=new Set();
-          const mergedTl=tl.filter(e=>{const k=(e.ts||'')+(e.type||'')+(e.title||'');if(seen.has(k))return false;seen.add(k);return true;});
-          vessels[idx]={...sv,...keep,timeline:mergedTl};
+          result.timeline=tl.filter(e=>{const k=(e.ts||'')+(e.type||'')+(e.title||'');if(seen.has(k))return false;seen.add(k);return true;});
+          vessels[idx]=result;
           changed=true;
         }
       });
+      // Only re-render if something actually changed — avoids unnecessary DOM work
       if(changed){updateMetrics();renderTable();}
     }catch(e){console.warn('Vessel poll error',e);}
   }
