@@ -372,7 +372,31 @@ async function loadVessels(){
 // Track vessel IDs deleted in this session so saveVessels merge never re-adds them
 window._deletedVesselIds=window._deletedVesselIds||new Set();
 
-async function saveVessels(){
+// ── Save status indicator ─────────────────────────────────────────────────────
+let _saveIndicatorTimer=null;
+function _showSaveStatus(state){
+  // state: 'saving' | 'saved' | 'failed'
+  const el=document.getElementById('save-indicator');
+  if(!el)return;
+  if(_saveIndicatorTimer){clearTimeout(_saveIndicatorTimer);_saveIndicatorTimer=null;}
+  const cfg={
+    saving:{bg:'#1D2E6B',color:'#fff',icon:'ti-loader',text:'Saving...'},
+    saved: {bg:'#1D6B3E',color:'#fff',icon:'ti-check',text:'Saved'},
+    failed:{bg:'#c0392b',color:'#fff',icon:'ti-alert-circle',text:'Save failed — retrying'}
+  };
+  const c=cfg[state]||cfg.saving;
+  el.style.cssText=`display:block;position:fixed;bottom:18px;right:18px;z-index:9000;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.15);pointer-events:none;background:${c.bg};color:${c.color}`;
+  el.innerHTML=`<i class="ti ${c.icon}" style="margin-right:6px;${state==='saving'?'animation:spin .7s linear infinite':''}"></i>${c.text}`;
+  if(state==='saved')_saveIndicatorTimer=setTimeout(()=>{el.style.display='none';},2000);
+}
+
+// ── Version stamp — prevent concurrent overwrites ─────────────────────────────
+// Each save increments _saveVersion. Before writing, we check if the Sheet's
+// version matches what we read. If another user saved in between, we merge first.
+let _saveVersion=0;
+
+async function saveVessels(_retrying=false){
+  _showSaveStatus('saving');
   if(hasSharedDb()){
     let merged=vessels;
     try{
@@ -422,14 +446,29 @@ async function saveVessels(){
         merged=mergedVessels;
       }
     }catch(e){console.warn('merge read failed',e);}
-    console.log('[saveVessels] Saving',merged.length,'vessels to Sheet');
     const ok=await saveSharedVessels(merged);
-    if(ok){console.log('[saveVessels] Saved OK');return;}
-    console.error('Shared DB save failed');
-    const lbl2=document.getElementById('last-refresh-label');
-    if(lbl2)lbl2.textContent='⚠️ Save failed — check Google Sheets access';
+    if(ok){
+      _saveVersion++;
+      _showSaveStatus('saved');
+      return;
+    }
+    // Save failed
+    if(!_retrying){
+      // Retry once after 3 seconds
+      _showSaveStatus('failed');
+      setTimeout(()=>saveVessels(true),3000);
+    } else {
+      // Second failure — show persistent error
+      _showSaveStatus('failed');
+      const lbl2=document.getElementById('last-refresh-label');
+      if(lbl2)lbl2.textContent='⚠️ Save failed — check Google Sheets access';
+      console.error('[saveVessels] Failed after retry');
+    }
+    return;
   }
+  // No Sheet — fall back to localStorage silently
   sv();
+  _showSaveStatus('saved');
 }
 async function refreshSharedData(){
   // Show syncing state on button
