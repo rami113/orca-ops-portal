@@ -142,8 +142,19 @@ function _applySharedAttTagsToVessels(){
       if(k.startsWith(vid+'_')&&t&&t.tag){const aid=k.slice(vid.length+1);vt[aid]=t.tag;}
     });
     // Merge: shared Sheet → localStorage override (most recent local action wins)
+    // ONLY keep plain attachment IDs (not compound vesselId_attachmentId keys) to keep blob lean.
     const lsTags=_loadAttTagsLocal(v);
-    v.attachmentTags=Object.assign({},v.attachmentTags||{},vt,lsTags);
+    const _cleanLs={};
+    Object.entries(lsTags).forEach(([k,t])=>{
+      // Skip compound keys (vesselId_attachmentId) — those belong in _sharedAttTags, not vessel blob
+      if(!String(k).includes('_'+String(vid)+'_')&&t)_cleanLs[k]=t;
+    });
+    // Also clean existing vessel.attachmentTags of any compound keys accumulated in previous sessions
+    const _cleanExisting={};
+    Object.entries(v.attachmentTags||{}).forEach(([k,t])=>{
+      if(k.length<200&&t&&!String(k).startsWith(String(vid)+'_'))_cleanExisting[k]=t;
+    });
+    v.attachmentTags=Object.assign({},_cleanExisting,vt,_cleanLs);
   });
 }
 
@@ -1084,7 +1095,14 @@ function autoTagFromFilename(filename){
 function _attTagsLsKey(v){return'orca_atags_'+(v&&(v.id||v.name)||'');}
 function _saveAttTagsLocal(v,tags){
   try{
-    if(v){const k=_attTagsLsKey(v);localStorage.setItem(k,JSON.stringify(tags));console.log('[attTag ls-save]',k,tags);}
+    if(v){
+      // Only save plain attachment IDs — filter out any compound vesselId_attachmentId keys
+      const vid=String(v.id||v.name||'');
+      const clean={};
+      Object.entries(tags||{}).forEach(([k,t])=>{if(t&&!k.startsWith(vid+'_'))clean[k]=t;});
+      const lsKey=_attTagsLsKey(v);
+      localStorage.setItem(lsKey,JSON.stringify(clean));
+    }
   }catch(e){console.error('[attTag ls-save FAILED]',e);}
 }
 function _loadAttTagsLocal(v){
@@ -1272,9 +1290,6 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
   }
 
   // Warnings with files present
-  // DEBUG: log tag state to console so we can see what's being found on render
-  console.log('[renderAttachmentsPanel] vi=',vi,'vessel=',_v?.name,'vessel.attachmentTags=',_v?.attachmentTags,'lsKey=',_attTagsLsKey(_v),'lsTags=',_lsT,'sharedT=',_sharedT,'finalSaved=',_savedTags);
-
   const warns=[];
   // Check both body text AND filenames for GA mentions
   const allText=(bodyText||'')+' '+attachments.map(a=>a.filename).join(' ');
@@ -2758,7 +2773,7 @@ async function fetchInbox(){
     saveVessels();
     // Merge inbox items from other team members via Google Sheets
     mergeSharedInbox();
-    if(badge){if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else{badge.textContent='0';badge.style.display='none';}}
+    const _ib_badge=document.getElementById('ib-count');if(_ib_badge){if(ibItems.length){_ib_badge.textContent=ibItems.length;_ib_badge.style.display='inline';}else{_ib_badge.textContent='0';_ib_badge.style.display='none';}}
   }catch(e){
     console.error('fetchInbox error', e);
     const msg = e?.message || (e?.status ? 'API error ' + e.status : 'Unknown error');
@@ -2960,8 +2975,8 @@ async function sendIbFollowUp(){
   saveVessels();updateMetrics();renderTable();
   document.getElementById('mod-ib').style.display='none';
   ibItems=ibItems.filter(function(it){return it!==curIb;});
-  const badge=document.getElementById('ib-count');
-  if(ibItems.length){badge.textContent=ibItems.length;badge.style.display='inline';}else badge.style.display='none';
+  const _send_badge=document.getElementById('ib-count');
+  if(_send_badge){if(ibItems.length){_send_badge.textContent=ibItems.length;_send_badge.style.display='inline';}else _send_badge.style.display='none';}
   renderInbox();renderInlineInbox();
 }
 
