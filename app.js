@@ -1272,6 +1272,9 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
   }
 
   // Warnings with files present
+  // DEBUG: log tag state to console so we can see what's being found on render
+  console.log('[renderAttachmentsPanel] vi=',vi,'vessel=',_v?.name,'vessel.attachmentTags=',_v?.attachmentTags,'lsKey=',_attTagsLsKey(_v),'lsTags=',_lsT,'sharedT=',_sharedT,'finalSaved=',_savedTags);
+
   const warns=[];
   // Check both body text AND filenames for GA mentions
   const allText=(bodyText||'')+' '+attachments.map(a=>a.filename).join(' ');
