@@ -1228,7 +1228,7 @@ function restoreAttachmentTags(attachments, vesselIdx){
   const savedTags=Object.assign({},lsTags,(v&&v.attachmentTags)||{});
   return attachments.map(a=>({
     ...a,
-    tag:savedTags[a.attachmentId]||a.tag||''
+    tag:savedTags[a.filename]||savedTags[a.attachmentId]||a.tag||''
   }));
 }
 
@@ -1281,11 +1281,23 @@ function onAttachTag(sel,attachmentId,vesselIdx){
 
   if(isNaN(idx)||!vessels[idx]){console.warn('[onAttachTag] EARLY RETURN — idx invalid or vessel missing');return;}
   const v=vessels[idx];
+
+  // Find the filename for this attachment — filename is stable across Gmail API fetches,
+  // unlike attachmentId which changes on every fetch for the same file.
+  const _taggedAtt=(curIb&&curIb.attachments||[]).find(a=>a.attachmentId===attachmentId)
+    ||(ibItems||[]).flatMap(it=>it.attachments||[]).find(a=>a.attachmentId===attachmentId);
+  const _filename=_taggedAtt?.filename||attachmentId; // fallback to ID if filename missing
+
   // Persist tag on curIb and ibItems in memory
   if(curIb&&Array.isArray(curIb.attachments))curIb.attachments.forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});
   (ibItems||[]).forEach(it=>{(it.attachments||[]).forEach(a=>{if(a.attachmentId===attachmentId)a.tag=tag;});});
-  // Persist tag on vessel.attachmentTags — survives refresh, session changes, other users
+
+  // Persist tag using FILENAME as key — stable across Gmail API fetches.
+  // attachmentId changes on every poll; filename does not.
   const _attTags=Object.assign({},v.attachmentTags||{});
+  if(tag)_attTags[_filename]=tag;
+  else delete _attTags[_filename];
+  // Also keep attachmentId key for backwards compat within current session
   if(tag)_attTags[attachmentId]=tag;
   else delete _attTags[attachmentId];
   if(tag){
@@ -1308,7 +1320,8 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     // Layer 2: dedicated atags Sheet tab — shared across ALL users, no vessel blob race condition
     const _vesselId=v.id||v.name||'';
     const _att2=(curIb&&curIb.attachments||[]).find(a=>a.attachmentId===attachmentId);
-    saveSharedAttTag(_vesselId,attachmentId,_att2?.filename||'',tag)
+    // Store by filename (stable) — attachmentId changes on every Gmail API fetch
+    saveSharedAttTag(_vesselId,_filename,_att2?.filename||'',tag)
       .catch(e=>console.warn('[atag] Sheet save failed',e));
     // Layer 3: vessel blob — kept in sync but NOT the authoritative source for tags
     saveVessels().catch(e=>console.warn('[tag] vessel blob save failed',e));
@@ -1342,7 +1355,7 @@ function onAttachTag(sel,attachmentId,vesselIdx){
     if(curIb&&curIb.vi===idx)curIb.vessel=vessels[idx]; // keep curIb.vessel in sync
     _saveAttTagsLocal(vessels[idx],_attTags);
     const _vesselId2=v.id||v.name||'';
-    saveSharedAttTag(_vesselId2,attachmentId,'','').catch(e=>console.warn('[atag clear] Sheet save failed',e));
+    saveSharedAttTag(_vesselId2,_filename||attachmentId,'','').catch(e=>console.warn('[atag clear] Sheet save failed',e));
     saveVessels().catch(e=>console.warn('[tag clear] vessel blob save failed',e));
     updateMetrics();renderTable();
     const row=sel.closest('[data-att-row]');if(row)row.style.background='var(--white)';
@@ -1405,7 +1418,7 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
   const hasGAFile=attachments.some(a=>autoTagFromFilename(a.filename).includes('GA'));
   if(mentionsGA&&!hasGAFile)warns.push('GA mentioned but no GA file detected in attachments.');
   // Use _savedTags as source of truth for untagged check
-  const untagged=attachments.filter(a=>!autoTagFromFilename(a.filename)&&!_savedTags[a.attachmentId]);
+  const untagged=attachments.filter(a=>!autoTagFromFilename(a.filename)&&!_savedTags[a.filename]&&!_savedTags[a.attachmentId]);
   if(untagged.length)warns.push(`${untagged.length} file${untagged.length>1?'s':''} could not be auto-identified — please tag them below.`);
   const warnHtml=warns.map(w=>`<div class="flag-item" style="margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${w}</div>`).join('');
 
@@ -1422,7 +1435,7 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
     const icon=iconMap[cat]||'ti-paperclip';
     const filenameTag=autoTagFromFilename(att.filename);
     // Always read tag from vessel.attachmentTags — source of truth, survives poll replacement
-    const savedTag=_savedTags[att.attachmentId]||'';
+    const savedTag=_savedTags[att.filename]||_savedTags[att.attachmentId]||'';
     const effectiveTag=savedTag||filenameTag;
     const isAutoTagged=!!filenameTag;
     const isManualTagged=!!savedTag&&!filenameTag;
@@ -1652,9 +1665,11 @@ function computeReceivedMissing(vessel, ibItem){
   const _ibAtts=ib&&(ib.attachments||[]);
   let savedTags;
   if(_ibAtts&&_ibAtts.length>0){
+    // Match by BOTH filename (stable) and attachmentId (may change per fetch)
     const _presentAids=new Set(_ibAtts.map(a=>a.attachmentId).filter(Boolean));
+    const _presentNames=new Set(_ibAtts.map(a=>a.filename).filter(Boolean));
     savedTags=Object.entries(_allSavedTags)
-      .filter(([aid,t])=>_presentAids.has(aid)&&t&&t!=='Other / Not a required item')
+      .filter(([key,t])=>(_presentAids.has(key)||_presentNames.has(key))&&t&&t!=='Other / Not a required item')
       .map(([,t])=>t);
   } else {
     savedTags=Object.values(_allSavedTags)
@@ -2794,7 +2809,7 @@ async function fetchInboxByThreads(){
         // Restore saved tags from vessel.attachmentTags (persisted to Sheet — survives refresh)
         const _savedTags=(_vessel&&_vessel.attachmentTags)||{};
         cm.allAtts.forEach(a=>{
-          if(_savedTags[a.attachmentId])a.tag=_savedTags[a.attachmentId];
+          if(_savedTags[a.filename]||_savedTags[a.attachmentId])a.tag=_savedTags[a.filename]||_savedTags[a.attachmentId];
         });
         const existingIdx=(ibItems||[]).findIndex(it=>String(it.vi)===String(_vi));
         const itemWithAtts={...cm.latestMsg,attachments:cm.allAtts};
