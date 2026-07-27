@@ -372,22 +372,17 @@ async function loadVessels(){
 // Track vessel IDs deleted in this session so saveVessels merge never re-adds them
 window._deletedVesselIds=window._deletedVesselIds||new Set();
 
-// ── Save status indicator ─────────────────────────────────────────────────────
-let _saveIndicatorTimer=null;
+// Save status — silent background saves. Only surface errors that require user action.
 function _showSaveStatus(state){
-  // state: 'saving' | 'saved' | 'failed'
-  const el=document.getElementById('save-indicator');
-  if(!el)return;
-  if(_saveIndicatorTimer){clearTimeout(_saveIndicatorTimer);_saveIndicatorTimer=null;}
-  const cfg={
-    saving:{bg:'#1D2E6B',color:'#fff',icon:'ti-loader',text:'Saving...'},
-    saved: {bg:'#1D6B3E',color:'#fff',icon:'ti-check',text:'Saved'},
-    failed:{bg:'#c0392b',color:'#fff',icon:'ti-alert-circle',text:'Save failed — retrying'}
-  };
-  const c=cfg[state]||cfg.saving;
-  el.style.cssText=`display:block;position:fixed;bottom:18px;right:18px;z-index:9000;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.15);pointer-events:none;background:${c.bg};color:${c.color}`;
-  el.innerHTML=`<i class="ti ${c.icon}" style="margin-right:6px;${state==='saving'?'animation:spin .7s linear infinite':''}"></i>${c.text}`;
-  if(state==='saved')_saveIndicatorTimer=setTimeout(()=>{el.style.display='none';},2000);
+  // Only show UI feedback on persistent failure — all else is silent
+  if(state==='failed'){
+    const lbl=document.getElementById('last-refresh-label');
+    if(lbl)lbl.textContent='⚠️ Save failed — retrying...';
+  } else if(state==='saved'){
+    // Clear any previous error label
+    const lbl=document.getElementById('last-refresh-label');
+    if(lbl&&lbl.textContent.includes('Save failed'))lbl.textContent='';
+  }
 }
 
 // ── Version stamp — prevent concurrent overwrites ─────────────────────────────
