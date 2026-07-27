@@ -93,6 +93,27 @@ let sharedDbLastSync=null;
 let vessels=[],user=null,token=null,tc=null,draft='',ana=null,ibAna=null,curIb=null,ibItems=[];
 let _sharedAttTags={};  // in-memory cache of atags Sheet — { "vesselId_attachmentId": {tag,filename,userEmail,ts} }
 
+// ── Error logging to Sheet ────────────────────────────────────────────────────
+const LOG_SHEET='orca_log';
+let _logQueue=[];let _logFlushing=false;
+async function logError(context,message,detail=''){
+  // Always log to console
+  console.error(`[${context}]`,message,detail);
+  if(!token||!hasSharedDb())return;
+  _logQueue.push([new Date().toISOString(),user?.email||'unknown',context,String(message).slice(0,300),String(detail).slice(0,300)]);
+  if(_logFlushing)return;
+  _logFlushing=true;
+  await new Promise(r=>setTimeout(r,2000)); // batch up to 2s
+  const rows=_logQueue.splice(0);_logFlushing=false;
+  if(!rows.length)return;
+  try{
+    await fetch(sheetTabUrl(LOG_SHEET,'A1:E1')+':append?valueInputOption=RAW',{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({values:rows})
+    });
+  }catch(e){console.warn('logError flush failed',e);}
+}
+
 // ── Generic Sheet tab URL helper ──────────────────────────────────────────────
 function sheetTabUrl(tabName,range){
   return`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(tabName)}!${range}`;
@@ -321,8 +342,8 @@ function parseSharedPayload(raw){
 async function saveSharedVessels(data){
   if(!hasSharedDb()||!token)return false;
   try{
-    // Trim timelines and guard blob size before every write
-    const safeData=guardBlobSize((data||[]).map(v=>{trimTimeline(v);return v;}));
+    // Sanitize, trim timelines, and guard blob size before every write
+    const safeData=guardBlobSize((data||[]).map(v=>{sanitizeVessel(v);trimTimeline(v);return v;}));
     const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(safeData)]]};
     const r=await fetch(sharedDbUrl('A1')+'?valueInputOption=RAW',{
       method:'PUT',
@@ -461,11 +482,11 @@ async function saveVessels(_retrying=false){
       _showSaveStatus('failed');
       setTimeout(()=>saveVessels(true),3000);
     } else {
-      // Second failure — show persistent error
+      // Second failure — show persistent error and log it
       _showSaveStatus('failed');
       const lbl2=document.getElementById('last-refresh-label');
       if(lbl2)lbl2.textContent='⚠️ Save failed — check Google Sheets access';
-      console.error('[saveVessels] Failed after retry');
+      logError('saveVessels','Failed after retry — vessel data may not be saved');
     }
     return;
   }
@@ -522,6 +543,33 @@ function loadVesselsCompat(){
   }
   return [];
 }
+// ── Input sanitization ────────────────────────────────────────────────────────
+// Strip characters that could corrupt the Sheet JSON blob or break the UI.
+// Applied to all user-input text fields before saving to Sheet.
+function sanitizeText(s,maxLen=500){
+  if(s===null||s===undefined)return'';
+  return String(s)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,'') // control chars
+    .replace(/\uFFFD/g,'')   // unicode replacement char
+    .trim()
+    .slice(0,maxLen);
+}
+function sanitizeEmail(s){
+  const e=sanitizeText(s,200).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)?e:'';
+}
+function sanitizeVessel(v){
+  if(!v)return v;
+  if(v.name)v.name=sanitizeText(v.name,120);
+  if(v.email)v.email=sanitizeEmail(v.email)||v.email;
+  if(v.owner)v.owner=sanitizeText(v.owner,120);
+  if(v.fleet)v.fleet=sanitizeText(v.fleet,80);
+  if(v.nextAction)v.nextAction=sanitizeText(v.nextAction,200);
+  if(Array.isArray(v.missingItems))v.missingItems=v.missingItems.map(x=>sanitizeText(x,200));
+  if(Array.isArray(v.receivedItems))v.receivedItems=v.receivedItems.map(x=>sanitizeText(x,200));
+  return v;
+}
+
 function normalizeVessel(v){
   if(!v.firstEmailDate&&v.lastEmailDate)v.firstEmailDate=v.lastEmailDate;
   v.status=v.status||'waiting';
@@ -1968,6 +2016,7 @@ function _renderTableImpl(){
           ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
               ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px">&#8644; Transferred to '+v.lastTransferTo.split('@')[0]+'</span>'
               : ''}
+          ${v._ccDropWarning?'<span style="font-size:10px;background:#fde8e8;color:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px" title="Captain replied to only one team member — others may not see this reply">&#9888; CC chain broken</span>':''}
           </div>
         </div>
       </td>
@@ -2087,8 +2136,9 @@ Orca AI`;
 }
 
 async function sendAndSaveNew(){
-  const v=val('mv'),e=val('me'),o=val('mo'),d=val('md');
+  const v=sanitizeText(val('mv'),120),e=sanitizeEmail(val('me'))||val('me'),o=sanitizeText(val('mo'),120),d=sanitizeText(val('md'),300);
   if(!v||!e){alert('Please enter vessel name and master email.');return;}
+  if(!e.includes('@')){alert('Please enter a valid master email address.');return;}
   const btn=document.getElementById('btn-snd');
   const oldHtml=btn?btn.innerHTML:'';
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
@@ -2663,7 +2713,17 @@ async function fetchInboxByThreads(){
           }
         }catch(_){/* fallback failed — skip vessel */}
       }
-      if(!thread)continue;
+      // CC drop detection: if we couldn't find the thread via gmailThreadId AND the
+      // subject search also failed, the captain likely replied to the original sender only.
+      // Flag this on the vessel so the UI can warn the current user.
+      if(!thread){
+        const vi2=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
+        if(vi2>=0)vessels[vi2]._ccDropWarning=true;
+        continue;
+      }
+      // Thread found — clear any previous CC drop warning
+      const vi3=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
+      if(vi3>=0)vessels[vi3]._ccDropWarning=false;
       const messages=(thread.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
       // Find by id/name — never by object reference. onAttachTag replaces vessels[idx]
       // with a new object ({...v,...}), so indexOf(oldRef) would return -1 after any tag save,
@@ -3396,6 +3456,7 @@ function _bootApp(tokenVal, userObj){
     sheetsInboxInit();
     ensureSheetTab(ATAGS_SHEET_NAME).then(()=>loadSharedAttTags());
     ensureSheetTab(ARCHIVE_SHEET_NAME);
+    ensureSheetTab(LOG_SHEET);
     checkInbox(true);
     scheduleTokenRefresh();
   });
