@@ -1379,8 +1379,10 @@ async function openCaseAnalyze(i){
     let replyText='',replyFrom='',replyDate='',replyAtts=[];
     if(Array.isArray(ibItems)&&ibItems.length){
       // Match strictly by vessel index — one ibItem per vessel, never by email
-      // (email match would pick the wrong vessel if two vessels share the same captain address)
-      const ex=ibItems.find(item=>item.vi===i||item.vessel===vessel);
+      // Match by vessel index OR by vessel identity (id/name) — never by object reference
+      // since vessels[i] may have been replaced by a new object by onAttachTag/pollVessels
+      const _vid=vessel.id||vessel.name;
+      const ex=ibItems.find(item=>item.vi===i||(item.vessel&&(item.vessel.id||item.vessel.name)===_vid));
       if(ex){
         if(ex.body)replyText=cleanCaptainReplyText(ex.body);
         replyFrom=ex.from||'';replyDate=ex.date||'';
@@ -2806,10 +2808,14 @@ async function sendFromViewModal(){
 }function openIbModal(i){
   const raw=ibItems[i];
   if(!raw||!raw.vessel){alert('Reply item not found. Please click Check inbox again.');return;}
+  // Always resolve vessel index by identity — raw.vi may be stale (-1) if vessels[idx]
+  // was replaced by a spread in onAttachTag or pollVessels after the ibItem was built.
+  const _resolvedVi=vessels.findIndex(v=>(v.id||v.name)===(raw.vessel.id||raw.vessel.name));
+  const _safeVi=_resolvedVi>=0?_resolvedVi:(raw.vi>=0?raw.vi:0);
   // Clean body before storing — strips quoted chain so AI only sees captain's actual words
-  curIb={...raw,body:cleanCaptainReplyText(raw.body||'')};
+  curIb={...raw,vi:_safeVi,body:cleanCaptainReplyText(raw.body||'')};
   // Restore saved tags from vessel.attachmentTags immediately on modal open
-  curIb.attachments=restoreAttachmentTags(curIb.attachments||[],raw.vi);
+  curIb.attachments=restoreAttachmentTags(curIb.attachments||[],_safeVi);
   ibAna=null;
   const v=curIb.vessel;
 
