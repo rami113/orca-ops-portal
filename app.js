@@ -167,13 +167,14 @@ function _applySharedAttTagsToVessels(){
     const lsTags=_loadAttTagsLocal(v);
     const _cleanLs={};
     Object.entries(lsTags).forEach(([k,t])=>{
-      // Skip compound keys (vesselId_attachmentId) — those belong in _sharedAttTags, not vessel blob
-      if(!String(k).includes('_'+String(vid)+'_')&&t)_cleanLs[k]=t;
+      // Skip compound keys (vesselId_attachmentId format) — plain attachment IDs only
+      if(t&&!String(k).startsWith(String(vid)+'_'))_cleanLs[k]=t;
     });
-    // Also clean existing vessel.attachmentTags of any compound keys accumulated in previous sessions
+    // Clean existing vessel.attachmentTags of compound keys (vesselId_attachmentId format).
+    // Plain Gmail attachment IDs are legitimately 300+ chars — do NOT filter by length.
     const _cleanExisting={};
     Object.entries(v.attachmentTags||{}).forEach(([k,t])=>{
-      if(k.length<200&&t&&!String(k).startsWith(String(vid)+'_'))_cleanExisting[k]=t;
+      if(t&&!String(k).startsWith(String(vid)+'_'))_cleanExisting[k]=t;
     });
     v.attachmentTags=Object.assign({},_cleanExisting,vt,_cleanLs);
   });
@@ -1213,7 +1214,7 @@ function _saveAttTagsLocal(v,tags){
   }catch(e){console.error('[attTag ls-save FAILED]',e);}
 }
 function _loadAttTagsLocal(v){
-  try{const s=localStorage.getItem(_attTagsLsKey(v));const t=s?JSON.parse(s):{};if(s)console.log('[attTag ls-load]',_attTagsLsKey(v),t);return t;}
+  try{const s=localStorage.getItem(_attTagsLsKey(v));return s?JSON.parse(s):{};}
   catch(_){return{};}
 }
 
@@ -1277,7 +1278,7 @@ async function onAttachPreview(btn,msgId,attachmentId,filename,mimeType,containe
 // Tag dropdown change handler
 function onAttachTag(sel,attachmentId,vesselIdx){
   const tag=sel.value;const idx=parseInt(vesselIdx);
-  console.log('[onAttachTag] vesselIdx=',vesselIdx,'idx=',idx,'tag=',tag,'attachmentId=',attachmentId,'vessel=',vessels[idx]?.name);
+
   if(isNaN(idx)||!vessels[idx]){console.warn('[onAttachTag] EARLY RETURN — idx invalid or vessel missing');return;}
   const v=vessels[idx];
   // Persist tag on curIb and ibItems in memory
