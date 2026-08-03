@@ -428,7 +428,7 @@ async function saveVessels(_retrying=false){
         // SAFE fields to always take from local (user just edited them):
         const _localOwned=['status','risk','progress','nextAction','missingItems','receivedItems',
           'detectedItems','followupsSent','lastFollowupPreview','assignedTo',
-          'lastContact','lastEmailDate','emailsSent'];
+          'lastContact','lastEmailDate','emailsSent','seenMsgIds'];
         // attachmentTags is NOT in _localOwned — it gets a special merge below
         // so tags set by different users on different devices are preserved.
         // SAFE fields to merge from Sheet if Sheet version is newer (other user's changes):
@@ -2083,36 +2083,36 @@ function updateMetrics(){
 // ── Dashboard Charts ──────────────────────────────────────────────────────────
 function _updateCharts(myVessels){
   if(!myVessels||!myVessels.length)return;
-  // Status donut chart
-  const statusColors={
-    waiting:'#6b7fa8',followup:'#E8A838','csm-followup':'#5B8EE6',
-    ready:'#1D6B3E',scheduled:'#2E86AB',completed:'#888'
-  };
-  const statusCounts={};
-  myVessels.forEach(v=>{const s=v.status||'waiting';statusCounts[s]=(statusCounts[s]||0)+1;});
+  // Metric category donut — matches the 4 cards (Ready / Awaiting Reply / Require Attention / Other)
   const total=myVessels.length;
+  const catReady=myVessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  const catAttention=myVessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+  const catWaiting=myVessels.filter(v=>v.status==='waiting').length;
+  const catOther=Math.max(0,total-catReady-catAttention-catWaiting);
+  const slices=[
+    {label:'Ready',count:catReady,color:'#1D6B3E'},
+    {label:'Awaiting Reply',count:catWaiting,color:'#1D2E6B'},
+    {label:'Require Attention',count:catAttention,color:'#E24B4A'},
+    ...(catOther>0?[{label:'Other',count:catOther,color:'#b0b8c9'}]:[])
+  ].filter(s=>s.count>0);
   // Build donut SVG
   const cx=45,cy=45,r=32,stroke=14;
-  let offset=0;
-  let paths='';let legendHtml='';
-  const entries=Object.entries(statusCounts).sort((a,b)=>b[1]-a[1]);
-  entries.forEach(([status,count])=>{
+  let offset=0,paths='',legendHtml='';
+  slices.forEach(({label,count,color})=>{
     const pct=count/total;
     const angle=pct*2*Math.PI;
     const x1=cx+r*Math.sin(offset);const y1=cy-r*Math.cos(offset);
     offset+=angle;
     const x2=cx+r*Math.sin(offset);const y2=cy-r*Math.cos(offset);
     const large=pct>0.5?1:0;
-    const color=statusColors[status]||'#ccc';
-    if(total===1||Math.abs(angle-2*Math.PI)<0.001){
-      // Full circle
+    if(slices.length===1||Math.abs(angle-2*Math.PI)<0.001){
       paths+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"/>`;
     } else {
-      paths+=`<path d="M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" opacity=".85"/>`;
+      paths+=`<path d="M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" opacity=".9"/>`;
     }
-    legendHtml+=`<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:var(--text)">${sbText(status)}: <strong>${count}</strong></span></div>`;
+    legendHtml+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px"><span style="width:10px;height:10px;border-radius:2px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:var(--text);font-size:11px">${label}: <strong>${count}</strong></span></div>`;
   });
-  // Center circle to make donut
+  // White center to create donut effect
   paths+=`<circle cx="${cx}" cy="${cy}" r="${r-stroke/2}" fill="#fff"/>`;
   paths+=`<text x="${cx}" y="${cy+5}" text-anchor="middle" style="font-size:14px;font-weight:700;fill:var(--navy)">${total}</text>`;
   const donutEl=document.getElementById('chart-donut');
@@ -2907,7 +2907,9 @@ async function fetchInboxByThreads(){
         const rawBody=msg.payload?decodeGmailBody(msg.payload):'';
         // Clean the body before storing — strip quoted chain so timeline shows only real content
         const body=isOpsMsg?rawBody:cleanCaptainReplyText(rawBody);
-        const logged=vessel.timeline?.some(t=>t.msgId===msg.id);
+        // Check seenMsgIds first (trim-proof), fall back to timeline for older vessels
+        const logged=(vessels[vi].seenMsgIds||[]).includes(msg.id)
+          ||vessel.timeline?.some(t=>t.msgId===msg.id);
         // First message in thread = initial sent email.
         // Skip if already logged as "Initial email sent" (old vessels lack msgId on that entry).
         if(msgIdx===0&&isOpsMsg){
@@ -2916,6 +2918,13 @@ async function fetchInboxByThreads(){
         }
         // Add EVERY message in the thread to the timeline (full conversation view)
         if(!logged){
+          // Record this msgId as seen — survives timeline trimming
+          if(!Array.isArray(vessels[vi].seenMsgIds))vessels[vi].seenMsgIds=[];
+          if(!vessels[vi].seenMsgIds.includes(msg.id)){
+            vessels[vi].seenMsgIds.push(msg.id);
+            // Cap at 500 entries (IDs only, very small)
+            if(vessels[vi].seenMsgIds.length>500)vessels[vi].seenMsgIds=vessels[vi].seenMsgIds.slice(-500);
+          }
           if(isOpsMsg){
             // Outbound — follow-up from ops
             addTimeline(vessels[vi],'sent','Email sent to captain',from,body.substring(0,2000),msg.id);
@@ -3701,6 +3710,9 @@ window.onload=()=>{
           result.missingItems=local.missingItems;
           result.receivedItems=local.receivedItems;
           result.detectedItems=local.detectedItems;
+          // Merge seenMsgIds — union of both so no message is ever re-counted
+          const _seenUnion=new Set([...(local.seenMsgIds||[]),...(sv.seenMsgIds||[])]);
+          result.seenMsgIds=[..._seenUnion].slice(-500);
           // attachmentTags: merge both sides
           result.attachmentTags=Object.assign({},sv.attachmentTags||{},local.attachmentTags||{});
           // Timelines: always union
