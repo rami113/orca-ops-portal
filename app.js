@@ -866,6 +866,9 @@ async function assignVessel(i,email){
   const old=vessels[i].assignedTo||'Unassigned';
   if(old===email)return; // no change
   vessels[i].assignedTo=email;
+  vessels[i].lastTransferTo=email;
+  vessels[i].lastTransferFrom=old;
+  vessels[i].lastTransferAt=new Date().toISOString();
   vessels[i].lastActivity=new Date().toISOString();
   stampField(vessels[i],'assignedTo');
   addTimeline(vessels[i],'assignment','Owner changed',`${old} → ${email}`);
@@ -1051,6 +1054,7 @@ async function transferOwnership(idx){
   const prevOwner=vessels[idx].assignedTo||'Unassigned';
   vessels[idx].assignedTo=result;
   vessels[idx].lastTransferTo=result;
+  vessels[idx].lastTransferFrom=prevOwner;
   vessels[idx].lastTransferAt=new Date().toISOString();
   vessels[idx].lastActivity=new Date().toISOString();
   addTimeline(vessels[idx],'assignment','Ownership transferred','From: '+prevOwner+' → To: '+result);
@@ -2033,7 +2037,7 @@ function _renderTableImpl(){
               ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
               : '<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>'}
           ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
-              ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:6px">&#8644; Transferred to '+v.lastTransferTo.split('@')[0]+'</span>'
+              ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:6px">&#8644; '+(v.lastTransferFrom?v.lastTransferFrom.split('@')[0]+' → ':'')+''+v.lastTransferTo.split('@')[0]+'</span>'
               : ''}
           ${v._ccDropWarning?'<span style="font-size:10px;background:#fde8e8;color:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px" title="Captain replied to only one team member — others may not see this reply">&#9888; CC chain broken</span>':''}
           </div>
