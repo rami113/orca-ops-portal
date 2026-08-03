@@ -2040,11 +2040,15 @@ function _renderTableImpl(){
            ${(()=>{
                if(!v.lastTransferTo||!v.lastTransferAt||(Date.now()-new Date(v.lastTransferAt).getTime())>=86400000*3)return'';
                const _to=v.lastTransferTo.split('@')[0];
-               // Find 'from' — stored directly or fall back to timeline
+               // Find 'from' — stored directly or fall back to last timeline assignment entry
                let _from=v.lastTransferFrom?v.lastTransferFrom.split('@')[0]:'';
                if(!_from){
-                 const _tl=(v.timeline||[]).filter(e=>e.type==='assignment').slice(-2);
-                 if(_tl.length>=2)_from=(_tl[_tl.length-2].detail||'').split('→')[0].replace('From:','').trim().split('@')[0];
+                 const _lastA=(v.timeline||[]).filter(e=>e.type==='assignment').slice(-1)[0];
+                 if(_lastA){
+                   // detail is "From: x@y → To: a@b" or "x@y → a@b"
+                   const _fp=(_lastA.detail||'').split('→')[0].replace(/from:/i,'').trim();
+                   if(_fp&&_fp!=='Unassigned')_from=_fp.split('@')[0];
+                 }
                }
                const _label=_from?`${_from} → ${_to}`:`Transferred to ${_to}`;
                return`<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;width:100%;margin-top:4px">&#8644; ${_label}</span>`;
