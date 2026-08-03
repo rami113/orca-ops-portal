@@ -2031,16 +2031,17 @@ function _renderTableImpl(){
       <td>
         <div onclick="openV(${idx})" style="cursor:pointer;min-width:0">
           <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.name}</strong>
-          <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
-          <div onclick="event.stopPropagation();editVesselFleet(${idx})" title="Click to set fleet" style="margin-top:4px;cursor:pointer">
-            ${v.fleet
-              ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
-              : '<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>'}
-          ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
-              ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:6px">&#8644; '+(v.lastTransferFrom?v.lastTransferFrom.split('@')[0]+' → ':'')+''+v.lastTransferTo.split('@')[0]+'</span>'
-              : ''}
-          ${v._ccDropWarning?'<span style="font-size:10px;background:#fde8e8;color:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px" title="Captain replied to only one team member — others may not see this reply">&#9888; CC chain broken</span>':''}
-          </div>
+           <span style="font-size:11px;color:var(--faint);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.email||''}</span>
+           <div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+             ${v.fleet
+               ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
+               : ''}
+             <button onclick="event.stopPropagation();editVesselFleet(${idx})" title="Edit fleet" style="width:20px;height:20px;border:1px solid #d0d8e8;border-radius:4px;background:#f4f6fb;color:#6b7fa8;cursor:pointer;font-size:10px;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0"><i class="ti ti-pencil"></i></button>
+           ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
+               ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;width:100%;margin-top:4px">&#8644; '+(v.lastTransferFrom?v.lastTransferFrom.split('@')[0]+' → ':'')+v.lastTransferTo.split('@')[0]+'</span>'
+               : ''}
+           ${v._ccDropWarning?'<span style="font-size:10px;background:#fde8e8;color:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;width:100%;margin-top:2px" title="Captain replied to only one team member — others may not see this reply">&#9888; CC chain broken</span>':''}
+           </div>
         </div>
       </td>
       <td>
