@@ -775,10 +775,11 @@ function showTab(t){
   if(t==='inbox')renderInbox();
 }
 
-function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
+function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required','csm-followup':'CSM Follow-up',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
 function sb(s){const m={
   waiting:['bg','ti-clock','Waiting for reply'],
   followup:['ba','ti-send','Follow-up required'],
+  'csm-followup':['bn','ti-users','CSM Follow-up'],
   ready:['bn','ti-circle-check','Ready for installation'],
   scheduled:['bb','ti-calendar-check','Installation scheduled'],
   completed:['bgr','ti-check','Installation completed']
@@ -790,7 +791,7 @@ function trafficLight(v){
   let c='green',label='On track';
   if(v.risk==='high'||d>=7){c='red';label='Attention';}
   else if(v.status==='followup'||d>=3||v.risk==='medium'){c='yellow';label='Follow-up';}
-  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'){c='green';label='On track';}
+  if(v.status==='ready'||v.status==='scheduled'||v.status==='completed'||v.status==='csm-followup'){c='green';label='On track';}
   return `<span class="traffic"><span class="tl-light tl-${c}"></span>${label}</span>`;
 }
 
@@ -819,6 +820,7 @@ function setVesselStatus(i,status){
   vessels[i].status=status;
   if(status==='waiting'){vessels[i].nextAction='Wait for master reply';}
   if(status==='followup'){vessels[i].nextAction='Send follow-up';}
+  if(status==='csm-followup'){vessels[i].nextAction='CSM follow-up in progress';}
   if(status==='ready'){vessels[i].nextAction='Coordinate installation window';vessels[i].progress=Math.max(vessels[i].progress||0,75);}
   if(status==='scheduled'){vessels[i].nextAction='Installation scheduled';vessels[i].progress=Math.max(vessels[i].progress||0,90);}
   if(status==='completed'){vessels[i].nextAction='Installation completed';vessels[i].progress=100;vessels[i].risk='low';}
@@ -833,6 +835,7 @@ function statusOptions(selected){
   const statuses=[
     ['waiting','Waiting for reply'],
     ['followup','Follow-up required'],
+    ['csm-followup','CSM Follow-up'],
     ['ready','Ready for installation'],
     ['scheduled','Installation scheduled'],
     ['completed','Installation completed']
@@ -1565,7 +1568,7 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   document.getElementById('mib-stat-resp').textContent=rd;
   const score=readinessScore(v)||v.progress||0;
   document.getElementById('mib-stat-ready').textContent=score+'%';
-  const sL={waiting:'Waiting',followup:'Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
+  const sL={waiting:'Waiting',followup:'Follow-up','csm-followup':'CSM Follow-up',ready:'Ready',scheduled:'Scheduled',completed:'Completed'};
   document.getElementById('mib-stat-status').textContent=sL[v.status]||v.status||'—';
   // Use computeReceivedMissing as single source of truth
   const _rm2=computeReceivedMissing(v,curIb);
@@ -2051,7 +2054,7 @@ function _renderTableImpl(){
       </td>
       <td style="font-size:12px;color:var(--muted)">${fmtDT(v.lastActivity||v.lastReceivedDate||v.lastEmailDate||v.lastContact)}</td>
       <td>
-        <select class="owner-select" onchange="assignVessel(${idx},this.value)" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);font-family:inherit">${userOptions(v.assignedTo)}</select>
+        <div style="font-size:12px;color:var(--text);font-weight:500;padding:4px 2px">${(TEAM_USERS.find(u=>u.email===(v.assignedTo||''))?.name||v.assignedTo||'Unassigned').split('@')[0]}</div>
       </td>
       <td>
         <div class="row-actions">
@@ -2065,14 +2068,155 @@ function _renderTableImpl(){
   }).join('');
 }
 function updateMetrics(){
-  document.getElementById('m-t').textContent=vessels.length;
-  const _rCount=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  const myEmail=normEmail(user&&user.email);
+  const myVessels=isSuperAdmin()?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')==myEmail||!v.assignedTo);
+  document.getElementById('m-t').textContent=myVessels.length;
+  const _rCount=myVessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
   const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color='#003d1a';}
   const _atEl=document.getElementById('m-a');
-  const _atCount=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+  const _atCount=myVessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
   if(_atEl){_atEl.textContent=_atCount;_atEl.style.color=_atCount>0?'#E24B4A':'#1D2E6B';}
-  document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
+  document.getElementById('m-w').textContent=myVessels.filter(v=>v.status==='waiting').length;
+  // Update charts
+  _updateCharts(myVessels);
+}
 
+// ── Dashboard Charts ──────────────────────────────────────────────────────────
+function _updateCharts(myVessels){
+  if(!myVessels||!myVessels.length)return;
+  // Status donut chart
+  const statusColors={
+    waiting:'#6b7fa8',followup:'#E8A838','csm-followup':'#5B8EE6',
+    ready:'#1D6B3E',scheduled:'#2E86AB',completed:'#888'
+  };
+  const statusCounts={};
+  myVessels.forEach(v=>{const s=v.status||'waiting';statusCounts[s]=(statusCounts[s]||0)+1;});
+  const total=myVessels.length;
+  // Build donut SVG
+  const cx=45,cy=45,r=32,stroke=14;
+  let offset=0;
+  let paths='';let legendHtml='';
+  const entries=Object.entries(statusCounts).sort((a,b)=>b[1]-a[1]);
+  entries.forEach(([status,count])=>{
+    const pct=count/total;
+    const angle=pct*2*Math.PI;
+    const x1=cx+r*Math.sin(offset);const y1=cy-r*Math.cos(offset);
+    offset+=angle;
+    const x2=cx+r*Math.sin(offset);const y2=cy-r*Math.cos(offset);
+    const large=pct>0.5?1:0;
+    const color=statusColors[status]||'#ccc';
+    if(total===1||Math.abs(angle-2*Math.PI)<0.001){
+      // Full circle
+      paths+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"/>`;
+    } else {
+      paths+=`<path d="M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" opacity=".85"/>`;
+    }
+    legendHtml+=`<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:var(--text)">${sbText(status)}: <strong>${count}</strong></span></div>`;
+  });
+  // Center circle to make donut
+  paths+=`<circle cx="${cx}" cy="${cy}" r="${r-stroke/2}" fill="#fff"/>`;
+  paths+=`<text x="${cx}" y="${cy+5}" text-anchor="middle" style="font-size:14px;font-weight:700;fill:var(--navy)">${total}</text>`;
+  const donutEl=document.getElementById('chart-donut');
+  if(donutEl)donutEl.innerHTML=paths;
+  const legendEl=document.getElementById('chart-legend');
+  if(legendEl)legendEl.innerHTML=legendHtml;
+  // Avg readiness
+  const active=myVessels.filter(v=>v.status!=='completed');
+  const avgProgress=active.length?Math.round(active.reduce((s,v)=>s+(v.progress||0),0)/active.length):0;
+  const avgEl=document.getElementById('chart-avg-progress');
+  const avgBar=document.getElementById('chart-avg-bar');
+  if(avgEl)avgEl.textContent=avgProgress+'%';
+  if(avgBar)avgBar.style.width=avgProgress+'%';
+  // Avg reply time
+  const withReply=myVessels.filter(v=>v.lastReceivedDate&&v.lastEmailDate);
+  let avgReply='—';
+  if(withReply.length){
+    const avg=withReply.reduce((s,v)=>{
+      const diff=(new Date(v.lastReceivedDate)-new Date(v.lastEmailDate))/(1000*60*60*24);
+      return s+Math.max(0,diff);
+    },0)/withReply.length;
+    avgReply=avg<1?'<1':Math.round(avg)+'d';
+  }
+  const replyEl=document.getElementById('chart-avg-reply');
+  if(replyEl)replyEl.textContent=avgReply;
+}
+
+// ── Metric card modal ─────────────────────────────────────────────────────────
+let _currentMetricFilter='';
+function openMetricModal(filter){
+  _currentMetricFilter=filter;
+  const myEmail=normEmail(user&&user.email);
+  const myVessels=isSuperAdmin()?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')==myEmail||!v.assignedTo);
+  let filtered=myVessels;
+  const titles={
+    total:{title:'All Vessels',sub:'Complete vessel list'},
+    ready:{title:'Ready for Installation',sub:'Vessels with status Ready, Scheduled or Completed'},
+    waiting:{title:'Awaiting Reply',sub:'Vessels waiting for captain response'},
+    attention:{title:'Require Attention',sub:'Follow-up required, high risk, or no activity in 7+ days'}
+  };
+  if(filter==='ready')filtered=myVessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
+  else if(filter==='waiting')filtered=myVessels.filter(v=>v.status==='waiting');
+  else if(filter==='attention')filtered=myVessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  const info=titles[filter]||titles.total;
+  document.getElementById('metric-modal-title').textContent=info.title;
+  document.getElementById('metric-modal-sub').textContent=info.sub;
+  document.getElementById('metric-modal-count').textContent=filtered.length+' vessel'+(filtered.length!==1?'s':'');
+  const tbody=document.getElementById('metric-modal-tbody');
+  if(tbody)tbody.innerHTML=filtered.map(v=>{
+    const replyAge=v.lastReceivedDate?ds(v.lastReceivedDate):null;
+    const owner=(TEAM_USERS.find(u=>u.email===(v.assignedTo||''))?.name||v.assignedTo||'Unassigned').split('@')[0];
+    const missing=(v.missingItems||[]).length;
+    return`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:9px 10px"><strong style="font-size:12px">${escapeHtml(v.name)}</strong><div style="font-size:10px;color:var(--muted)">${escapeHtml(v.email||'')}</div></td>
+      <td style="padding:9px 10px">${sb(v.status)}</td>
+      <td style="padding:9px 10px;font-size:12px">${escapeHtml(owner)}</td>
+      <td style="padding:9px 10px;text-align:center;font-size:12px;font-weight:600;color:var(--navy)">${v.progress||0}%</td>
+      <td style="padding:9px 10px;text-align:center">${replyAge!==null?dc(replyAge):'<span style="color:#ccc">—</span>'}</td>
+      <td style="padding:9px 10px;font-size:11px;color:var(--muted)">${missing>0?missing+' missing':'<span style="color:#003d1a">✓ Complete</span>'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('mod-metric').style.display='flex';
+}
+
+// ── Export metric to new Google Sheet ────────────────────────────────────────
+async function exportMetricToSheet(){
+  if(!token){await orcaAlert('Please sign in first.','Error');return;}
+  const myEmail=normEmail(user&&user.email);
+  const myVessels=isSuperAdmin()?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')==myEmail||!v.assignedTo);
+  let filtered=myVessels;
+  if(_currentMetricFilter==='ready')filtered=myVessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
+  else if(_currentMetricFilter==='waiting')filtered=myVessels.filter(v=>v.status==='waiting');
+  else if(_currentMetricFilter==='attention')filtered=myVessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  const now=new Date().toLocaleDateString('en-GB');
+  const titleMap={total:'All Vessels',ready:'Ready for Installation',waiting:'Awaiting Reply',attention:'Require Attention'};
+  const sheetTitle=`Orca AI — ${titleMap[_currentMetricFilter]||'Vessels'} (${now})`;
+  // Build rows
+  const headers=['Vessel Name','Email','Status','Owner','Readiness %','Reply Age (days)','Missing Items','Last Activity'];
+  const rows=filtered.map(v=>{
+    const owner=(TEAM_USERS.find(u=>u.email===(v.assignedTo||''))?.name||v.assignedTo||'Unassigned');
+    const replyAge=v.lastReceivedDate?ds(v.lastReceivedDate):'';
+    const missing=(v.missingItems||[]).join(', ');
+    const lastAct=v.lastActivity||v.lastReceivedDate||v.lastEmailDate||'';
+    return[v.name||'',v.email||'',sbText(v.status||''),owner,v.progress||0,replyAge,missing,lastAct];
+  });
+  try{
+    // Create new spreadsheet
+    const createRes=await fetch('https://sheets.googleapis.com/v4/spreadsheets',{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({properties:{title:sheetTitle},sheets:[{properties:{title:'Vessels'}}]})
+    });
+    if(!createRes.ok){await orcaAlert('Could not create spreadsheet. Check Google Sheets access.','Error');return;}
+    const ss=await createRes.json();
+    const ssId=ss.spreadsheetId;
+    // Write data
+    const values=[headers,...rows];
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Vessels!A1:H${values.length}?valueInputOption=RAW`,{
+      method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({values})
+    });
+    // Open in new tab
+    window.open(`https://docs.google.com/spreadsheets/d/${ssId}`, '_blank');
+  }catch(e){console.error('exportMetricToSheet failed',e);await orcaAlert('Export failed: '+(e.message||e),'Error');}
 }
 function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 

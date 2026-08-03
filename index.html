@@ -79,11 +79,35 @@
         </div>
         <button class="btn btn-g" onclick="openStart()"><i class="ti ti-rocket"></i> Start Coordination</button>
       </div>
+      <!-- Charts row -->
+      <div id="dashboard-charts" style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 22px;flex:1;min-width:240px;max-width:340px">
+          <div class="sl" style="margin-bottom:12px;font-size:12px">Status Distribution</div>
+          <div style="display:flex;align-items:center;gap:16px">
+            <svg id="chart-donut" width="90" height="90" viewBox="0 0 90 90" style="flex-shrink:0"></svg>
+            <div id="chart-legend" style="font-size:11px;line-height:1.8"></div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 22px;flex:1;min-width:200px;max-width:240px;display:flex;flex-direction:column;justify-content:center">
+          <div class="sl" style="margin-bottom:8px;font-size:12px">Avg. Readiness</div>
+          <div id="chart-avg-progress" style="font-size:38px;font-weight:800;color:var(--navy)">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">across all active vessels</div>
+          <div style="background:#e8edf8;border-radius:4px;height:6px;margin-top:10px;overflow:hidden">
+            <div id="chart-avg-bar" style="height:100%;background:var(--navy);border-radius:4px;transition:width .5s;width:0%"></div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 22px;flex:1;min-width:200px;max-width:240px;display:flex;flex-direction:column;justify-content:center">
+          <div class="sl" style="margin-bottom:8px;font-size:12px">Avg. Reply Time</div>
+          <div id="chart-avg-reply" style="font-size:38px;font-weight:800;color:var(--navy)">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">days from send to reply</div>
+        </div>
+      </div>
+      <!-- Metric cards — clickable to filter -->
       <div class="metrics-wrap"><div class="metrics">
-        <div class="metric"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t" style="color:#1D2E6B">0</div><div class="metric-sub">being tracked</div></div>
-        <div class="metric"><div class="metric-label"><i class="ti ti-circle-check" style="color:#003d1a"></i> Ready</div><div class="metric-val" id="m-r" style="color:#003d1a">0</div><div class="metric-sub">ready for installation</div></div>
-        <div class="metric"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w" style="color:#1D2E6B">0</div><div class="metric-sub">under 3 days</div></div>
-        <div class="metric"><div class="metric-label"><i class="ti ti-alert-triangle" style="color:#E24B4A"></i> Require attention</div><div class="metric-val" id="m-a" style="color:#E24B4A">0</div><div class="metric-sub">7+ days or blocker</div></div>
+        <div class="metric" onclick="openMetricModal('total')" style="cursor:pointer;transition:box-shadow .15s" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.10)'" onmouseleave="this.style.boxShadow=''"><div class="metric-label"><i class="ti ti-ship"></i> Total vessels</div><div class="metric-val" id="m-t" style="color:#1D2E6B">0</div><div class="metric-sub">being tracked</div></div>
+        <div class="metric" onclick="openMetricModal('ready')" style="cursor:pointer;transition:box-shadow .15s" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.10)'" onmouseleave="this.style.boxShadow=''"><div class="metric-label"><i class="ti ti-circle-check" style="color:#003d1a"></i> Ready</div><div class="metric-val" id="m-r" style="color:#003d1a">0</div><div class="metric-sub">ready for installation</div></div>
+        <div class="metric" onclick="openMetricModal('waiting')" style="cursor:pointer;transition:box-shadow .15s" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.10)'" onmouseleave="this.style.boxShadow=''"><div class="metric-label"><i class="ti ti-clock"></i> Awaiting reply</div><div class="metric-val" id="m-w" style="color:#1D2E6B">0</div><div class="metric-sub">under 3 days</div></div>
+        <div class="metric" onclick="openMetricModal('attention')" style="cursor:pointer;transition:box-shadow .15s" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.10)'" onmouseleave="this.style.boxShadow=''"><div class="metric-label"><i class="ti ti-alert-triangle" style="color:#E24B4A"></i> Require attention</div><div class="metric-val" id="m-a" style="color:#E24B4A">0</div><div class="metric-sub">7+ days or blocker</div></div>
       </div></div>
       <div class="panel">
         <div class="sh">
@@ -461,6 +485,39 @@
 
     <div class="modal-f" style="margin-top:16px">
       <button class="btn" onclick="document.getElementById('mod-latest-status').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Metric Summary Modal -->
+<div id="mod-metric" class="modal-bg" style="display:none">
+  <div class="modal" style="max-width:780px;max-height:85vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-shrink:0">
+      <div>
+        <div style="font-size:17px;font-weight:800;color:var(--navy)" id="metric-modal-title">Vessels</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px" id="metric-modal-sub"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-p btn-s" onclick="exportMetricToSheet()" style="font-size:12px"><i class="ti ti-table-export"></i> Export to Google Sheet</button>
+        <button class="btn" onclick="document.getElementById('mod-metric').style.display='none'" title="Close (Esc)"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div style="overflow-y:auto;flex:1">
+      <table class="tbl" style="width:100%;font-size:12px">
+        <thead><tr style="background:#f4f6fb">
+          <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Vessel</th>
+          <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Status</th>
+          <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Owner</th>
+          <th style="padding:8px 10px;text-align:center;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Readiness</th>
+          <th style="padding:8px 10px;text-align:center;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Reply Age</th>
+          <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Missing Items</th>
+        </tr></thead>
+        <tbody id="metric-modal-tbody"></tbody>
+      </table>
+    </div>
+    <div style="flex-shrink:0;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span id="metric-modal-count" style="font-size:12px;color:var(--muted)"></span>
+      <button class="btn" onclick="document.getElementById('mod-metric').style.display='none'">Close</button>
     </div>
   </div>
 </div>
