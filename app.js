@@ -2169,7 +2169,7 @@ function openMetricModal(filter){
       <td style="padding:9px 10px"><strong style="font-size:12px">${escapeHtml(v.name)}</strong><div style="font-size:10px;color:var(--muted)">${escapeHtml(v.email||'')}</div></td>
       <td style="padding:9px 10px">${sb(v.status)}</td>
       <td style="padding:9px 10px;font-size:12px">${escapeHtml(owner)}</td>
-      <td style="padding:9px 10px;text-align:center;font-size:12px;font-weight:600;color:var(--navy)">${v.progress||0}%</td>
+      <td style="padding:9px 10px;text-align:center;font-size:12px;font-weight:600;color:var(--navy)">${readinessScore(v)||v.progress||0}%</td>
       <td style="padding:9px 10px;text-align:center">${replyAge!==null?dc(replyAge):'<span style="color:#ccc">—</span>'}</td>
       <td style="padding:9px 10px;font-size:11px;color:var(--muted)">${missing>0?missing+' missing':'<span style="color:#003d1a">✓ Complete</span>'}</td>
     </tr>`;
@@ -2196,7 +2196,7 @@ async function exportMetricToSheet(){
     const replyAge=v.lastReceivedDate?ds(v.lastReceivedDate):'';
     const missing=(v.missingItems||[]).join(', ');
     const lastAct=v.lastActivity||v.lastReceivedDate||v.lastEmailDate||'';
-    return[v.name||'',v.email||'',sbText(v.status||''),owner,v.progress||0,replyAge,missing,lastAct];
+    return[v.name||'',v.email||'',sbText(v.status||''),owner,readinessScore(v)||v.progress||0,replyAge,missing,lastAct];
   });
   try{
     // Create new spreadsheet
