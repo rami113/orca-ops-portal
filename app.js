@@ -2083,42 +2083,56 @@ function updateMetrics(){
 // ── Dashboard Charts ──────────────────────────────────────────────────────────
 function _updateCharts(myVessels){
   if(!myVessels||!myVessels.length)return;
-  // Metric category donut — matches the 4 cards (Ready / Awaiting Reply / Require Attention / Other)
+  // ── Donut 1: Status Distribution (original — by status value) ────────────────
+  const statusColors={
+    waiting:'#6b7fa8',followup:'#E8A838','csm-followup':'#5B8EE6',
+    ready:'#1D6B3E',scheduled:'#2E86AB',completed:'#888'
+  };
+  const statusCounts={};
+  myVessels.forEach(v=>{const s=v.status||'waiting';statusCounts[s]=(statusCounts[s]||0)+1;});
   const total=myVessels.length;
+  const _buildDonut=(svgId,legendId,slices,centerText)=>{
+    const cx=45,cy=45,r=32,stroke=14;
+    let offset=0,paths='',legendHtml='';
+    const tot=slices.reduce((s,sl)=>s+sl.count,0)||1;
+    slices.forEach(({label,count,color})=>{
+      const pct=count/tot;
+      const angle=pct*2*Math.PI;
+      const x1=cx+r*Math.sin(offset);const y1=cy-r*Math.cos(offset);
+      offset+=angle;
+      const x2=cx+r*Math.sin(offset);const y2=cy-r*Math.cos(offset);
+      const large=pct>0.5?1:0;
+      if(slices.length===1||Math.abs(angle-2*Math.PI)<0.001){
+        paths+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"/>`;
+      } else {
+        paths+=`<path d="M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" opacity=".9"/>`;
+      }
+      legendHtml+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="width:10px;height:10px;border-radius:2px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:var(--text);font-size:11px">${label}: <strong>${count}</strong></span></div>`;
+    });
+    paths+=`<circle cx="${cx}" cy="${cy}" r="${r-stroke/2}" fill="#fff"/>`;
+    paths+=`<text x="${cx}" y="${cy+5}" text-anchor="middle" style="font-size:14px;font-weight:700;fill:var(--navy)">${centerText}</text>`;
+    const el=document.getElementById(svgId);if(el)el.innerHTML=paths;
+    const lel=document.getElementById(legendId);if(lel)lel.innerHTML=legendHtml;
+  };
+  // Status distribution slices
+  const statusSlices=Object.entries(statusCounts)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([s,c])=>({label:sbText(s),count:c,color:statusColors[s]||'#ccc'}));
+  _buildDonut('chart-donut','chart-legend',statusSlices,total);
+
+  // ── Donut 2: Fleet Overview — matches the 4 metric cards ─────────────────────
   const catReady=myVessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
   const catAttention=myVessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
   const catWaiting=myVessels.filter(v=>v.status==='waiting').length;
   const catOther=Math.max(0,total-catReady-catAttention-catWaiting);
-  const slices=[
+  const metricSlices=[
+    {label:'Total Vessels',count:total,color:'#1D2E6B'},
     {label:'Ready',count:catReady,color:'#1D6B3E'},
-    {label:'Awaiting Reply',count:catWaiting,color:'#1D2E6B'},
+    {label:'Awaiting Reply',count:catWaiting,color:'#6b7fa8'},
     {label:'Require Attention',count:catAttention,color:'#E24B4A'},
     ...(catOther>0?[{label:'Other',count:catOther,color:'#b0b8c9'}]:[])
-  ].filter(s=>s.count>0);
-  // Build donut SVG
-  const cx=45,cy=45,r=32,stroke=14;
-  let offset=0,paths='',legendHtml='';
-  slices.forEach(({label,count,color})=>{
-    const pct=count/total;
-    const angle=pct*2*Math.PI;
-    const x1=cx+r*Math.sin(offset);const y1=cy-r*Math.cos(offset);
-    offset+=angle;
-    const x2=cx+r*Math.sin(offset);const y2=cy-r*Math.cos(offset);
-    const large=pct>0.5?1:0;
-    if(slices.length===1||Math.abs(angle-2*Math.PI)<0.001){
-      paths+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"/>`;
-    } else {
-      paths+=`<path d="M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" opacity=".9"/>`;
-    }
-    legendHtml+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px"><span style="width:10px;height:10px;border-radius:2px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:var(--text);font-size:11px">${label}: <strong>${count}</strong></span></div>`;
-  });
-  // White center to create donut effect
-  paths+=`<circle cx="${cx}" cy="${cy}" r="${r-stroke/2}" fill="#fff"/>`;
-  paths+=`<text x="${cx}" y="${cy+5}" text-anchor="middle" style="font-size:14px;font-weight:700;fill:var(--navy)">${total}</text>`;
-  const donutEl=document.getElementById('chart-donut');
-  if(donutEl)donutEl.innerHTML=paths;
-  const legendEl=document.getElementById('chart-legend');
-  if(legendEl)legendEl.innerHTML=legendHtml;
+  ].filter(s=>s.count>0&&s.label!=='Total Vessels');
+  _buildDonut('chart-donut2','chart-legend2',metricSlices,total);
   // Avg readiness — use readinessScore() same as the table, exclude completed
   const active=myVessels.filter(v=>v.status!=='completed');
   const avgProgress=active.length?Math.round(active.reduce((s,v)=>s+(readinessScore(v)||v.progress||0),0)/active.length):0;
