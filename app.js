@@ -2033,7 +2033,7 @@ function _renderTableImpl(){
               ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
               : '<span style="font-size:10px;color:#bbb;border:1px dashed #ccc;border-radius:4px;padding:2px 8px;display:inline-block">+ Add fleet</span>'}
           ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
-              ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px">&#8644; Transferred to '+v.lastTransferTo.split('@')[0]+'</span>'
+              ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:6px">&#8644; Transferred to '+v.lastTransferTo.split('@')[0]+'</span>'
               : ''}
           ${v._ccDropWarning?'<span style="font-size:10px;background:#fde8e8;color:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;margin-top:2px" title="Captain replied to only one team member — others may not see this reply">&#9888; CC chain broken</span>':''}
           </div>
@@ -2068,17 +2068,16 @@ function _renderTableImpl(){
   }).join('');
 }
 function updateMetrics(){
-  const myEmail=normEmail(user&&user.email);
-  const myVessels=isSuperAdmin()?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')==myEmail||!v.assignedTo);
-  document.getElementById('m-t').textContent=myVessels.length;
-  const _rCount=myVessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  // Use vessels directly — same data the table is built from
+  document.getElementById('m-t').textContent=vessels.length;
+  const _rCount=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
   const _mrEl=document.getElementById('m-r');if(_mrEl){_mrEl.textContent=_rCount;_mrEl.style.color='#003d1a';}
   const _atEl=document.getElementById('m-a');
-  const _atCount=myVessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+  const _atCount=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
   if(_atEl){_atEl.textContent=_atCount;_atEl.style.color=_atCount>0?'#E24B4A':'#1D2E6B';}
-  document.getElementById('m-w').textContent=myVessels.filter(v=>v.status==='waiting').length;
-  // Update charts
-  _updateCharts(myVessels);
+  document.getElementById('m-w').textContent=vessels.filter(v=>v.status==='waiting').length;
+  // Update charts with same full vessel set
+  _updateCharts(vessels);
 }
 
 // ── Dashboard Charts ──────────────────────────────────────────────────────────
@@ -2120,9 +2119,9 @@ function _updateCharts(myVessels){
   if(donutEl)donutEl.innerHTML=paths;
   const legendEl=document.getElementById('chart-legend');
   if(legendEl)legendEl.innerHTML=legendHtml;
-  // Avg readiness
+  // Avg readiness — use readinessScore() same as the table, exclude completed
   const active=myVessels.filter(v=>v.status!=='completed');
-  const avgProgress=active.length?Math.round(active.reduce((s,v)=>s+(v.progress||0),0)/active.length):0;
+  const avgProgress=active.length?Math.round(active.reduce((s,v)=>s+(readinessScore(v)||v.progress||0),0)/active.length):0;
   const avgEl=document.getElementById('chart-avg-progress');
   const avgBar=document.getElementById('chart-avg-bar');
   if(avgEl)avgEl.textContent=avgProgress+'%';
