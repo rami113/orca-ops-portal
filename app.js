@@ -2037,9 +2037,18 @@ function _renderTableImpl(){
                ? '<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">&#9749; '+v.fleet+'</span>'
                : ''}
              <button onclick="event.stopPropagation();editVesselFleet(${idx})" title="Edit fleet" style="width:20px;height:20px;border:1px solid #d0d8e8;border-radius:4px;background:#f4f6fb;color:#6b7fa8;cursor:pointer;font-size:10px;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0"><i class="ti ti-pencil"></i></button>
-           ${v.lastTransferTo&&v.lastTransferAt&&(Date.now()-new Date(v.lastTransferAt).getTime())<86400000*3
-               ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;width:100%;margin-top:4px">&#8644; '+(v.lastTransferFrom?v.lastTransferFrom.split('@')[0]+' → ':'')+v.lastTransferTo.split('@')[0]+'</span>'
-               : ''}
+           ${(()=>{
+               if(!v.lastTransferTo||!v.lastTransferAt||(Date.now()-new Date(v.lastTransferAt).getTime())>=86400000*3)return'';
+               const _to=v.lastTransferTo.split('@')[0];
+               // Find 'from' — stored directly or fall back to timeline
+               let _from=v.lastTransferFrom?v.lastTransferFrom.split('@')[0]:'';
+               if(!_from){
+                 const _tl=(v.timeline||[]).filter(e=>e.type==='assignment').slice(-2);
+                 if(_tl.length>=2)_from=(_tl[_tl.length-2].detail||'').split('→')[0].replace('From:','').trim().split('@')[0];
+               }
+               const _label=_from?`${_from} → ${_to}`:`Transferred to ${_to}`;
+               return`<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;width:100%;margin-top:4px">&#8644; ${_label}</span>`;
+             })()}
            ${v._ccDropWarning?'<span style="font-size:10px;background:#fde8e8;color:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block;width:100%;margin-top:2px" title="Captain replied to only one team member — others may not see this reply">&#9888; CC chain broken</span>':''}
            </div>
         </div>
