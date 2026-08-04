@@ -265,6 +265,7 @@ async function archiveVesselFromView(){
 }
 async function archiveVessel(idx){
   const v=vessels[idx];if(!v)return;
+  _completedVessels=null; // invalidate cache so Completed tab refreshes
   try{
     const existing=await loadArchivedVessels();
     existing.push({...v,archivedAt:new Date().toISOString(),archivedBy:(user&&user.email)||''});
@@ -811,6 +812,10 @@ function showTab(t){
     renderAdmin();
   }
   if(t==='inbox')renderInbox();
+  if(t==='completed'){
+    document.getElementById('tab-completed').classList.add('active');
+    renderCompleted();
+  }
 }
 
 function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required','csm-followup':'CSM Follow-up',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
@@ -2249,44 +2254,143 @@ function openMetricModal(filter){
 
 // ── Export metric to new Google Sheet ────────────────────────────────────────
 async function exportMetricToSheet(){
-  if(!token){await orcaAlert('Please sign in first.','Error');return;}
-  const myEmail=normEmail(user&&user.email);
-  const myVessels=isSuperAdmin()?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')==myEmail||!v.assignedTo);
-  let filtered=myVessels;
-  if(_currentMetricFilter==='ready')filtered=myVessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
-  else if(_currentMetricFilter==='waiting')filtered=myVessels.filter(v=>v.status==='waiting');
-  else if(_currentMetricFilter==='attention')filtered=myVessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
-  const now=new Date().toLocaleDateString('en-GB');
-  const titleMap={total:'All Vessels',ready:'Ready for Installation',waiting:'Awaiting Reply',attention:'Require Attention'};
-  const sheetTitle=`Orca AI — ${titleMap[_currentMetricFilter]||'Vessels'} (${now})`;
-  // Build rows
-  const headers=['Vessel Name','Email','Status','Owner','Readiness %','Reply Age (days)','Missing Items','Last Activity'];
-  const rows=filtered.map(v=>{
-    const owner=(TEAM_USERS.find(u=>u.email===(v.assignedTo||''))?.name||v.assignedTo||'Unassigned');
-    const replyAge=v.lastReceivedDate?ds(v.lastReceivedDate):'';
-    const missing=(v.missingItems||[]).join(', ');
-    const lastAct=v.lastActivity||v.lastReceivedDate||v.lastEmailDate||'';
-    return[v.name||'',v.email||'',sbText(v.status||''),owner,readinessScore(v)||v.progress||0,replyAge,missing,lastAct];
-  });
-  try{
-    // Create new spreadsheet
-    const createRes=await fetch('https://sheets.googleapis.com/v4/spreadsheets',{
-      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({properties:{title:sheetTitle},sheets:[{properties:{title:'Vessels'}}]})
+  // Delegate to persistent export — same file overwritten each time
+  await exportActiveToSheet(_currentMetricFilter);
+}
+// ── Completed Vessels Tab ─────────────────────────────────────────────────────
+let _completedVessels=null; // cached after first load
+
+async function renderCompleted(){
+  const tbody=document.getElementById('completed-tbody');
+  const table=document.getElementById('completed-table');
+  const empty=document.getElementById('completed-empty');
+  const loading=document.getElementById('completed-loading');
+  if(!tbody)return;
+  // Load from archive Sheet if not already cached
+  if(!_completedVessels){
+    if(loading)loading.style.display='block';
+    if(table)table.style.display='none';
+    if(empty)empty.style.display='none';
+    _completedVessels=await loadArchivedVessels();
+    if(loading)loading.style.display='none';
+  }
+  const search=(document.getElementById('completed-search')?.value||'').toLowerCase();
+  const filtered=_completedVessels.filter(v=>
+    !search||v.name?.toLowerCase().includes(search)||v.email?.toLowerCase().includes(search)||v.fleet?.toLowerCase().includes(search)
+  );
+  if(!filtered.length){
+    if(table)table.style.display='none';
+    if(empty)empty.style.display='block';
+    return;
+  }
+  if(empty)empty.style.display='none';
+  if(table)table.style.display='';
+  tbody.innerHTML=filtered.map((v,i)=>{
+    const archivedDate=v.archivedAt?new Date(v.archivedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';
+    const owner=(TEAM_USERS.find(u=>u.email===(v.assignedTo||''))?.name||v.assignedTo||'—').split('@')[0];
+    const score=readinessScore(v)||v.progress||0;
+    return`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:10px"><strong style="font-size:13px">${escapeHtml(v.name||'')}</strong><div style="font-size:11px;color:var(--muted)">${escapeHtml(v.email||'')}</div></td>
+      <td style="padding:10px">${sb(v.status||'completed')}</td>
+      <td style="padding:10px;font-size:12px">${escapeHtml(owner)}</td>
+      <td style="padding:10px;text-align:center;font-size:12px;font-weight:600;color:var(--navy)">${score}%</td>
+      <td style="padding:10px;font-size:12px">${v.fleet?`<span style="font-size:10px;background:#e8edf8;color:#1D2E6B;border-radius:4px;padding:2px 8px;font-weight:600">&#9749; ${escapeHtml(v.fleet)}</span>`:'—'}</td>
+      <td style="padding:10px;font-size:12px;color:var(--muted)">${archivedDate}</td>
+      <td style="padding:10px"><button class="btn btn-s" onclick="openCompletedVessel(${i})" style="font-size:11px"><i class="ti ti-eye"></i> View</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function openCompletedVessel(i){
+  if(!_completedVessels||!_completedVessels[i])return;
+  const v=_completedVessels[i];
+  // Push into vessels array temporarily and open View modal
+  const tmpIdx=vessels.length;
+  vessels.push(v);
+  openV(tmpIdx);
+  // Remove after modal closes — patch the close button
+  setTimeout(()=>{
+    const closeButtons=document.querySelectorAll('#mod-view .btn');
+    closeButtons.forEach(btn=>{
+      if(btn.textContent.includes('Close')||btn.querySelector('.ti-x')){
+        const orig=btn.onclick;
+        btn.onclick=()=>{vessels.splice(tmpIdx,1);if(orig)orig();document.getElementById('mod-view').style.display='none';};
+      }
     });
-    if(!createRes.ok){await orcaAlert('Could not create spreadsheet. Check Google Sheets access.','Error');return;}
-    const ss=await createRes.json();
-    const ssId=ss.spreadsheetId;
-    // Write data
+  },50);
+}
+
+// ── Completed vessels export — persistent file (overwrite same Sheet each time) ──
+const _COMPLETED_EXPORT_KEY='orca_completed_export_id';
+async function exportCompletedToSheet(){
+  if(!token){await orcaAlert('Please sign in first.','Error');return;}
+  if(!_completedVessels||!_completedVessels.length){await orcaAlert('No completed vessels to export.','Notice');return;}
+  const search=(document.getElementById('completed-search')?.value||'').toLowerCase();
+  const toExport=search?_completedVessels.filter(v=>v.name?.toLowerCase().includes(search)||v.email?.toLowerCase().includes(search)):_completedVessels;
+  const headers=['Vessel Name','Email','Status','Owner','Readiness %','Fleet','Completed Date','Missing Items'];
+  const rows=toExport.map(v=>{
+    const owner=(TEAM_USERS.find(u=>u.email===(v.assignedTo||''))?.name||v.assignedTo||'');
+    const archivedDate=v.archivedAt?new Date(v.archivedAt).toLocaleDateString('en-GB'):'';
+    return[v.name||'',v.email||'',sbText(v.status||''),owner,readinessScore(v)||v.progress||0,v.fleet||'',archivedDate,(v.missingItems||[]).join(', ')];
+  });
+  await _persistentExport(_COMPLETED_EXPORT_KEY,'Orca AI — Completed Vessels',headers,rows);
+}
+
+// ── Active vessels export — persistent file ───────────────────────────────────
+const _ACTIVE_EXPORT_KEY='orca_active_export_id';
+async function exportActiveToSheet(filter){
+  if(!token){await orcaAlert('Please sign in first.','Error');return;}
+  let toExport=vessels;
+  const titles={total:'Orca AI — All Vessels',ready:'Orca AI — Ready Vessels',waiting:'Orca AI — Awaiting Reply',attention:'Orca AI — Require Attention'};
+  if(filter==='ready')toExport=vessels.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed');
+  else if(filter==='waiting')toExport=vessels.filter(v=>v.status==='waiting');
+  else if(filter==='attention')toExport=vessels.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7);
+  if(!toExport.length){await orcaAlert('No vessels in this category.','Notice');return;}
+  const key=`orca_export_${filter||'total'}`;
+  const title=titles[filter]||titles.total;
+  const headers=['Vessel Name','Email','Status','Owner','Readiness %','Reply Age (days)','Missing Items','Last Activity'];
+  const rows=toExport.map(v=>{
+    const owner=(TEAM_USERS.find(u=>u.email===(v.assignedTo||''))?.name||v.assignedTo||'');
+    return[v.name||'',v.email||'',sbText(v.status||''),owner,readinessScore(v)||v.progress||0,v.lastReceivedDate?ds(v.lastReceivedDate):'',(v.missingItems||[]).join(', '),v.lastActivity||''];
+  });
+  await _persistentExport(key,title,headers,rows);
+}
+
+// ── Shared persistent export logic ───────────────────────────────────────────
+// Stores the spreadsheet ID in localStorage. First call creates the file,
+// subsequent calls overwrite the same file — no Drive clutter.
+async function _persistentExport(storageKey,title,headers,rows){
+  const existingId=localStorage.getItem(storageKey)||'';
+  let ssId=existingId;
+  try{
+    if(ssId){
+      // Check if the file still exists
+      const check=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}?fields=spreadsheetId`,{headers:{Authorization:'Bearer '+token}});
+      if(!check.ok)ssId=''; // deleted — create fresh
+    }
+    if(!ssId){
+      // Create new spreadsheet
+      const cr=await fetch('https://sheets.googleapis.com/v4/spreadsheets',{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({properties:{title},sheets:[{properties:{title:'Data'}}]})
+      });
+      if(!cr.ok){await orcaAlert('Could not create spreadsheet.','Error');return;}
+      const ss=await cr.json();ssId=ss.spreadsheetId;
+      localStorage.setItem(storageKey,ssId);
+    }
+    // Clear existing content then write fresh data
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Data!A:Z:clear`,{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
+    });
     const values=[headers,...rows];
-    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Vessels!A1:H${values.length}?valueInputOption=RAW`,{
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/Data!A1?valueInputOption=RAW`,{
       method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
       body:JSON.stringify({values})
     });
-    // Open in new tab
-    window.open(`https://docs.google.com/spreadsheets/d/${ssId}`, '_blank');
-  }catch(e){console.error('exportMetricToSheet failed',e);await orcaAlert('Export failed: '+(e.message||e),'Error');}
+    window.open(`https://docs.google.com/spreadsheets/d/${ssId}`,'_blank');
+  }catch(e){console.error('export failed',e);await orcaAlert('Export failed: '+(e.message||e),'Error');}
 }
+
 function populateSel(){const s=document.getElementById('ra-sel');if(!s)return;s.innerHTML='<option value="">— Select vessel —</option>';vessels.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=v.name;s.appendChild(o);});}
 
 // START MODAL

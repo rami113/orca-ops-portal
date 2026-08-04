@@ -54,6 +54,7 @@
         <button class="tab active" onclick="showTab('dashboard')"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
         <button class="tab" onclick="showTab('inbox')"><i class="ti ti-inbox"></i> Inbox<span class="ib-badge" id="ib-count" style="display:none">0</span></button>
 
+        <button class="tab" id="tab-completed" onclick="showTab('completed')"><i class="ti ti-circle-check"></i> Completed</button>
         <button class="tab" id="tab-admin" style="display:none" onclick="showTab('admin')"><i class="ti ti-settings"></i> Admin</button>
       </nav>
     </div>
@@ -235,8 +236,33 @@
       </div>
     </div>
 
-    <!-- ADMIN -->
-    <div id="view-admin" class="view">
+     <!-- COMPLETED -->
+     <div id="view-completed" class="view">
+       <div class="panel">
+         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px">
+           <div>
+             <div style="font-size:15px;font-weight:700">Completed Vessels</div>
+             <div style="font-size:12px;color:var(--muted);margin-top:2px">Installations that have been completed and archived from the main list</div>
+           </div>
+           <div style="display:flex;gap:10px;align-items:center">
+             <input id="completed-search" type="text" placeholder="Search vessels..." oninput="renderCompleted()" style="padding:6px 12px;border:1px solid var(--border);border-radius:var(--rs);font-size:13px;font-family:inherit;width:200px">
+             <button class="btn btn-p btn-s" onclick="exportCompletedToSheet()" style="font-size:12px"><i class="ti ti-table-export"></i> Export to Google Sheet</button>
+           </div>
+         </div>
+         <div id="completed-loading" style="text-align:center;padding:2rem;color:var(--muted);display:none"><div class="spinner" style="margin:0 auto 10px"></div>Loading completed vessels...</div>
+         <div id="completed-empty" style="text-align:center;padding:3rem;color:var(--muted);display:none"><i class="ti ti-circle-check" style="font-size:40px;color:#d0d0d0;display:block;margin-bottom:10px"></i>No completed vessels yet.</div>
+         <table class="tbl" id="completed-table" style="width:100%;display:none">
+           <thead><tr>
+             <th>Vessel</th><th>Status</th><th>Owner</th><th style="text-align:center">Readiness</th>
+             <th>Fleet</th><th>Completed</th><th>Actions</th>
+           </tr></thead>
+           <tbody id="completed-tbody"></tbody>
+         </table>
+       </div>
+     </div>
+
+     <!-- ADMIN -->
+     <div id="view-admin" class="view">
       <div class="panel">
         <div class="panel-title"><i class="ti ti-settings"></i> Admin panel</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:.5rem">Visible to Super Admin and Admin Level 2. Destructive system actions are Super Admin only.</p><div id="current-role-info" style="font-size:12px;color:var(--muted);margin-bottom:.5rem"></div><div id="shared-db-status" style="font-size:12px;color:var(--muted);margin-bottom:1.5rem"></div>
