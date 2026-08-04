@@ -11,6 +11,44 @@ const REQUIRED_ITEMS=[
 ];
 console.log("ORCA v35.11 visible reset shared db loaded");
 window.ORCA_FIX_VERSION="v35.11";
+
+// ── Auto-update detection ─────────────────────────────────────────────────────
+// Silently checks app.js ETag every 3 minutes. If Vercel deployed a new version,
+// shows a gentle banner so users can refresh at their convenience.
+(function(){
+  let _loadEtag='';
+  let _bannerShown=false;
+
+  async function _getEtag(){
+    try{
+      const r=await fetch('/app.js?_etag=1',{method:'HEAD',cache:'no-store'});
+      return r.headers.get('etag')||r.headers.get('last-modified')||'';
+    }catch(e){return'';}
+  }
+
+  async function _checkForUpdate(){
+    if(_bannerShown)return;
+    const etag=await _getEtag();
+    if(!etag)return;
+    if(!_loadEtag){_loadEtag=etag;return;} // first check — just record baseline
+    if(etag===_loadEtag)return; // no change
+    // New version detected — show banner
+    _bannerShown=true;
+    const banner=document.createElement('div');
+    banner.id='update-banner';
+    banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#1D2E6B;color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    banner.innerHTML=`<span><strong>🔄 New version available</strong> — A portal update has been deployed.</span>
+      <div style="display:flex;gap:10px">
+        <button onclick="window.location.reload()" style="background:#fff;color:#1D2E6B;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Update now</button>
+        <button onclick="document.getElementById('update-banner').remove()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Later</button>
+      </div>`;
+    document.body.appendChild(banner);
+  }
+
+  // Check once on load (after 30s to let the app settle), then every 3 minutes
+  setTimeout(()=>_checkForUpdate(),30000);
+  setInterval(()=>_checkForUpdate(),3*60*1000);
+})();
 const GOOGLE_CLIENT_IDS={
   'orca-ops-portal.vercel.app':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
   'localhost':'150805623615-mhhaoc9unbua12lkqs8rtao8nmif3buf.apps.googleusercontent.com',
