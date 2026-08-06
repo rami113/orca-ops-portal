@@ -420,18 +420,21 @@ async function saveSharedVessels(data){
     }).filter(Boolean);
 
     // Clear the entire vessels tab then write one row per vessel
+    // Clear all rows before writing fresh data
     const clearUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}:clear`;
-    await fetch(clearUrl,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'});
+    const clearR=await fetch(clearUrl,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'});
+    if(!clearR.ok){console.error('Shared DB clear failed',await clearR.text());return false;}
 
     if(!safeData.length){sharedDbLastSync=new Date().toISOString();return true;}
 
     // Write: column A = vessel ID (for quick lookup), column B = full vessel JSON
+    // NOTE: encode sheet name only, never the full range (! and : must not be encoded)
     const values=safeData.map(v=>[String(v.id||v.name||''),JSON.stringify(v)]);
-    const range=`${SHARED_SHEET_NAME}!A1:B${values.length}`;
-    const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,{
+    const range=`${encodeURIComponent(SHARED_SHEET_NAME)}!A1:B${values.length}`;
+    const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${range}?valueInputOption=RAW`,{
       method:'PUT',
       headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({range,majorDimension:'ROWS',values})
+      body:JSON.stringify({range:`${SHARED_SHEET_NAME}!A1:B${values.length}`,majorDimension:'ROWS',values})
     });
     if(!r.ok){console.error('Shared DB save HTTP error',await r.text());return false;}
     sharedDbLastSync=new Date().toISOString();
