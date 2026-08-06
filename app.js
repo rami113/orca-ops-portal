@@ -324,25 +324,22 @@ function hasSharedDb(){return String(SHARED_SHEET_ID||'').trim().length>20;}
 function sharedDbUrl(range){
   return `https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}!${range}`;
 }
+// ── Phase 7: Per-row vessel storage ──────────────────────────────────────────
+// Each vessel is stored as one row in the Sheet: [vesselId, vesselJSON]
+// Scales to 500+ vessels with no size limits. Auto-migrates from the old
+// single-blob format (cell A1 = JSON array) on first load.
+
 async function ensureSharedDb(){
   if(!hasSharedDb()||!token){sharedDbReady=false;return false;}
   try{
-    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    const r=await fetch(sharedDbUrl('A1:B1'),{headers:{Authorization:'Bearer '+token}});
     if(r.status===403){
-      console.error('Sheets 403 - no permission. Requesting re-consent.');
       const lbl=document.getElementById('last-refresh-label');
       if(lbl)lbl.textContent='⚠️ Google Sheets access denied - re-authorizing...';
       if(tc)tc.requestAccessToken({prompt:'consent'});
       sharedDbReady=false;return false;
     }
-    if(!r.ok){
-      console.error('Sheets error',r.status);
-      sharedDbReady=false;return false;
-    }
-    const d=await r.json();
-    const val=d.values&&d.values[0]&&d.values[0][0];
-    if(!val)await saveSharedVessels([]);
-    else{try{JSON.parse(val);}catch(e){await saveSharedVessels([]);}}
+    if(!r.ok){sharedDbReady=false;return false;}
     sharedDbReady=true;
     return true;
   }catch(e){
@@ -351,49 +348,92 @@ async function ensureSharedDb(){
     return false;
   }
 }
+
 async function loadSharedVessels(){
   if(!hasSharedDb()||!token)return null;
   try{
-    const r=await fetch(sharedDbUrl('A1'),{headers:{Authorization:'Bearer '+token}});
+    // Read all rows — per-row format uses A:B, old blob used only A1
+    const r=await fetch(sharedDbUrl('A:B'),{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok)return null;
     const d=await r.json();
-    const val=d.values&&d.values[0]&&d.values[0][0];
-    if(!val)return [];
-    const parsed=JSON.parse(val);
-    if(Array.isArray(parsed))return parsed;
-    if(parsed&&Array.isArray(parsed.vessels))return parsed.vessels;
-    return [];
+    const rows=(d.values||[]);
+    if(!rows.length)return [];
+
+    // ── Auto-migration: detect old single-blob format ──
+    // Old format: A1 contains a JSON array string starting with "["
+    const firstCell=rows[0][0]||'';
+    const isOldBlob=firstCell.trimStart().startsWith('[')
+      ||(firstCell.trimStart().startsWith('{')&&firstCell.includes('"vessels"'));
+    if(isOldBlob){
+      console.log('[Phase7] Detected old blob format — migrating to per-row storage...');
+      try{
+        const parsed=JSON.parse(firstCell);
+        const oldVessels=Array.isArray(parsed)?parsed:(parsed.vessels||[]);
+        if(oldVessels.length>0){
+          // Write in new per-row format (this clears the old blob)
+          await saveSharedVessels(oldVessels);
+          console.log('[Phase7] Migration complete —',oldVessels.length,'vessels converted to per-row format');
+        }
+        return oldVessels;
+      }catch(e){
+        console.error('[Phase7] Migration failed',e);
+        return [];
+      }
+    }
+
+    // ── New per-row format: each row is [vesselId, vesselJSON] ──
+    const vessels=[];
+    for(const row of rows){
+      const json=row[1]||row[0]||''; // B column = full JSON, A = id (fallback)
+      if(!json)continue;
+      try{
+        const v=JSON.parse(json);
+        if(v&&(v.name||v.id))vessels.push(v);
+      }catch(e){/* skip malformed rows */}
+    }
+    return vessels;
   }catch(e){
     console.error('Shared DB load failed',e);
     return null;
   }
-}function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
+}
+
+function setLocalResetAt(ts){if(ts)localStorage.setItem('orca_shared_reset_at',ts);}
 function parseSharedPayload(raw){
+  // Legacy helper — kept for any remaining callers
   try{
     if(Array.isArray(raw))return {resetAt:'',vessels:raw};
     if(raw&&typeof raw==='object'&&Array.isArray(raw.vessels))return raw;
-    if(typeof raw==='string'){
-      const parsed=JSON.parse(raw);
-      if(Array.isArray(parsed))return {resetAt:'',vessels:parsed};
-      if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.vessels))return parsed;
-    }
   }catch(e){}
   return {resetAt:'',vessels:[]};
 }
+
 async function saveSharedVessels(data){
   if(!hasSharedDb()||!token)return false;
   try{
-    // Sanitize, trim timelines, and guard blob size before every write
-    const safeData=guardBlobSize((data||[]).map(v=>{sanitizeVessel(v);trimTimeline(v);return v;}));
-    const body={range:`${SHARED_SHEET_NAME}!A1`,majorDimension:'ROWS',values:[[JSON.stringify(safeData)]]};
-    const r=await fetch(sharedDbUrl('A1')+'?valueInputOption=RAW',{
+    // Sanitize and trim each vessel individually — no blob size limit applies
+    const safeData=(data||[]).map(v=>{
+      const vc=v?{...v}:v;
+      sanitizeVessel(vc);
+      trimTimeline(vc);
+      return vc;
+    }).filter(Boolean);
+
+    // Clear the entire vessels tab then write one row per vessel
+    const clearUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}:clear`;
+    await fetch(clearUrl,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'});
+
+    if(!safeData.length){sharedDbLastSync=new Date().toISOString();return true;}
+
+    // Write: column A = vessel ID (for quick lookup), column B = full vessel JSON
+    const values=safeData.map(v=>[String(v.id||v.name||''),JSON.stringify(v)]);
+    const range=`${SHARED_SHEET_NAME}!A1:B${values.length}`;
+    const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,{
       method:'PUT',
       headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify(body)
+      body:JSON.stringify({range,majorDimension:'ROWS',values})
     });
-    if(!r.ok){
-      console.error('Shared DB save HTTP error',await r.text());
-      return false;
-    }
+    if(!r.ok){console.error('Shared DB save HTTP error',await r.text());return false;}
     sharedDbLastSync=new Date().toISOString();
     return true;
   }catch(e){
@@ -3865,13 +3905,10 @@ async function resetSharedDatabase(){
     localStorage.setItem('orca_shared_reset_at',resetAt);
     if(typeof saveLocal==='function')saveLocal();
 
-    // write reset marker to the shared sheet
+    // Clear the vessels sheet (per-row format — just pass empty array)
     if(typeof saveSharedVessels==='function'){
-      const saved=await saveSharedVessels({resetAt:resetAt,vessels:[]});
-      if(!saved){
-        const saved2=await saveSharedVessels([]);
-        if(!saved2)throw new Error('saveSharedVessels failed');
-      }
+      const saved=await saveSharedVessels([]);
+      if(!saved)throw new Error('saveSharedVessels failed');
     }else{
       throw new Error('saveSharedVessels is missing');
     }
