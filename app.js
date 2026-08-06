@@ -75,15 +75,15 @@ const ADMIN_L2=[
 
 const TEAM_USERS=[
   {email:'rami@orca-ai.io',name:'Rami Moscovich',role:'Super Admin'},
-  {email:'amir.m@orca-ai.io',name:'Amir M',role:'Admin L2'},
-  {email:'israel@orca-ai.io',name:'Israel',role:'Admin L2'},
-  {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin L2'},
-  {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin L2'},
-  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin L2'},
-  {email:'timothy@orca-ai.io',name:'Timothy',role:'User L2'},
-  {email:'opsrep2@orca-ai.io',name:'Ops Rep 2',role:'User L2'},
-  {email:'opsrep1@orca-ai.io',name:'Ops Rep 1',role:'User L2'},
-  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin L2'}
+  {email:'amir.m@orca-ai.io',name:'Amir M',role:'Admin'},
+  {email:'israel@orca-ai.io',name:'Israel',role:'Admin'},
+  {email:'jacob@orca-ai.io',name:'Jacob',role:'Admin'},
+  {email:'yotam.keret@orca-ai.io',name:'Yotam Keret',role:'Admin'},
+  {email:'yaron.y@orca-ai.io',name:'Yaron Y',role:'Admin'},
+  {email:'timothy@orca-ai.io',name:'Timothy',role:'User'},
+  {email:'opsrep2@orca-ai.io',name:'Ops Rep 2',role:'User'},
+  {email:'opsrep1@orca-ai.io',name:'Ops Rep 1',role:'User'},
+  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin'}
 ];
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
@@ -105,7 +105,7 @@ function isAdmin(email){
 function roleLabel(email){
   const role=getUserRole(email);
   if(role==='super-admin')return 'Super Admin';
-  if(role==='admin-l2')return 'Admin L2';
+  if(role==='admin-l2')return 'Admin';
   return 'User';
 }
 function applyUserRole(){
@@ -3805,7 +3805,7 @@ function renderAdmin(){
   });
   document.getElementById('adm-u').innerHTML=users.length?users.map(u=>{
     const role=roleLabel(u.email);
-    const cls=role==='Super Admin'?'bn':role==='Admin L2'?'bb':'bg';
+    const cls=role==='Super Admin'?'bn':role==='Admin'?'bb':'bg';
     return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
       <img src="${u.pic||''}" style="width:24px;height:24px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'"/>
       <span style="flex:1">${u.name||u.email}<br><span style="font-size:11px;color:var(--faint)">${u.email}</span></span>
