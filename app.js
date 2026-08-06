@@ -454,6 +454,22 @@ async function loadVessels(){
     if(ok){
       const shared=await loadSharedVessels();
       if(Array.isArray(shared)){
+        // Safety net: if Sheet returns empty but localStorage has vessels, restore them
+        if(shared.length===0){
+          const _lsBackup=localStorage.getItem('orca_v3');
+          if(_lsBackup){
+            try{
+              const _lsVessels=JSON.parse(_lsBackup);
+              if(Array.isArray(_lsVessels)&&_lsVessels.length>0){
+                console.warn('[loadVessels] Sheet empty but localStorage has',_lsVessels.length,'vessels — auto-restoring');
+                vessels=_lsVessels.map(normalizeVessel);
+                saveVessels(); // push back to Sheet
+                if(lbl)lbl.textContent='✅ Restored '+vessels.length+' vessels from local backup';
+                return;
+              }
+            }catch(e){/* localStorage data corrupt, continue with empty */}
+          }
+        }
         vessels=shared.map(normalizeVessel);
         if(lbl)lbl.textContent='✅ Shared DB loaded — '+vessels.length+' vessels';
         console.log('[loadVessels] Loaded',vessels.length,'vessels from Sheet');
@@ -557,6 +573,8 @@ async function saveVessels(_retrying=false){
     if(ok){
       _saveVersion++;
       _showSaveStatus('saved');
+      // Keep localStorage in sync as emergency backup for auto-recovery on next load
+      try{if(vessels.length>0)localStorage.setItem('orca_v3',JSON.stringify(vessels));}catch(e){}
       return;
     }
     // Save failed
@@ -573,7 +591,7 @@ async function saveVessels(_retrying=false){
     }
     return;
   }
-  // No Sheet — fall back to localStorage silently
+  // No Sheet — fall back to localStorage
   sv();
   _showSaveStatus('saved');
 }
