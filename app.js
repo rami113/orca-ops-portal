@@ -1485,7 +1485,9 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
     const icon=iconMap[cat]||'ti-paperclip';
     const filenameTag=autoTagFromFilename(att.filename);
     // Always read tag from vessel.attachmentTags — source of truth, survives poll replacement
-    const savedTag=_savedTags[att.filename]||_savedTags[att.attachmentId]||'';
+    // Also check att.tag directly — set by restoreAttachmentTags from localStorage/vessel
+    // for users who can't access the original Gmail thread (e.g. after vessel transfer)
+    const savedTag=_savedTags[att.filename]||_savedTags[att.attachmentId]||att.tag||'';
     const effectiveTag=savedTag||filenameTag;
     const isAutoTagged=!!filenameTag;
     const isManualTagged=!!savedTag&&!filenameTag;
