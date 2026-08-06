@@ -54,6 +54,7 @@
         <button class="tab active" onclick="showTab('dashboard')"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
         <button class="tab" onclick="showTab('inbox')"><i class="ti ti-inbox"></i> Inbox<span class="ib-badge" id="ib-count" style="display:none">0</span></button>
 
+        <button class="tab" id="tab-analytics" onclick="showTab('analytics')"><i class="ti ti-chart-bar"></i> Analytics</button>
         <button class="tab" id="tab-completed" onclick="showTab('completed')"><i class="ti ti-circle-check"></i> Completed</button>
         <button class="tab" id="tab-admin" style="display:none" onclick="showTab('admin')"><i class="ti ti-settings"></i> Admin</button>
       </nav>
@@ -235,6 +236,59 @@
         </div>
       </div>
     </div>
+
+     <!-- ANALYTICS -->
+     <div id="view-analytics" class="view">
+       <div style="padding:0 0 24px">
+         <!-- Page header -->
+         <div style="margin-bottom:24px">
+           <div style="font-size:22px;font-weight:800;color:var(--navy)">Analytics</div>
+           <div style="font-size:13px;color:var(--muted);margin-top:4px">Fleet-wide performance overview</div>
+         </div>
+
+         <!-- KPI row -->
+         <div id="an-kpi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:24px"></div>
+
+         <!-- Row 2: Status bar + Readiness distribution -->
+         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+           <div class="panel" style="padding:20px">
+             <div class="sl" style="margin-bottom:16px;font-size:12px">Status Breakdown</div>
+             <div id="an-status-bars"></div>
+           </div>
+           <div class="panel" style="padding:20px">
+             <div class="sl" style="margin-bottom:16px;font-size:12px">Readiness Distribution</div>
+             <div id="an-readiness-bars"></div>
+           </div>
+         </div>
+
+         <!-- Row 3: Fleet donut + Team table -->
+         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+           <div class="panel" style="padding:20px">
+             <div class="sl" style="margin-bottom:16px;font-size:12px">Fleet Breakdown</div>
+             <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+               <svg id="an-fleet-donut" width="110" height="110" viewBox="0 0 110 110" style="flex-shrink:0"></svg>
+               <div id="an-fleet-legend" style="font-size:12px;flex:1"></div>
+             </div>
+           </div>
+           <div class="panel" style="padding:20px">
+             <div class="sl" style="margin-bottom:16px;font-size:12px">Team Performance</div>
+             <div id="an-team-table" style="font-size:12px"></div>
+           </div>
+         </div>
+
+         <!-- Row 4: Risk + Reply time -->
+         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+           <div class="panel" style="padding:20px">
+             <div class="sl" style="margin-bottom:16px;font-size:12px">Risk Distribution</div>
+             <div id="an-risk-bars"></div>
+           </div>
+           <div class="panel" style="padding:20px">
+             <div class="sl" style="margin-bottom:16px;font-size:12px">Reply Time Breakdown</div>
+             <div id="an-reply-bars"></div>
+           </div>
+         </div>
+       </div>
+     </div>
 
      <!-- COMPLETED -->
      <div id="view-completed" class="view">

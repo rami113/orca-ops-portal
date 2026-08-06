@@ -816,6 +816,10 @@ function showTab(t){
     document.getElementById('tab-completed').classList.add('active');
     renderCompleted();
   }
+  if(t==='analytics'){
+    document.getElementById('tab-analytics').classList.add('active');
+    renderAnalytics();
+  }
 }
 
 function sbText(s){return {waiting:'Waiting for reply',followup:'Follow-up required','csm-followup':'CSM Follow-up',ready:'Ready for installation',scheduled:'Installation scheduled',completed:'Installation completed'}[s]||'Waiting for reply';}
@@ -2259,6 +2263,152 @@ async function exportMetricToSheet(){
   // Delegate to persistent export — same file overwritten each time
   await exportActiveToSheet(_currentMetricFilter);
 }
+// ── Analytics Tab ─────────────────────────────────────────────────────────────
+function renderAnalytics(){
+  const vv=vessels.filter(v=>v.status!=='');
+  if(!vv.length)return;
+
+  // ── KPI cards ──
+  const total=vv.length;
+  const ready=vv.filter(v=>v.status==='ready'||v.status==='scheduled'||v.status==='completed').length;
+  const attention=vv.filter(v=>v.status==='followup'||v.risk==='high'||ds(v.lastContact)>=7).length;
+  const waiting=vv.filter(v=>v.status==='waiting').length;
+  const avgReady=Math.round(vv.reduce((s,v)=>s+(readinessScore(v)||v.progress||0),0)/total);
+  const withReply=vv.filter(v=>v.lastReceivedDate&&v.lastEmailDate);
+  const avgReplyDays=withReply.length?Math.round(withReply.reduce((s,v)=>s+Math.max(0,(new Date(v.lastReceivedDate)-new Date(v.lastEmailDate))/(86400000)),0)/withReply.length):null;
+
+  const kpis=[
+    {label:'Total Vessels',val:total,color:'var(--navy)',icon:'ti-ship'},
+    {label:'Ready',val:ready,color:'#1D6B3E',icon:'ti-circle-check'},
+    {label:'Need Attention',val:attention,color:'#E24B4A',icon:'ti-alert-triangle'},
+    {label:'Awaiting Reply',val:waiting,color:'#6b7fa8',icon:'ti-clock'},
+    {label:'Avg Readiness',val:avgReady+'%',color:'var(--navy)',icon:'ti-chart-bar'},
+    {label:'Avg Reply Time',val:avgReplyDays!=null?(avgReplyDays<1?'<1d':avgReplyDays+'d'):'—',color:'#2E86AB',icon:'ti-mail'},
+  ];
+  const kpiEl=document.getElementById('an-kpi');
+  if(kpiEl)kpiEl.innerHTML=kpis.map(k=>`
+    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 20px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">
+        <i class="ti ${k.icon}" style="margin-right:4px"></i>${k.label}
+      </div>
+      <div style="font-size:32px;font-weight:800;color:${k.color};line-height:1">${k.val}</div>
+    </div>`).join('');
+
+  // ── Helper: horizontal bar ──
+  const _hbar=(container,items,maxVal)=>{
+    const el=document.getElementById(container);if(!el)return;
+    el.innerHTML=items.map(({label,count,color})=>{
+      const pct=maxVal?Math.round((count/maxVal)*100):0;
+      return`<div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span style="color:var(--text)">${label}</span>
+          <span style="font-weight:700;color:var(--navy)">${count}</span>
+        </div>
+        <div style="background:#f0f2f8;border-radius:4px;height:10px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width .6s"></div>
+        </div>
+      </div>`;
+    }).join('');
+  };
+
+  // ── Status breakdown ──
+  const statusItems=[
+    {label:'Follow-up required',count:vv.filter(v=>v.status==='followup').length,color:'#E8A838'},
+    {label:'Waiting for reply',count:waiting,color:'#6b7fa8'},
+    {label:'CSM Follow-up',count:vv.filter(v=>v.status==='csm-followup').length,color:'#5B8EE6'},
+    {label:'Ready / Scheduled',count:vv.filter(v=>v.status==='ready'||v.status==='scheduled').length,color:'#1D6B3E'},
+    {label:'Completed',count:vv.filter(v=>v.status==='completed').length,color:'#888'},
+  ].filter(s=>s.count>0);
+  _hbar('an-status-bars',statusItems,total);
+
+  // ── Readiness distribution ──
+  const rBuckets=[
+    {label:'0–25%',count:vv.filter(v=>{const s=readinessScore(v)||v.progress||0;return s<25;}).length,color:'#E24B4A'},
+    {label:'25–50%',count:vv.filter(v=>{const s=readinessScore(v)||v.progress||0;return s>=25&&s<50;}).length,color:'#E8A838'},
+    {label:'50–75%',count:vv.filter(v=>{const s=readinessScore(v)||v.progress||0;return s>=50&&s<75;}).length,color:'#2E86AB'},
+    {label:'75–100%',count:vv.filter(v=>{const s=readinessScore(v)||v.progress||0;return s>=75;}).length,color:'#1D6B3E'},
+  ];
+  _hbar('an-readiness-bars',rBuckets,total);
+
+  // ── Fleet donut ──
+  const fleetCounts={};
+  vv.forEach(v=>{const f=v.fleet||'No fleet';fleetCounts[f]=(fleetCounts[f]||0)+1;});
+  const fleetColors=['#1D2E6B','#1D6B3E','#E8A838','#2E86AB','#E24B4A','#5B8EE6','#888','#6b7fa8'];
+  const fleetEntries=Object.entries(fleetCounts).sort((a,b)=>b[1]-a[1]);
+  const cx=55,cy=55,r=38,stroke=16;
+  let offset=0,paths='',fLegend='';
+  fleetEntries.forEach(([fleet,count],fi)=>{
+    const color=fleetColors[fi%fleetColors.length];
+    const pct=count/total;const angle=pct*2*Math.PI;
+    const x1=cx+r*Math.sin(offset);const y1=cy-r*Math.cos(offset);
+    offset+=angle;
+    const x2=cx+r*Math.sin(offset);const y2=cy-r*Math.cos(offset);
+    const large=pct>0.5?1:0;
+    if(fleetEntries.length===1||Math.abs(angle-2*Math.PI)<0.001){
+      paths+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"/>`;
+    } else {
+      paths+=`<path d="M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" opacity=".9"/>`;
+    }
+    fLegend+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="width:12px;height:12px;border-radius:3px;background:${color};display:inline-block;flex-shrink:0"></span><span>${escapeHtml(fleet)}: <strong>${count}</strong></span></div>`;
+  });
+  paths+=`<circle cx="${cx}" cy="${cy}" r="${r-stroke/2}" fill="#fff"/>`;
+  paths+=`<text x="${cx}" y="${cy+5}" text-anchor="middle" style="font-size:16px;font-weight:700;fill:var(--navy)">${total}</text>`;
+  const fDonut=document.getElementById('an-fleet-donut');if(fDonut)fDonut.innerHTML=paths;
+  const fLeg=document.getElementById('an-fleet-legend');if(fLeg)fLeg.innerHTML=fLegend;
+
+  // ── Team performance table ──
+  const teamMap={};
+  vv.forEach(v=>{
+    const owner=v.assignedTo||'Unassigned';
+    if(!teamMap[owner])teamMap[owner]={vessels:0,totalReady:0,totalReply:0,replyCount:0};
+    teamMap[owner].vessels++;
+    teamMap[owner].totalReady+=readinessScore(v)||v.progress||0;
+    if(v.lastReceivedDate&&v.lastEmailDate){
+      const d=(new Date(v.lastReceivedDate)-new Date(v.lastEmailDate))/86400000;
+      if(d>=0){teamMap[owner].totalReply+=d;teamMap[owner].replyCount++;}
+    }
+  });
+  const teamRows=Object.entries(teamMap).sort((a,b)=>b[1].vessels-a[1].vessels).map(([email,d])=>{
+    const name=(TEAM_USERS.find(u=>u.email===email)?.name||email).split('@')[0];
+    const avgR=Math.round(d.totalReady/d.vessels);
+    const avgRep=d.replyCount?Math.round(d.totalReply/d.replyCount):null;
+    return`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 6px;font-weight:600">${escapeHtml(name)}</td>
+      <td style="padding:8px 6px;text-align:center">${d.vessels}</td>
+      <td style="padding:8px 6px;text-align:center;color:var(--navy);font-weight:600">${avgR}%</td>
+      <td style="padding:8px 6px;text-align:center;color:var(--muted)">${avgRep!=null?(avgRep<1?'<1d':avgRep+'d'):'—'}</td>
+    </tr>`;
+  }).join('');
+  const teamEl=document.getElementById('an-team-table');
+  if(teamEl)teamEl.innerHTML=`<table style="width:100%;border-collapse:collapse">
+    <thead><tr style="background:#f4f6fb">
+      <th style="padding:7px 6px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Owner</th>
+      <th style="padding:7px 6px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Vessels</th>
+      <th style="padding:7px 6px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Avg Ready</th>
+      <th style="padding:7px 6px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Avg Reply</th>
+    </tr></thead>
+    <tbody>${teamRows}</tbody>
+  </table>`;
+
+  // ── Risk distribution ──
+  const riskItems=[
+    {label:'High Risk',count:vv.filter(v=>v.risk==='high').length,color:'#E24B4A'},
+    {label:'Medium Risk',count:vv.filter(v=>v.risk==='medium'||!v.risk).length,color:'#E8A838'},
+    {label:'Low Risk',count:vv.filter(v=>v.risk==='low').length,color:'#1D6B3E'},
+  ].filter(r=>r.count>0);
+  _hbar('an-risk-bars',riskItems,total);
+
+  // ── Reply time distribution ──
+  const replyItems=[
+    {label:'No reply yet',count:vv.filter(v=>!v.lastReceivedDate).length,color:'#b0b8c9'},
+    {label:'< 1 day',count:vv.filter(v=>{const d=ds(v.lastReceivedDate);return d!==null&&d<1;}).length,color:'#1D6B3E'},
+    {label:'1–3 days',count:vv.filter(v=>{const d=ds(v.lastReceivedDate);return d!==null&&d>=1&&d<3;}).length,color:'#2E86AB'},
+    {label:'3–7 days',count:vv.filter(v=>{const d=ds(v.lastReceivedDate);return d!==null&&d>=3&&d<7;}).length,color:'#E8A838'},
+    {label:'7+ days',count:vv.filter(v=>{const d=ds(v.lastReceivedDate);return d!==null&&d>=7;}).length,color:'#E24B4A'},
+  ].filter(r=>r.count>0);
+  _hbar('an-reply-bars',replyItems,total);
+}
+
 // ── Completed Vessels Tab ─────────────────────────────────────────────────────
 let _completedVessels=null; // cached after first load
 
