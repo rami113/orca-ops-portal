@@ -3132,13 +3132,17 @@ async function sheetsInboxLoad(){
 }
 
 async function sheetsInboxInit(){
-  // Ensure inbox sheet exists with headers
+  // Ensure inbox sheet exists with a clean header in A1 only
   if(!token||!hasSharedDb())return;
   try{
     const r=await fetch(INBOX_SHEET_URL+'!A1',{headers:{'Authorization':'Bearer '+token}});
     const d=await r.json();
-    if(!d.values){
-      // Create header row
+    const val=(d.values||[])[0]?.[0]||'';
+    if(!val||val!=='msgId'){
+      // Clear and write a single clean header row
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(INBOX_SHEET_NAME)}:clear`,{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
+      });
       await fetch(INBOX_SHEET_URL+'!A1:append?valueInputOption=RAW',{
         method:'POST',
         headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
@@ -3146,6 +3150,23 @@ async function sheetsInboxInit(){
       });
     }
   }catch(e){}
+}
+
+async function clearInboxLog(){
+  if(!isAdmin()){await orcaAlert('Admin access required.','Error');return;}
+  const go=await orcaConfirm('Clear the entire inbox log from Google Sheets?\n\nThis removes all saved reply entries. The portal will repopulate it as new replies arrive. Active inbox items in memory are not affected.','Clear Inbox Log');
+  if(!go)return;
+  try{
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(INBOX_SHEET_NAME)}:clear`,{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
+    });
+    // Re-add clean header
+    await fetch(INBOX_SHEET_URL+'!A1:append?valueInputOption=RAW',{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({values:[['msgId','from','fe','subj','date','body','vesselName','vi','savedAt','savedBy']]})
+    });
+    await orcaAlert('Inbox log cleared successfully.','✅ Done');
+  }catch(e){await orcaAlert('Failed to clear inbox log: '+(e.message||e),'Error');}
 }
 
 async function mergeSharedInbox(){
