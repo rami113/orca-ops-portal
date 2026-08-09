@@ -1807,10 +1807,18 @@ function computeReceivedMissing(vessel, ibItem){
   ).values()];
   const missing=REQUIRED_ITEMS.filter(r=>!hasItem(received,r));
   const complete=missing.length===0;
-  // If captain mentioned attaching files but none were found, add a note in the draft
-  const _missingAttachNote=(!_hasActualFiles&&_strictInBody)
-    ?`Thank you for your reply. We noticed you mentioned sending attachments, however no files were received in your email. Could you please resend the files?\n\n`
-    :'';
+  // If captain mentioned attaching files but none were found, add a specific note in the draft
+  // referencing exactly which items they said they were sending
+  let _missingAttachNote='';
+  if(!_hasActualFiles&&_strictInBody){
+    const _mentionedItems=kwHits.filter(h=>_fileRequired.has(itemKey(h)));
+    const _itemList=_mentionedItems.length>0
+      ? _mentionedItems.map(x=>'• '+x).join('\n')
+      : '';
+    _missingAttachNote=_itemList
+      ? `Thank you for your reply. We noticed you mentioned sending the following, however no files were received in your email:\n${_itemList}\n\nCould you please resend the attachments?\n\n`
+      : `Thank you for your reply. We noticed you mentioned sending attachments, however no files were received in your email. Could you please resend the files?\n\n`;
+  }
   let draft;
   if(complete){
     draft=`Dear Master,\n\n${_missingAttachNote}Thank you for providing all the required information. We will review the details and coordinate the next steps for the Orca AI installation.\n\nKind regards,\nORCA AI OPS`;
