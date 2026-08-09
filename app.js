@@ -2287,7 +2287,8 @@ let _currentMetricFilter='';
 function openMetricModal(filter){
   _currentMetricFilter=filter;
   const myEmail=normEmail(user&&user.email);
-  const myVessels=isSuperAdmin()?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')==myEmail||!v.assignedTo);
+  // Admins see all vessels; regular users see only their assigned ones
+  const myVessels=isAdmin(user&&user.email)?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')==myEmail||!v.assignedTo);
   let filtered=myVessels;
   const titles={
     total:{title:'All Vessels',sub:'Complete vessel list'},
@@ -3208,8 +3209,8 @@ async function mergeSharedInbox(){
     if(item.vi!==undefined&&item.vi!==null&&existingVis.has(String(item.vi)))continue;
     // Validate: vessel must exist in portal
     if(!item.vessel)continue;
-    // Super Admin sees all replies; others see only their assigned vessels
-    if(!isSuperAdmin){
+    // Admins see all replies; regular users see only their assigned vessels
+    if(!isAdmin(myEmail)){
       const assignedTo=normEmail(item.vessel.assignedTo||'');
       if(assignedTo!==myEmail)continue;
     }
