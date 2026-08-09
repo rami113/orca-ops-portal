@@ -3209,8 +3209,8 @@ async function mergeSharedInbox(){
     if(item.vi!==undefined&&item.vi!==null&&existingVis.has(String(item.vi)))continue;
     // Validate: vessel must exist in portal
     if(!item.vessel)continue;
-    // Admins see all replies; regular users see only their assigned vessels
-    if(!isAdmin(myEmail)){
+    // Each user only sees inbox replies for their assigned vessels
+    if(!isSuperAdmin){
       const assignedTo=normEmail(item.vessel.assignedTo||'');
       if(assignedTo!==myEmail)continue;
     }
