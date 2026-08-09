@@ -1807,9 +1807,20 @@ function computeReceivedMissing(vessel, ibItem){
   ).values()];
   const missing=REQUIRED_ITEMS.filter(r=>!hasItem(received,r));
   const complete=missing.length===0;
-  const draft=complete
-    ?`Dear Master,\n\nThank you for providing all the required information. We will review the details and coordinate the next steps for the Orca AI installation.\n\nKind regards,\nORCA AI OPS`
-    :buildFollowupEmail({...v,receivedItems:received},missing);
+  // If captain mentioned attaching files but none were found, add a note in the draft
+  const _missingAttachNote=(!_hasActualFiles&&_strictInBody)
+    ?`Thank you for your reply. We noticed you mentioned sending attachments, however no files were received in your email. Could you please resend the files?\n\n`
+    :'';
+  let draft;
+  if(complete){
+    draft=`Dear Master,\n\n${_missingAttachNote}Thank you for providing all the required information. We will review the details and coordinate the next steps for the Orca AI installation.\n\nKind regards,\nORCA AI OPS`;
+  } else {
+    const baseDraft=buildFollowupEmail({...v,receivedItems:received},missing);
+    // Insert missing-attachment note after the greeting line
+    draft=_missingAttachNote
+      ? baseDraft.replace('Dear Master,\n\n','Dear Master,\n\n'+_missingAttachNote)
+      : baseDraft;
+  }
   return {received,missing,draft};
 }
 
