@@ -1770,6 +1770,15 @@ function computeReceivedMissing(vessel, ibItem){
 
   // Layer 1: keyword detection on the latest reply body
   const kwHits=ib&&ib.body?inferReceivedFromReply(ib.body):[];
+  // If captain mentioned attachments in text but NO files were actually found in the email,
+  // remove file-dependent items (photos, GA docs) — they require physical attachments to count.
+  // Items confirmable by text alone (port calls with dates, etc.) are kept.
+  const _hasActualFiles=(ib&&(ib.attachments||[]).length>0);
+  const _strictInBody=ib&&ib.body&&/attach|herewith|enclosed|please find|find attached|find below|see below|sending|i have sent/i.test(ib.body);
+  const _fileRequired=new Set(['vessel_ga','bridge_ga','monitor','seapod','cable','vsat','power','docs']);
+  const filteredKwHits=(!_hasActualFiles&&_strictInBody)
+    ? kwHits.filter(h=>!_fileRequired.has(itemKey(h)))
+    : kwHits;
 
   // Layer 2: tags from attachment objects — a.tag (manually set) takes priority over
   // autoTagFromFilename. a.tag is updated immediately by onAttachTag so it's always current.
@@ -1792,9 +1801,9 @@ function computeReceivedMissing(vessel, ibItem){
     savedTags=Object.values(_allSavedTags)
       .filter(t=>t&&t!=='Other / Not a required item');
   }
-  // Union all sources — deduped by canonical itemKey
+  // Union all sources — use filteredKwHits (drops file-dependent items when no files found)
   const received=[...new Map(
-    [...kwHits,...autoTags,...savedTags].map(x=>[itemKey(x),x])
+    [...filteredKwHits,...autoTags,...savedTags].map(x=>[itemKey(x),x])
   ).values()];
   const missing=REQUIRED_ITEMS.filter(r=>!hasItem(received,r));
   const complete=missing.length===0;
