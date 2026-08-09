@@ -1568,8 +1568,8 @@ function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
           ${sizeKb?`<div style="font-size:11px;color:var(--faint);margin-top:1px">${sizeKb}</div>`:''}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          ${isImg?`<button class="btn btn-s" onclick="onAttachPreview(this,'${safeMid}','${safeAid}','${safeFn}','${safeMt}','${prevId}')"><i class="ti ti-eye"></i> Preview</button>`:''}
-          <button class="btn btn-s btn-p" onclick="onAttachDownload(this,'${safeMid}','${safeAid}','${safeFn}','${safeMt}')"><i class="ti ti-download"></i></button>
+           ${isImg?`<button class="btn btn-s" onclick="onAttachPreview(this,'${safeMid}','${safeAid}','${safeFn}','${safeMt}','${prevId}')"><i class="ti ti-eye"></i> Preview</button>`:''}
+           <button class="btn btn-s btn-p" onclick="onAttachDownload(this,'${safeMid}','${safeAid}','${safeFn}','${safeMt}')" title="Download file" style="padding:6px 12px;font-size:12px;font-weight:600;min-width:100px"><i class="ti ti-download" style="margin-right:5px"></i>Download</button>
         </div>
       </div>
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
