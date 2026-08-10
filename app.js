@@ -15,30 +15,39 @@ window.ORCA_FIX_VERSION="v35.11";
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
 // We use it to fetch the user profile and log in silently — no sign-in screen.
+window._ssoHandled=false;
 (function(){
   const params=new URLSearchParams(window.location.search);
   const ssoToken=params.get('sso_token');
   if(!ssoToken)return;
+  // Set flag immediately — blocks trySilentSignIn from firing a popup
+  window._ssoHandled=true;
   // Clean the token from the URL immediately so it's not visible
-  const cleanUrl=window.location.pathname;
-  window.history.replaceState({},'',cleanUrl);
+  window.history.replaceState({},'',window.location.pathname);
   // Wait for page to be ready then attempt silent login
   window.addEventListener('load',async()=>{
     try{
       const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{
         headers:{Authorization:'Bearer '+ssoToken}
       });
-      if(!res.ok)return; // token invalid or expired — fall through to normal login
+      if(!res.ok){window._ssoHandled=false;return;} // token invalid — fall through to normal login
       const p=await res.json();
-      if(!p.email||!p.email.endsWith('@orca-ai.io'))return;
+      if(!p.email||!p.email.endsWith('@orca-ai.io')){window._ssoHandled=false;return;}
       // Valid — boot the app directly with this token
       token=ssoToken;
       user={email:p.email.toLowerCase(),name:p.name||p.email,pic:p.picture||''};
-      saveSession(token,user);
       localStorage.setItem('orca_google_consent_ok','1');
-      scheduleTokenRefresh();
+      localStorage.setItem('orca_last_email',user.email);
+      // Boot UI immediately so it feels instant
       _bootApp(token,user);
-    }catch(e){console.warn('SSO login failed',e);}
+      // Then silently upgrade to full scopes (gmail + sheets) — no popup since consent was already given
+      setTimeout(()=>{
+        try{
+          if(!tc)initG();
+          tc.requestAccessToken({prompt:'',login_hint:user.email});
+        }catch(e){console.warn('SSO scope upgrade failed',e);}
+      },500);
+    }catch(e){console.warn('SSO login failed',e);window._ssoHandled=false;}
   },{once:true});
 })();
 
@@ -4129,7 +4138,7 @@ function trySilentSignIn(){
   }catch(e){console.warn('Silent sign-in skipped',e);}
 }
 window.onload=()=>{
-  setTimeout(trySilentSignIn,200);
+  if(!window._ssoHandled)setTimeout(trySilentSignIn,200);
 };
 // ── Smart polling — 5s when tab is active, paused when hidden ─────────────────
 (function(){
