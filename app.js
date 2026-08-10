@@ -2782,7 +2782,8 @@ async function sendAndSaveNew(){
       receivedItems:[],
       missingItems:[...REQUIRED_ITEMS],
       timeline:[],
-      gmailThreadId  // stored so fetchInboxByThreads() can look up replies precisely
+      gmailThreadId,  // stored so fetchInboxByThreads() can look up replies precisely
+      captainCc:val('mcc')||''  // preserve initial CC for follow-ups
     };
     // Store gmailMsgId so fetchInboxByThreads won't add a duplicate "Email sent to captain" entry
     if(typeof addTimeline==='function')addTimeline(nv,'sent','Initial email sent',`Sent to ${e}`,'',gmailMsgId);
@@ -3368,6 +3369,7 @@ async function fetchInboxByThreads(){
         const from=hdr.find(h=>h.name==='From')?.value||'';
         const subj=hdr.find(h=>h.name==='Subject')?.value||'';
         const date=hdr.find(h=>h.name==='Date')?.value||'';
+        const msgCc=hdr.find(h=>h.name==='Cc')?.value||'';
         const fe=(from.match(/<(.+)>/)?.[1]||from).toLowerCase().trim();
         // Portal emails always set From: "ORCA AI OPS <email>".
         // Captain replies never contain "ORCA AI OPS" — even in self-test scenarios.
@@ -3405,6 +3407,19 @@ async function fetchInboxByThreads(){
             vessels[vi].lastReceivedDate=new Date(date||Date.now()).toISOString();
             vessels[vi].lastActivity=new Date().toISOString();
             addTimeline(vessels[vi],'reply','Captain replied',from,body.substring(0,2000),msg.id);
+            // Merge CC from captain's reply into vessel.captainCc — preserving the full CC chain
+            if(msgCc){
+              const existingCcs=(vessels[vi].captainCc||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+              const newCcs=msgCc.split(',').map(s=>s.trim()).filter(Boolean);
+              newCcs.forEach(addr=>{
+                const addrLower=addr.toLowerCase();
+                // Skip our own ops team emails and duplicates
+                if(!existingCcs.includes(addrLower)&&!addrLower.includes('orca ai ops')){
+                  existingCcs.push(addrLower);
+                }
+              });
+              vessels[vi].captainCc=existingCcs.join(',');
+            }
           }
         }
         // Collect per-message data — we'll build the single ibItem after the loop
@@ -3555,6 +3570,33 @@ function renderInbox(){
 
 
 
+// ── CC tag management ─────────────────────────────────────────────────────────
+function renderCcTags(vi){
+  const bar=document.getElementById('mv-cc-bar');
+  const container=document.getElementById('mv-cc-tags');
+  if(!bar||!container)return;
+  const v=vessels[vi];
+  if(!v||!v.captainCc){bar.style.display='none';return;}
+  const addrs=v.captainCc.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!addrs.length){bar.style.display='none';return;}
+  bar.style.display='block';
+  container.innerHTML=addrs.map((addr,i)=>`
+    <span style="display:inline-flex;align-items:center;gap:5px;background:var(--navy-l);color:var(--navy);border-radius:99px;padding:3px 10px 3px 12px;font-size:12px;font-weight:500;border:1px solid #c5cae9">
+      ${escapeHtml(addr)}
+      <button onclick="removeCcAddr(${vi},${i})" title="Remove" style="background:none;border:none;color:var(--navy);cursor:pointer;font-size:14px;padding:0;line-height:1;opacity:.6" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity='.6'">×</button>
+    </span>
+  `).join('');
+}
+function removeCcAddr(vi,idx){
+  const v=vessels[vi];
+  if(!v||!v.captainCc)return;
+  const addrs=v.captainCc.split(',').map(s=>s.trim()).filter(Boolean);
+  addrs.splice(idx,1);
+  vessels[vi].captainCc=addrs.join(',');
+  saveVessels();
+  renderCcTags(vi);
+}
+
 async function sendFromViewModal(){
   const v=vessels[window._mvIdx];
   if(!v){await orcaAlert('Vessel not found.','Error');return;}
@@ -3571,7 +3613,8 @@ async function sendFromViewModal(){
   const body=fuEl&&fuEl.value.trim()?fuEl.value.trim():buildFollowupEmail(v,v.missingItems||[]);
   const btn=document.querySelector('#mod-view .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,OPS_CC_EMAIL,'',v.gmailThreadId||'');
+  const _cc1=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,_cc1,'',v.gmailThreadId||'');
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
   if(!ok)return;
   // Save to timeline and vessel — update gmailThreadId from response in case it changed
@@ -3721,7 +3764,8 @@ async function sendIbFollowUp(){
   // Read edited text from textarea - user may have modified it
   const fuEl=document.getElementById('mib-fu');
   const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,OPS_CC_EMAIL,'',v.gmailThreadId||'');
+  const _cc2=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc2,'',v.gmailThreadId||'');
   if(!ok)return;
   const idx=curIb.vi;
   if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
@@ -3790,7 +3834,8 @@ async function saveAnalyzeOnly(){
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
   const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,OPS_CC_EMAIL,'',v.gmailThreadId||'');if(!ok)return;
+  const _cc3=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc3,'',v.gmailThreadId||'');if(!ok)return;
   if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
   const _newDet4=[...new Map([..._prevDet4,...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
@@ -3921,6 +3966,9 @@ function openV(idx){
   // Show Archive button only for completed vessels (admin only)
   const _archBtn=document.getElementById('mv-archive-btn');
   if(_archBtn)_archBtn.style.display=(v.status==='completed'&&isAdmin())?'inline-flex':'none';
+
+  // Render CC tags from captain replies
+  renderCcTags(window._mvIdx);
 
   document.getElementById('mod-view').style.display='flex';
   // Bind clickable rows after modal is visible
