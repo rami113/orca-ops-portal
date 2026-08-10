@@ -38,15 +38,10 @@ window._ssoHandled=false;
       user={email:p.email.toLowerCase(),name:p.name||p.email,pic:p.picture||''};
       localStorage.setItem('orca_google_consent_ok','1');
       localStorage.setItem('orca_last_email',user.email);
-      // Boot UI immediately so it feels instant
+      // Token from hub already has full scopes — boot directly, no popup needed
+      saveSession(token,user);
+      scheduleTokenRefresh();
       _bootApp(token,user);
-      // Then silently upgrade to full scopes (gmail + sheets) — no popup since consent was already given
-      setTimeout(()=>{
-        try{
-          if(!tc)initG();
-          tc.requestAccessToken({prompt:'',login_hint:user.email});
-        }catch(e){console.warn('SSO scope upgrade failed',e);}
-      },500);
     }catch(e){console.warn('SSO login failed',e);window._ssoHandled=false;}
   },{once:true});
 })();
