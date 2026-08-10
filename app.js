@@ -12,6 +12,36 @@ const REQUIRED_ITEMS=[
 console.log("ORCA v35.11 visible reset shared db loaded");
 window.ORCA_FIX_VERSION="v35.11";
 
+// ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
+// When arriving from the Ops Hub, a token is passed via ?sso_token=
+// We use it to fetch the user profile and log in silently — no sign-in screen.
+(function(){
+  const params=new URLSearchParams(window.location.search);
+  const ssoToken=params.get('sso_token');
+  if(!ssoToken)return;
+  // Clean the token from the URL immediately so it's not visible
+  const cleanUrl=window.location.pathname;
+  window.history.replaceState({},'',cleanUrl);
+  // Wait for page to be ready then attempt silent login
+  window.addEventListener('load',async()=>{
+    try{
+      const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{
+        headers:{Authorization:'Bearer '+ssoToken}
+      });
+      if(!res.ok)return; // token invalid or expired — fall through to normal login
+      const p=await res.json();
+      if(!p.email||!p.email.endsWith('@orca-ai.io'))return;
+      // Valid — boot the app directly with this token
+      token=ssoToken;
+      user={email:p.email.toLowerCase(),name:p.name||p.email,pic:p.picture||''};
+      saveSession(token,user);
+      localStorage.setItem('orca_google_consent_ok','1');
+      scheduleTokenRefresh();
+      _bootApp(token,user);
+    }catch(e){console.warn('SSO login failed',e);}
+  },{once:true});
+})();
+
 // ── Auto-update detection ─────────────────────────────────────────────────────
 // Silently checks app.js ETag every 3 minutes. If Vercel deployed a new version,
 // shows a gentle banner so users can refresh at their convenience.
