@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.13 thread-safe sends + recipients display + editable master email");
-window.ORCA_FIX_VERSION="v35.13";
+console.log("ORCA v35.14 recipients line shows full Cc list");
+window.ORCA_FIX_VERSION="v35.14";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -3049,10 +3049,13 @@ async function resolveSendThreadId(v){
   return '';
 }
 
-// Recipients line shown above follow-up drafts — To + Cc visibility (was invisible before)
+// Recipients line shown above follow-up drafts — To + full Cc visibility (was invisible before).
+// Cc must mirror the ACTUAL send list: ops@orca-ai.io + captainCc (preserved from replies).
 function _recipientsHtml(v,idx){
+  const ccs=[OPS_CC_EMAIL,...String((v&&v.captainCc)||'').split(',').map(s=>s.trim()).filter(Boolean)]
+    .filter((x,i,a)=>a.indexOf(x)===i).join(', ');
   return '<span style="font-size:12px;color:var(--muted)">To: <strong style="color:var(--text)">'+escapeHtml((v&&v.email)||'(no email set — click ✏️)')
-    +'</strong> &nbsp;·&nbsp; Cc: '+OPS_CC_EMAIL
+    +'</strong> &nbsp;·&nbsp; Cc: '+escapeHtml(ccs)
     +' <button class="btn btn-s" style="padding:1px 7px;font-size:10px;vertical-align:middle" title="Edit master email" onclick="editVesselEmail('+idx+')"><i class="ti ti-pencil"></i></button></span>';
 }
 
