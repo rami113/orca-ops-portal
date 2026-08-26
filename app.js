@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.11 visible reset shared db loaded");
-window.ORCA_FIX_VERSION="v35.11";
+console.log("ORCA v35.12 safe per-row saves + bounce filter");
+window.ORCA_FIX_VERSION="v35.12";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -453,24 +453,76 @@ async function saveSharedVessels(data){
       return vc;
     }).filter(Boolean);
 
-    // Clear the entire vessels tab then write one row per vessel
-    // Clear all rows before writing fresh data
-    const clearUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}:clear`;
-    const clearR=await fetch(clearUrl,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'});
-    if(!clearR.ok){console.error('Shared DB clear failed',await clearR.text());return false;}
+    const base=`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${encodeURIComponent(SHARED_SHEET_NAME)}`;
 
-    if(!safeData.length){sharedDbLastSync=new Date().toISOString();return true;}
-
-    // Write: column A = vessel ID (for quick lookup), column B = full vessel JSON
-    // NOTE: encode sheet name only, never the full range (! and : must not be encoded)
-    const values=safeData.map(v=>[String(v.id||v.name||''),JSON.stringify(v)]);
-    const range=`${encodeURIComponent(SHARED_SHEET_NAME)}!A1:B${values.length}`;
-    const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values/${range}?valueInputOption=RAW`,{
-      method:'PUT',
-      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({range:`${SHARED_SHEET_NAME}!A1:B${values.length}`,majorDimension:'ROWS',values})
+    // Read current rows (A=id, B=json) to map each vessel to its row.
+    // Per-row writes replace the old clear-all+rewrite: concurrent saves from
+    // other users can no longer wipe vessels created between our read and write
+    // (that lost-update race silently deleted vessels, e.g. MSC BRISBANE III).
+    const rowsRes=await fetch(base+'!A1:B10000',{headers:{Authorization:'Bearer '+token}});
+    if(!rowsRes.ok){console.error('Shared DB row-read failed',rowsRes.status);return false;}
+    const rowsData=await rowsRes.json();
+    const rows=(rowsData.values||[]);
+    // id -> array of row numbers (duplicates: update last, clear the rest)
+    const idRows=new Map();
+    rows.forEach((r,i)=>{
+      const id=String(r[0]||'').trim();
+      if(!id)return;
+      const arr=idRows.get(id)||[];
+      arr.push(i+1);
+      idRows.set(id,arr);
     });
-    if(!r.ok){console.error('Shared DB save HTTP error',await r.text());return false;}
+
+    // 1) Append brand-new vessels FIRST — appends never touch existing rows,
+    //    so a failure here can't destroy anything.
+    const appendVals=safeData
+      .filter(v=>!idRows.has(String(v.id||v.name||'')))
+      .map(v=>[String(v.id||v.name||''),JSON.stringify(v)]);
+    if(appendVals.length){
+      const ar=await fetch(base+'!A1:append?valueInputOption=RAW',{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({values:appendVals,majorDimension:'ROWS'})
+      });
+      if(!ar.ok){console.error('Shared DB append failed',await ar.text());return false;}
+    }
+
+    // 2) Update existing rows in place (last row wins for duplicate ids)
+    const localIds=new Set(safeData.map(v=>String(v.id||v.name||'')));
+    const updates=[];
+    for(const v of safeData){
+      const id=String(v.id||v.name||'');
+      const rws=idRows.get(id);
+      if(!rws)continue;
+      const row=rws[rws.length-1];
+      updates.push({range:`${SHARED_SHEET_NAME}!A${row}:B${row}`,values:[[id,JSON.stringify(v)]]});
+    }
+    if(updates.length){
+      const ur=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values:batchUpdate?valueInputOption=RAW`,{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({valueInputOption:'RAW',data:updates})
+      });
+      if(!ur.ok){console.error('Shared DB row-update failed',await ur.text());return false;}
+    }
+
+    // 3) Clear rows of vessels that no longer exist — blanking cell content,
+    //    NOT deleting rows, so row numbers never shift under a concurrent save.
+    //    Done LAST: a failure here can only leave stale rows, never lose data.
+    const clearRanges=[];
+    for(const [id,rws] of idRows){
+      if(!localIds.has(id)){
+        rws.forEach(row=>clearRanges.push(`${SHARED_SHEET_NAME}!A${row}:B${row}`));
+      } else if(rws.length>1){
+        rws.slice(0,-1).forEach(row=>clearRanges.push(`${SHARED_SHEET_NAME}!A${row}:B${row}`));
+      }
+    }
+    if(clearRanges.length){
+      const cr=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHARED_SHEET_ID}/values:batchClear`,{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({ranges:clearRanges})
+      });
+      if(!cr.ok)console.error('Shared DB row-clear failed',await cr.text()); // non-fatal
+    }
+
     sharedDbLastSync=new Date().toISOString();
     return true;
   }catch(e){
@@ -3143,13 +3195,13 @@ async function checkInbox(silent=false){
   }
   // Yield to browser so UI updates (spinner) before heavy work starts - fixes INP blocking
   await new Promise(r=>setTimeout(r,0));
-  await fetchInbox();
+  const _ibChanged=await fetchInbox();
   window.showInlineInboxPanel=true;
   updateReceivedStatsFromInbox();
   if(!silent){
     buttons.forEach(b=>{b.disabled=false;b.innerHTML='<i class="ti ti-refresh"></i> Check inbox';});
   }
-  renderInlineInbox();renderInbox();renderTable();updateMetrics();saveVessels();
+  renderInlineInbox();renderInbox();renderTable();updateMetrics();if(_ibChanged)saveVessels();
   // Update badge smoothly after fetch — never reset to 0 mid-fetch
   const _badge=document.getElementById('ib-count');
   if(_badge){const _n=ibItems?ibItems.length:0;_badge.textContent=_n;_badge.style.display=_n?'inline':'none';}
@@ -3268,6 +3320,8 @@ async function mergeSharedInbox(){
   const isSuperAdmin=SUPER_ADMINS.includes(myEmail);
   let added=0;
   for(const item of shared){
+    // Skip bounce/DSN rows logged before the bounce filter existed
+    if(/mail delivery subsystem|mailer-daemon@|postmaster@|delivery status notification/i.test((item.from||'')+' '+(item.subj||'')))continue;
     if(existingIds.has(item.msgId))continue;
     if(item.vi!==undefined&&item.vi!==null&&existingVis.has(String(item.vi)))continue;
     // Validate: vessel must exist in portal
@@ -3313,7 +3367,8 @@ async function mergeSharedInbox(){
 // and find any messages NOT sent by the ops team (i.e. captain replies).
 // This replaces the old subject+email search approach which caused cross-contamination.
 async function fetchInboxByThreads(){
-  if(!token||!vessels.length)return;
+  if(!token||!vessels.length)return false;
+  let changed=false;
   const myEmail=normEmail(user&&user.email);
   const _isSuper=isSuperAdmin(myEmail);
   const myVessels=_isSuper?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')===myEmail);
@@ -3349,12 +3404,12 @@ async function fetchInboxByThreads(){
       // Flag this on the vessel so the UI can warn the current user.
       if(!thread){
         const vi2=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
-        if(vi2>=0)vessels[vi2]._ccDropWarning=true;
+        if(vi2>=0&&vessels[vi2]._ccDropWarning!==true){vessels[vi2]._ccDropWarning=true;changed=true;}
         continue;
       }
       // Thread found — clear any previous CC drop warning
       const vi3=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
-      if(vi3>=0)vessels[vi3]._ccDropWarning=false;
+      if(vi3>=0&&vessels[vi3]._ccDropWarning){vessels[vi3]._ccDropWarning=false;changed=true;}
       const messages=(thread.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
       // Find by id/name — never by object reference. onAttachTag replaces vessels[idx]
       // with a new object ({...v,...}), so indexOf(oldRef) would return -1 after any tag save,
@@ -3376,6 +3431,11 @@ async function fetchInboxByThreads(){
         // This is more reliable than the SENT label which also flags captain replies
         // when the same Gmail account is used for both ops and testing.
         const isOpsMsg=from.toLowerCase().includes('orca ai ops');
+        // Bounce notices (Mail Delivery Subsystem / mailer-daemon / postmaster /
+        // "Delivery Status Notification") are NOT captain replies — never count,
+        // log, or inbox them. Fixes phantom "Captain replied" entries and inflated
+        // emailsReceived for vessels whose email bounced (e.g. bad address).
+        if(!isOpsMsg&&/mail delivery subsystem|mailer-daemon@|postmaster@|delivery status notification/i.test(from+' '+subj))continue;
         // Use decodeGmailBody which handles UTF-8 correctly (bullets, dashes, quotes etc.)
         const rawBody=msg.payload?decodeGmailBody(msg.payload):'';
         // Clean the body before storing — strip quoted chain so timeline shows only real content
@@ -3421,6 +3481,7 @@ async function fetchInboxByThreads(){
               vessels[vi].captainCc=existingCcs.join(',');
             }
           }
+          changed=true;
         }
         // Collect per-message data — we'll build the single ibItem after the loop
         if(!isOpsMsg){
@@ -3460,31 +3521,33 @@ async function fetchInboxByThreads(){
         } else {
           if(cm.firstUnlogged)sheetsInboxSave({...cm.firstUnlogged,attachments:[]});
           ibItems.push(itemWithAtts);
+          changed=true;
         }
       }
     }catch(e){
       console.warn('[fetchInboxByThreads] Thread fetch failed for vessel:',vessel.name,e);
     }
   }
+  return changed;
 }
 
 async function fetchInbox(){
   if(!ibItems) ibItems=[];
   // Do NOT reset badge here — it causes visible flicker every 5s during auto-poll.
   // Badge is updated after fetch completes (in checkInbox / renderInbox).
-  if(!token||!vessels.length)return;
+  if(!token||!vessels.length)return false;
 
   // Each user only sees replies for vessels assigned to them. Super admin sees all.
   const myEmail=normEmail(user&&user.email);
   const _isSuper=isSuperAdmin(myEmail);
   const myVessels=_isSuper?vessels:vessels.filter(v=>normEmail(v.assignedTo||'')===myEmail);
-  if(!myVessels.length)return;
+  if(!myVessels.length)return false;
 
   try{
     // ── NEW: Thread-based approach (vessels created after this update) ──────────
     // Fetches replies from the exact Gmail thread stored on each vessel.
     // Zero cross-contamination — no subject/email guessing needed.
-    await fetchInboxByThreads();
+    const _ibChanged=await fetchInboxByThreads();
 
     // ── OLD: Subject+email search approach (grayed out — kept for reference) ────
     // This searched Gmail globally for all captain emails and matched by subject.
@@ -3544,16 +3607,20 @@ async function fetchInbox(){
     // }
     // ── END OLD approach ─────────────────────────────────────────────────────────
 
-    // Save vessel stats updates to shared Sheet
-    saveVessels();
+    // Save vessel stats updates to shared Sheet — ONLY when new data was logged.
+    // Idle 5s polls must not write: concurrent full-tab rewrites were the
+    // lost-update race that wiped vessels. Per-row saves + no-op skip = safe.
+    if(_ibChanged)saveVessels();
     // Merge inbox items from other team members via Google Sheets
     mergeSharedInbox();
     const _ib_badge=document.getElementById('ib-count');if(_ib_badge){if(ibItems.length){_ib_badge.textContent=ibItems.length;_ib_badge.style.display='inline';}else{_ib_badge.textContent='0';_ib_badge.style.display='none';}}
+    return _ibChanged;
   }catch(e){
     console.error('fetchInbox error', e);
     const msg = e?.message || (e?.status ? 'API error ' + e.status : 'Unknown error');
     const label = document.getElementById('last-refresh-label');
     if(label) label.textContent = '⚠️ Inbox error: ' + msg;
+    return false;
   }
 }
 function renderInbox(){
