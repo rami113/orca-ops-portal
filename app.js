@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.12 safe per-row saves + bounce filter");
-window.ORCA_FIX_VERSION="v35.12";
+console.log("ORCA v35.13 thread-safe sends + recipients display + editable master email");
+window.ORCA_FIX_VERSION="v35.13";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -3028,6 +3028,62 @@ function stripHtmlForText(s){
   return String(s||'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
 }
 
+// Resolve a threadId that is valid in the CURRENT user's Gmail before sending.
+// Stored threadIds only work in the original sender's account (account-specific).
+// Fallback: find the coordination thread by subject in this account's mailbox.
+async function resolveSendThreadId(v){
+  const tid=v&&v.gmailThreadId;
+  if(!tid)return '';
+  try{
+    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${tid}?fields=threadId`,{headers:{Authorization:'Bearer '+token}});
+    if(r.ok)return tid;
+  }catch(e){}
+  try{
+    const q=encodeURIComponent(`subject:"Orca AI Installation Coordination - ${v.name||''}"`);
+    const sr=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/threads?q='+q+'&maxResults=1',{headers:{Authorization:'Bearer '+token}});
+    if(sr.ok){
+      const sd=await sr.json();
+      if(sd.threads&&sd.threads.length)return sd.threads[0].id;
+    }
+  }catch(e){}
+  return '';
+}
+
+// Recipients line shown above follow-up drafts — To + Cc visibility (was invisible before)
+function _recipientsHtml(v,idx){
+  return '<span style="font-size:12px;color:var(--muted)">To: <strong style="color:var(--text)">'+escapeHtml((v&&v.email)||'(no email set — click ✏️)')
+    +'</strong> &nbsp;·&nbsp; Cc: '+OPS_CC_EMAIL
+    +' <button class="btn btn-s" style="padding:1px 7px;font-size:10px;vertical-align:middle" title="Edit master email" onclick="editVesselEmail('+idx+')"><i class="ti ti-pencil"></i></button></span>';
+}
+
+// Edit the master email address on a vessel (fixes bounced addresses like MSC BRISBANE III)
+async function editVesselEmail(idx){
+  const v=vessels[idx];if(!v)return;
+  const overlay=document.getElementById('orca-modal-overlay');
+  document.getElementById('orca-modal-title').textContent='Master email — '+v.name;
+  document.getElementById('orca-modal-msg').innerHTML=
+    '<input id="ve-new" type="email" placeholder="master@vessel.com" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;box-sizing:border-box" value="'+escapeHtml(v.email||'')+'"/>';
+  document.getElementById('orca-modal-cancel').style.display='inline-block';
+  document.getElementById('orca-modal-cancel').textContent='Cancel';
+  document.getElementById('orca-modal-ok').textContent='Save';
+  overlay.classList.add('show');
+  const result=await new Promise(resolve=>{
+    const ok=document.getElementById('orca-modal-ok');
+    const cancel=document.getElementById('orca-modal-cancel');
+    const cleanup=()=>overlay.classList.remove('show');
+    const onOk=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve((document.getElementById('ve-new')?.value||'').trim());};
+    const onCancel=()=>{cleanup();ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);resolve(null);};
+    ok.addEventListener('click',onOk);cancel.addEventListener('click',onCancel);
+  });
+  if(result===null)return;
+  if(result&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result)){await orcaAlert('That does not look like a valid email address. Nothing was changed.','Invalid email');return;}
+  vessels[idx].email=result;
+  saveVessels();renderTable();
+  const emEl=document.getElementById('mv-email');if(emEl&&window._mvIdx===idx)emEl.textContent=result;
+  const rc1=document.getElementById('mv-recipients');if(rc1&&window._mvIdx===idx)rc1.innerHTML=_recipientsHtml(vessels[idx],idx);
+  const rc2=document.getElementById('mib-recipients');if(rc2&&curIb&&curIb.vi===idx)rc2.innerHTML=_recipientsHtml(vessels[idx],idx);
+}
+
 async function sendGmail(to, subj, body, isHtml=false, cc="", bcc="", threadId="") {
   if(!token){alert('Not authenticated.');return false;}
   const html = isHtml ? body : body.replace(/\n/g,'<br>');
@@ -3057,7 +3113,21 @@ async function sendGmail(to, subj, body, isHtml=false, cc="", bcc="", threadId="
   // Pass threadId to keep follow-ups in the same Gmail thread as the original coordination email
   const payload = threadId ? {raw, threadId} : {raw};
   try{
-    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    let r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    // threadId is account-specific — it only exists in the ORIGINAL sender's Gmail.
+    // If it doesn't exist in THIS account (vessel transferred/restored), Gmail
+    // returns 404 "Requested entity was not found". Retry once WITHOUT threadId
+    // so the follow-up still goes out (starts a fresh thread in this account).
+    if(!r.ok&&threadId){
+      const et=await r.text();
+      if(/requested entity was not found/i.test(et)){
+        console.warn('[sendGmail] threadId not in this account — retrying without it');
+        r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw})});
+      } else {
+        try{const e=JSON.parse(et);alert('Gmail error: '+(e.error?.message||et));}catch(_){alert('Gmail error: '+et);}
+        return false;
+      }
+    }
     if(!r.ok){const e=await r.json();alert('Gmail error: '+JSON.stringify(e.error?.message||e));return false;}
     // Return the full response — callers check truthiness (object = truthy, false = failure)
     // threadId is used to track the exact Gmail conversation thread per vessel
@@ -3681,7 +3751,8 @@ async function sendFromViewModal(){
   const btn=document.querySelector('#mod-view .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
   const _cc1=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,_cc1,'',v.gmailThreadId||'');
+  const _sendTid1=await resolveSendThreadId(v);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,_cc1,'',_sendTid1);
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
   if(!ok)return;
   // Save to timeline and vessel — update gmailThreadId from response in case it changed
@@ -3710,6 +3781,7 @@ async function sendFromViewModal(){
   // Populate header
   document.getElementById('mib-v').textContent=v.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
+  const _mibRcp=document.getElementById('mib-recipients');if(_mibRcp)_mibRcp.innerHTML=_recipientsHtml(v,_safeVi);
   document.getElementById('mib-b').textContent=curIb.body;
 
   // Populate status panel
@@ -3832,7 +3904,8 @@ async function sendIbFollowUp(){
   const fuEl=document.getElementById('mib-fu');
   const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
   const _cc2=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc2,'',v.gmailThreadId||'');
+  const _sendTid2=await resolveSendThreadId(v);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc2,'',_sendTid2);
   if(!ok)return;
   const idx=curIb.vi;
   if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
@@ -3902,7 +3975,8 @@ async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
   const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
   const _cc3=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc3,'',v.gmailThreadId||'');if(!ok)return;
+  const _sendTid3=await resolveSendThreadId(v);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc3,'',_sendTid3);if(!ok)return;
   if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
   const _newDet4=[...new Map([..._prevDet4,...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
@@ -3967,6 +4041,7 @@ function openV(idx){
   // Populate modal header
   document.getElementById('mv-name').textContent=v.name;
   document.getElementById('mv-email').textContent=v.email||'';
+  const _mvRcp=document.getElementById('mv-recipients');if(_mvRcp)_mvRcp.innerHTML=_recipientsHtml(v,idx);
   document.getElementById('mv-status-badge').innerHTML=sb(v.status);
 
   // Stats
