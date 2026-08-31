@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- ORCA OPS PORTAL v35.16 fix: Inbox Analyze CC bar now shows immediately, not gated behind Analyze click -->
 <!-- ORCA OPS PORTAL v35.15 CC bar always visible (ops@ + preserved) in View, Inbox Analyze, and manual Analyze tab -->
 <!-- ORCA OPS PORTAL v35.14 recipients line shows full Cc list -->
 <!-- ORCA OPS PORTAL v35.13 thread-safe sends + recipients display + editable master email -->
-<!-- ORCA OPS PORTAL v35.12 safe per-row saves + bounce filter -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Orca AI - Installation Coordinator</title>
@@ -396,19 +396,22 @@
     <div class="sl" style="margin-bottom:8px">Captain's reply</div>
     <div id="mib-b" class="email-box" style="margin-bottom:1rem;max-height:150px"></div>
     <div id="mib-al" class="ai-load" style="display:none"><div class="spinner"></div> AI is analyzing...</div>
+    <!-- CC list — always shows ops@ (mandatory) + any preserved from captain replies.
+         Sits OUTSIDE mib-res (which stays display:none until Analyze runs) so it's visible
+         immediately when the modal opens, matching the View modal, and always appears
+         directly above the follow-up draft below. -->
+    <div id="mib-cc-bar" style="margin-bottom:.6rem;display:none">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">📧 CC on this thread</div>
+      <div id="mib-cc-tags" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"></div>
+    </div>
+    <div id="mib-recipients" style="margin:-2px 0 6px"></div>
     <div id="mib-res" style="display:none">
       <div class="dg" style="margin-bottom:1rem">
         <div><div class="sl" style="margin-bottom:6px">Received ✓</div><ul class="cl-list" id="mib-recv"></ul></div>
         <div><div class="sl" style="margin-bottom:6px">Still missing</div><div class="miss-list" id="mib-miss"></div></div>
       </div>
-      <!-- CC list — always shows ops@ (mandatory) + any preserved from captain replies -->
-      <div id="mib-cc-bar" style="margin-bottom:1rem;display:none">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">📧 CC on this thread</div>
-        <div id="mib-cc-tags" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"></div>
-      </div>
 
       <div class="sl" style="margin-bottom:8px">Follow-up draft</div>
-      <div id="mib-recipients" style="margin:-2px 0 6px"></div>
       <textarea id="mib-fu" style="width:100%;min-height:180px;max-height:300px;padding:12px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;box-sizing:border-box;margin-bottom:1rem;color:var(--text)"></textarea>
     </div>
     <div class="modal-f">

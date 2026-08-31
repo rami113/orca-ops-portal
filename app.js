@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.15 CC bar always visible (ops@ + preserved) in View, Inbox Analyze, and manual Analyze tab");
-window.ORCA_FIX_VERSION="v35.15";
+console.log("ORCA v35.16 fix: Inbox Analyze CC bar now shows immediately, not gated behind Analyze click");
+window.ORCA_FIX_VERSION="v35.16";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
