@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.20 fix: Analyze-button fallback now aggregates attachments from the WHOLE thread, not just the single latest message");
-window.ORCA_FIX_VERSION="v35.20";
+console.log("ORCA v35.21 fix: Analyze fallback search no longer requires 'Re:' in subject — was missing threads/attachments entirely");
+window.ORCA_FIX_VERSION="v35.21";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -1758,36 +1758,47 @@ function openManualAnalyzeWithReply(i,replyText){
 }
 
 // Fetch the latest captain reply for a specific vessel directly from Gmail.
-// Searches strictly by from-email + exact coordination subject line.
-// IMPORTANT: fetches the FULL THREAD (not just the single latest message) and
-// aggregates attachments from ALL captain messages in it. A captain often sends
-// attachments in an earlier reply and a later short follow-up (e.g. just port
-// calls) with no files of its own — taking only the single latest message's
-// attachments silently loses everything sent earlier in the same conversation.
-// This mirrors how fetchInboxByThreads() already handles the main inbox-fetch path.
+// Searches by from-email + base coordination subject line (NOT anchored to "Re:" —
+// some captain replies land in a thread whose subject never got the "Re:" prefix,
+// e.g. when Gmail starts a fresh thread after sendGmail's threadId self-heal retry,
+// or when the master's mail client replies without modifying the subject. Requiring
+// "Re:" caused the search to completely miss the thread containing the real reply
+// and its attachments, always landing on a different — sometimes attachment-less —
+// thread for the same vessel instead).
+// IMPORTANT: aggregates attachments from EVERY matching thread (there can legitimately
+// be more than one Gmail thread for the same vessel), not just a single thread, so
+// files sent in an earlier/different thread are never silently lost.
 async function fetchLatestReplyForVessel(vessel){
   if(!token||!vessel||!vessel.email)return null;
   const ve=String(vessel.email||'').trim();
   const vn=String(vessel.name||'').trim();
-  const q=`from:${ve} subject:"Re: Orca AI Installation Coordination - ${vn}" newer_than:60d`;
+  const q=`from:${ve} subject:"Orca AI Installation Coordination - ${vn}" newer_than:60d`;
   try{
-    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=5`,{headers:{Authorization:'Bearer '+token}});
+    const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=10`,{headers:{Authorization:'Bearer '+token}});
     const d=await r.json();
     if(!d.messages||!d.messages.length)return null;
-    // Get the threadId of the latest matching message, then fetch the WHOLE thread
-    // so we can aggregate attachments across every captain message in it.
+    // Gmail's message list is newest-first — the latest message gives us the reply
+    // text/from/date to display, same as before.
     const latestId=d.messages[0].id;
     const latest=await readGmailMessage(latestId);
     if(!latest)return null;
     try{
-      const mr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${latestId}?format=metadata&fields=threadId`,{headers:{Authorization:'Bearer '+token}});
-      const md=await mr.json();
-      const threadId=md&&md.threadId;
-      if(threadId){
-        const tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
-        if(tr.ok){
+      // Collect every unique thread among the matching messages (there may be more
+      // than one thread for this vessel) and aggregate captain attachments from ALL of them.
+      const threadIds=new Set();
+      await Promise.all(d.messages.map(async m=>{
+        try{
+          const mr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&fields=threadId`,{headers:{Authorization:'Bearer '+token}});
+          const md=await mr.json();
+          if(md&&md.threadId)threadIds.add(md.threadId);
+        }catch(e){/* skip this message's thread lookup on failure */}
+      }));
+      const allAtts=[];const seenAid=new Set();
+      await Promise.all([...threadIds].map(async threadId=>{
+        try{
+          const tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
+          if(!tr.ok)return;
           const thread=await tr.json();
-          const allAtts=[];const seenAid=new Set();
           (thread.messages||[]).forEach(msg=>{
             const hdr=(msg.payload&&msg.payload.headers)||[];
             const from=hdr.find(h=>h.name==='From')?.value||'';
@@ -1797,9 +1808,9 @@ async function fetchLatestReplyForVessel(vessel){
               if(!seenAid.has(a.attachmentId)){seenAid.add(a.attachmentId);allAtts.push(a);}
             });
           });
-          latest.attachments=allAtts;
-        }
-      }
+        }catch(e){/* skip this thread on failure — never regress other threads' attachments */}
+      }));
+      if(allAtts.length)latest.attachments=allAtts;
     }catch(e){console.warn('fetchLatestReplyForVessel: thread aggregation failed, using single-message attachments',e);}
     return latest;
   }catch(e){
