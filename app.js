@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.18 fix: attachments with long/split filenames (RFC2231) no longer silently dropped — was hiding PDFs");
-window.ORCA_FIX_VERSION="v35.18";
+console.log("ORCA v35.19 fix: row-level Analyze button now fetches attachments too (was always empty for vessels not yet in inbox list)");
+window.ORCA_FIX_VERSION="v35.19";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -1344,7 +1344,11 @@ function decodeGmailBody(payload){
     from:get('From'),
     subj:get('Subject'),
     date:get('Date'),
-    body:cleanCaptainReplyText(decodeGmailBody(dd.payload)||dd.snippet||'')
+    body:cleanCaptainReplyText(decodeGmailBody(dd.payload)||dd.snippet||''),
+    // Attachments were previously NOT extracted here — this fallback path (used by
+    // fetchLatestReplyForVessel/openCaseAnalyze when a vessel isn't yet in ibItems)
+    // silently showed zero files even when the captain's email had them attached.
+    attachments:dd.payload?extractAttachments(dd.payload,id):[]
   };
 }
 
@@ -1794,8 +1798,14 @@ async function openCaseAnalyze(i){
       }
     }
     if(!replyText){
+      // Fallback path when vessel isn't (yet) in ibItems — e.g. "Check inbox" hasn't run
+      // recently. Previously this ONLY fetched the reply text and never attachments,
+      // so files were silently missing for any vessel analyzed via this path.
       const latest=await fetchLatestReplyForVessel(vessel);
-      if(latest&&latest.body){replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';}
+      if(latest&&latest.body){
+        replyText=cleanCaptainReplyText(latest.body);replyFrom=latest.from||'';replyDate=latest.date||'';
+        replyAtts=restoreAttachmentTags(latest.attachments||[],i);
+      }
     }
     if(!replyText){loadDiv.remove();openManualAnalyzeWithReply(i,'');return;}
     const _tmpCurIb=curIb;const _tmpIbAna=ibAna;
