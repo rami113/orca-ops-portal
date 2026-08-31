@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- ORCA OPS PORTAL v35.15 CC bar always visible (ops@ + preserved), added to Analyze modal -->
+<!-- ORCA OPS PORTAL v35.15 CC bar always visible (ops@ + preserved) in View, Inbox Analyze, and manual Analyze tab -->
 <!-- ORCA OPS PORTAL v35.14 recipients line shows full Cc list -->
 <!-- ORCA OPS PORTAL v35.13 thread-safe sends + recipients display + editable master email -->
 <!-- ORCA OPS PORTAL v35.12 safe per-row saves + bounce filter -->
@@ -183,7 +183,13 @@
             <div><div class="sl" style="margin-bottom:8px">Status update</div><div style="display:flex;flex-direction:column;gap:10px" id="a-stat"></div></div>
           </div>
           <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+            <!-- CC list — always shows ops@ (mandatory) + any preserved from captain replies -->
+            <div id="a-cc-bar" style="margin-bottom:1rem;display:none">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">📧 CC on this thread</div>
+              <div id="a-cc-tags" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"></div>
+            </div>
             <div class="sl" style="margin-bottom:10px">Follow-up draft</div>
+            <div id="a-recipients" style="margin:-4px 0 8px"></div>
             <div id="a-fu" class="email-box" style="max-height:200px"></div>
             <div style="margin-top:10px;display:flex;gap:10px;align-items:center"><button class="btn btn-p" onclick="saveAnalyzeOnly()"><i class="ti ti-device-floppy"></i> Save status</button><button class="btn btn-g" onclick="saveAndSend()"><i class="ti ti-send"></i> Send follow-up via Gmail</button></div>
           </div>

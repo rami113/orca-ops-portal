@@ -9,7 +9,7 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.15 CC bar always visible (ops@ + preserved), added to Analyze modal");
+console.log("ORCA v35.15 CC bar always visible (ops@ + preserved) in View, Inbox Analyze, and manual Analyze tab");
 window.ORCA_FIX_VERSION="v35.15";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
@@ -3741,12 +3741,15 @@ function removeCcAddr(vi,idx){
   addrs.splice(idx,1);
   vessels[vi].captainCc=addrs.join(',');
   saveVessels();
-  // Refresh both bars (only the one present in the currently-open modal actually re-renders —
-  // renderCcTags no-ops if its elements aren't in the DOM) and the recipients line above the draft.
+  // Refresh all 3 bars (only the one(s) present in the currently-open view/modal actually
+  // re-render — renderCcTags no-ops if its elements aren't in the DOM) and the recipients
+  // lines above each draft, so state stays in sync regardless of which surface is open.
   renderCcTags(vi,'mv');
   renderCcTags(vi,'mib');
+  renderCcTags(vi,'a');
   const rc1=document.getElementById('mv-recipients');if(rc1&&window._mvIdx===vi)rc1.innerHTML=_recipientsHtml(vessels[vi],vi);
   const rc2=document.getElementById('mib-recipients');if(rc2&&curIb&&curIb.vi===vi)rc2.innerHTML=_recipientsHtml(vessels[vi],vi);
+  const rc3=document.getElementById('a-recipients');if(rc3&&ana&&ana.vi===vi)rc3.innerHTML=_recipientsHtml(vessels[vi],vi);
 }
 
 async function sendFromViewModal(){
@@ -3965,6 +3968,15 @@ async function analyzeReply(){
   document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
   document.getElementById('a-stat').innerHTML=`<div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Status</div>${sb(ana.status)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Risk</div>${rb(ana.risk)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Progress</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div class="prog" style="width:100px"><div class="prog-f" style="width:${ana.progress}%"></div></div><span style="font-size:13px;font-weight:700">${ana.progress}%</span></div></div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Next action</div><span style="font-size:12px">${ana.nextAction||'—'}</span></div>${(ana.flags&&ana.flags.length)?ana.flags.map(f=>`<div class="flag-item"><i class="ti ti-flag"></i>${f}</div>`).join(''):''}`;
   document.getElementById('a-fu').textContent=ana.followup_email||'';
+  const _aRcp=document.getElementById('a-recipients');
+  const _aCcBar=document.getElementById('a-cc-bar');
+  if(vessel){
+    if(_aRcp)_aRcp.innerHTML=_recipientsHtml(vessel,parseInt(idx));
+    renderCcTags(parseInt(idx),'a');
+  } else {
+    if(_aRcp)_aRcp.innerHTML='';
+    if(_aCcBar)_aCcBar.style.display='none';
+  }
   document.getElementById('a-out').style.display='block';
 }
 async function saveAnalyzeOnly(){
