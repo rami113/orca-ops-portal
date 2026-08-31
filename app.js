@@ -95,7 +95,7 @@ const SCOPES='https://www.googleapis.com/auth/gmail.send https://www.googleapis.
 // have the full thread in their Gmail — solves cross-user attachment access on transfer.
 const OPS_CC_EMAIL='ops@orca-ai.io';
 
-const SUPER_ADMINS=['rami@orca-ai.io'];
+const SUPER_ADMINS=['rami@orca-ai.io','leon.gutnik@orca-ai.io'];
 const SUPER_ADMIN='rami@orca-ai.io'; // backwards compatibility
 const ADMIN=SUPER_ADMIN; // backwards compatibility
 const ADMIN_L2=[
@@ -117,7 +117,7 @@ const TEAM_USERS=[
   {email:'timothy@orca-ai.io',name:'Timothy',role:'User'},
   {email:'opsrep2@orca-ai.io',name:'Ops Rep 2',role:'User'},
   {email:'opsrep1@orca-ai.io',name:'Ops Rep 1',role:'User'},
-  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Admin'}
+  {email:'leon.gutnik@orca-ai.io',name:'Leon Gutnik',role:'Super Admin'}
 ];
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
