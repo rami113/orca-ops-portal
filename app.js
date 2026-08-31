@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.17 fix: CC bar now also shows on row-level Analyze button (openAnalyzeResultModal path)");
-window.ORCA_FIX_VERSION="v35.17";
+console.log("ORCA v35.18 fix: attachments with long/split filenames (RFC2231) no longer silently dropped — was hiding PDFs");
+window.ORCA_FIX_VERSION="v35.18";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -1350,22 +1350,83 @@ function decodeGmailBody(payload){
 
 // ── Attachment helpers ─────────────────────────────────────────────────────────
 
+// Extract a header parameter that may be split across RFC 2231 continuation segments,
+// e.g. long filenames get encoded as filename*0*=UTF-8''foo%20; filename*1*=bar.pdf
+// instead of a single filename=/filename*= parameter. Gmail's API does not always
+// reconstruct these into part.filename, so without this the filename (and therefore
+// the whole attachment) would be silently dropped — this happened for PDFs with long
+// descriptive names (e.g. drawing/plan-approval files) while short-named JPGs worked fine.
+function _extractHeaderParam(headerValue,paramName){
+  const segments={};
+  // Split on ';' while keeping quoted strings intact
+  const parts=String(headerValue||'').match(/(?:[^;"']|"[^"]*"|'[^']*')+/g)||[];
+  const re=new RegExp('^'+paramName+'(?:\\*(\\d+))?(\\*)?$','i');
+  parts.forEach(rawPart=>{
+    const part=rawPart.trim();
+    const eq=part.indexOf('=');
+    if(eq<0)return;
+    const key=part.slice(0,eq).trim().toLowerCase();
+    let val=part.slice(eq+1).trim().replace(/^["']|["']$/g,'');
+    const m=key.match(re);
+    if(!m)return;
+    const idx=m[1]!==undefined?parseInt(m[1],10):0;
+    const extended=!!m[2];
+    segments[idx]={value:val,extended};
+  });
+  const indices=Object.keys(segments).map(Number).sort((a,b)=>a-b);
+  if(!indices.length)return '';
+  let combined='';let anyExtended=false;
+  indices.forEach(idx=>{
+    const seg=segments[idx];let v=seg.value;
+    if(seg.extended){
+      anyExtended=true;
+      if(idx===0){
+        // First extended segment carries charset'lang'value — strip charset/lang, keep percent-encoded value
+        const m2=v.match(/^([^']*)'([^']*)'(.*)$/);
+        if(m2)v=m2[3];
+      }
+      combined+=v;
+    } else {
+      combined+=v;
+    }
+  });
+  if(anyExtended){try{combined=decodeURIComponent(combined);}catch(e){/* leave as-is if malformed */}}
+  return combined;
+}
+
+// Guess a file extension from mimeType so a generic fallback name is still useful
+function _extFromMime(mt){
+  const map={'application/pdf':'pdf','image/jpeg':'jpg','image/png':'png','image/gif':'gif',
+    'application/msword':'doc','application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx',
+    'application/vnd.ms-excel':'xls','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx'};
+  return map[String(mt||'').toLowerCase()]||'';
+}
+
 // Walk Gmail message payload and return real captain attachments (not embedded logo etc.)
 function extractAttachments(payload, msgId){
   const results=[];
+  let _fallbackN=0;
   const walk=(part)=>{
     if(!part)return;
     const hdrs=part.headers||[];
     const aid=part.body&&part.body.attachmentId;
-    // Get filename from part.filename or Content-Disposition or Content-Type headers
+    // Get filename from part.filename or Content-Disposition or Content-Type headers,
+    // handling RFC 2231 continuation segments (long filenames split across multiple params).
     let fn=part.filename||'';
     if(!fn){
       const cd=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-disposition');
-      if(cd){const m=String(cd.value||'').match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i);if(m)fn=decodeURIComponent(m[1].trim().replace(/['"]/g,''));}
+      if(cd)fn=_extractHeaderParam(cd.value,'filename');
     }
     if(!fn){
       const ct=hdrs.find(h=>String(h.name||'').toLowerCase()==='content-type');
-      if(ct){const m=String(ct.value||'').match(/name\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i);if(m)fn=decodeURIComponent(m[1].trim().replace(/['"]/g,''));}
+      if(ct)fn=_extractHeaderParam(ct.value,'name');
+    }
+    // Never silently drop a real attachment just because its filename couldn't be parsed —
+    // fall back to a generic name so the file still shows up and can be downloaded/tagged.
+    if(!fn&&aid){
+      _fallbackN++;
+      const ext=_extFromMime(part.mimeType);
+      fn='Attachment '+_fallbackN+(ext?'.'+ext:'');
     }
     if(fn&&aid){
       // Only skip our own Orca AI logo — identified by filename alone.
