@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.21 fix: Analyze fallback search no longer requires 'Re:' in subject — was missing threads/attachments entirely");
-window.ORCA_FIX_VERSION="v35.21";
+console.log("ORCA v35.22 fix: gmailThreadId now self-heals to whatever thread Gmail actually uses; Check inbox now merges multiple threads per vessel");
+window.ORCA_FIX_VERSION="v35.22";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -3571,22 +3571,42 @@ async function fetchInboxByThreads(){
   for(const vessel of threadVessels){
     try{
       let thread=null;
+      let extraThreads=[]; // additional threads for this vessel (e.g. a fresh thread
+                            // started by sendGmail's 404 self-heal, or one the captain's
+                            // original reply landed in that never got "Re:" in its subject)
       // Try the stored threadId first (works for original sender's account)
       const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${vessel.gmailThreadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
       if(r.ok){
         thread=await r.json();
       } else {
-        // Thread not in this user's Gmail (e.g. vessel was transferred to a different account).
-        // Fall back: search by subject line — works for CC recipients after transfer.
+        // Thread not in this user's Gmail (e.g. vessel was transferred to a different account,
+        // or the stored threadId is stale/broken). Fall back: search by subject line — works
+        // for CC recipients after transfer, and self-heals the stored threadId going forward.
         try{
           const _subj=encodeURIComponent(`subject:"Orca AI Installation Coordination - ${vessel.name}"`);
           const _sr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads?q=${_subj}&maxResults=5`,{headers:{Authorization:'Bearer '+token}});
           if(_sr.ok){
             const _sd=await _sr.json();
             if(_sd.threads&&_sd.threads.length){
-              // Use the most recent matching thread found in THIS user's Gmail
-              const _tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${_sd.threads[0].id}?format=full`,{headers:{Authorization:'Bearer '+token}});
-              if(_tr.ok)thread=await _tr.json();
+              // Fetch ALL matching threads (not just the newest) — a vessel can legitimately
+              // have more than one thread (e.g. the original coordination thread plus a fresh
+              // one started by sendGmail's self-heal retry), and attachments/replies can live
+              // in any of them. Use the most recent as the "primary" thread for timeline/status
+              // purposes, and self-heal vessel.gmailThreadId to it so future polls skip this
+              // fallback entirely.
+              const _threadResults=await Promise.all(_sd.threads.map(async t=>{
+                try{
+                  const _tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${t.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
+                  return _tr.ok?await _tr.json():null;
+                }catch(_){return null;}
+              }));
+              const _validThreads=_threadResults.filter(Boolean);
+              if(_validThreads.length){
+                thread=_validThreads[0];
+                extraThreads=_validThreads.slice(1);
+                const _viHeal=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
+                if(_viHeal>=0&&vessels[_viHeal].gmailThreadId!==thread.id){vessels[_viHeal].gmailThreadId=thread.id;changed=true;}
+              }
             }
           }
         }catch(_){/* fallback failed — skip vessel */}
@@ -3602,7 +3622,10 @@ async function fetchInboxByThreads(){
       // Thread found — clear any previous CC drop warning
       const vi3=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
       if(vi3>=0&&vessels[vi3]._ccDropWarning){vessels[vi3]._ccDropWarning=false;changed=true;}
-      const messages=(thread.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
+      // Merge messages from the primary thread plus any extra threads found above —
+      // ensures attachments/replies are never missed just because they landed in a
+      // different (but still legitimate) thread for this vessel.
+      const messages=[thread,...extraThreads].flatMap(t=>t.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
       // Find by id/name — never by object reference. onAttachTag replaces vessels[idx]
       // with a new object ({...v,...}), so indexOf(oldRef) would return -1 after any tag save,
       // causing ibItems to get vi=-1 and onAttachTag to silently fail forever after.
@@ -3892,8 +3915,12 @@ async function sendFromViewModal(){
   const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,_cc1,'',_sendTid1);
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
   if(!ok)return;
-  // Save to timeline and vessel — update gmailThreadId from response in case it changed
-  if(ok.threadId&&!v.gmailThreadId)vessels[window._mvIdx].gmailThreadId=ok.threadId;
+  // Save to timeline and vessel — always sync gmailThreadId to whatever Gmail actually
+  // used for this send. Previously only set if the vessel had NO threadId at all, so a
+  // stale/broken threadId (e.g. after a transfer, or sendGmail's 404 self-heal starting a
+  // fresh thread) was never corrected — the vessel stayed permanently pointed at a dead
+  // thread and fetchInboxByThreads() could never find the captain's replies again.
+  if(ok.threadId&&ok.threadId!==v.gmailThreadId)vessels[window._mvIdx].gmailThreadId=ok.threadId;
   vessels[window._mvIdx].emailsSent=(vessels[window._mvIdx].emailsSent||0)+1;
   vessels[window._mvIdx].lastEmailDate=new Date().toISOString();
   vessels[window._mvIdx].lastContact=new Date().toISOString();
@@ -4046,7 +4073,8 @@ async function sendIbFollowUp(){
   const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc2,'',_sendTid2);
   if(!ok)return;
   const idx=curIb.vi;
-  if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
+  // Always sync gmailThreadId to whatever Gmail actually used — see note in sendFromViewModal.
+  if(ok.threadId&&ok.threadId!==vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet2=Array.isArray(vessels[idx].detectedItems)?vessels[idx].detectedItems:[];
   const _newDet2=[...new Map([..._prevDet2,...(ibAna.received||[])].map(x=>[itemKey(x),x])).values()];
   vessels[idx]={...vessels[idx],status:ibAna.status,risk:ibAna.risk,progress:ibAna.progress,nextAction:ibAna.nextAction,missingItems:ibAna.missing||[],detectedItems:_newDet2,receivedItems:_newDet2,lastContact:new Date().toISOString()};
@@ -4124,7 +4152,8 @@ async function saveAndSend(){
   const _cc3=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
   const _sendTid3=await resolveSendThreadId(v);
   const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc3,'',_sendTid3);if(!ok)return;
-  if(ok.threadId&&!vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
+  // Always sync gmailThreadId to whatever Gmail actually used — see note in sendFromViewModal.
+  if(ok.threadId&&ok.threadId!==vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
   const _newDet4=[...new Map([..._prevDet4,...(ana.received||[])].map(x=>[itemKey(x),x])).values()];
   vessels[idx]={...v,status:ana.status,risk:ana.risk,progress:ana.progress,nextAction:ana.nextAction,missingItems:ana.missing||[],detectedItems:_newDet4,receivedItems:_newDet4,lastContact:new Date().toISOString()};
