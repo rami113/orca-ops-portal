@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.16 fix: Inbox Analyze CC bar now shows immediately, not gated behind Analyze click");
-window.ORCA_FIX_VERSION="v35.16";
+console.log("ORCA v35.17 fix: CC bar now also shows on row-level Analyze button (openAnalyzeResultModal path)");
+window.ORCA_FIX_VERSION="v35.17";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -1782,6 +1782,10 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   // Render attachments from curIb (set by openCaseAnalyze with all accumulated atts)
   const _apR=document.getElementById('mib-attachments');
   if(_apR)_apR.innerHTML=renderAttachmentsPanel(curIb.attachments||[],replyText||'',idx);
+  // Recipients line + CC bar — this modal is opened via the row-level "Analyze" button
+  // (openCaseAnalyze), a separate code path from openIbModal, so both must be set here too.
+  const _mibRcp2=document.getElementById('mib-recipients');if(_mibRcp2)_mibRcp2.innerHTML=_recipientsHtml(v,idx);
+  renderCcTags(idx,'mib');
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-res').style.display='block';
   document.getElementById('mib-abtn').style.display='none';
