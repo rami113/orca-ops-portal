@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.14 recipients line shows full Cc list");
-window.ORCA_FIX_VERSION="v35.14";
+console.log("ORCA v35.15 CC bar always visible (ops@ + preserved), added to Analyze modal");
+window.ORCA_FIX_VERSION="v35.15";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -3711,21 +3711,28 @@ function renderInbox(){
 
 
 // ── CC tag management ─────────────────────────────────────────────────────────
-function renderCcTags(vi){
-  const bar=document.getElementById('mv-cc-bar');
-  const container=document.getElementById('mv-cc-tags');
+// Always shows the FULL Cc list actually used on this vessel's emails — ops@ (mandatory,
+// on every send, never removable) plus any addresses preserved from captain replies
+// (removable). Shown regardless of whether a reply has been received yet, since ops@ is
+// CC'd starting with the very first outbound email. prefix selects which modal's DOM
+// elements to update: 'mv' = View modal, 'mib' = Inbox Analyze modal.
+function renderCcTags(vi,prefix){
+  prefix=prefix||'mv';
+  const bar=document.getElementById(prefix+'-cc-bar');
+  const container=document.getElementById(prefix+'-cc-tags');
   if(!bar||!container)return;
   const v=vessels[vi];
-  if(!v||!v.captainCc){bar.style.display='none';return;}
-  const addrs=v.captainCc.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!addrs.length){bar.style.display='none';return;}
+  if(!v){bar.style.display='none';return;}
   bar.style.display='block';
-  container.innerHTML=addrs.map((addr,i)=>`
+  const extraAddrs=String(v.captainCc||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const opsBubble=`<span style="display:inline-flex;align-items:center;gap:5px;background:var(--navy-l);color:var(--navy);border-radius:99px;padding:3px 12px;font-size:12px;font-weight:500;border:1px solid #c5cae9" title="Always CC'd on every email — cannot be removed">${escapeHtml(OPS_CC_EMAIL)}</span>`;
+  const extraBubbles=extraAddrs.map((addr,i)=>`
     <span style="display:inline-flex;align-items:center;gap:5px;background:var(--navy-l);color:var(--navy);border-radius:99px;padding:3px 10px 3px 12px;font-size:12px;font-weight:500;border:1px solid #c5cae9">
       ${escapeHtml(addr)}
       <button onclick="removeCcAddr(${vi},${i})" title="Remove" style="background:none;border:none;color:var(--navy);cursor:pointer;font-size:14px;padding:0;line-height:1;opacity:.6" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity='.6'">×</button>
     </span>
   `).join('');
+  container.innerHTML=opsBubble+extraBubbles;
 }
 function removeCcAddr(vi,idx){
   const v=vessels[vi];
@@ -3734,7 +3741,12 @@ function removeCcAddr(vi,idx){
   addrs.splice(idx,1);
   vessels[vi].captainCc=addrs.join(',');
   saveVessels();
-  renderCcTags(vi);
+  // Refresh both bars (only the one present in the currently-open modal actually re-renders —
+  // renderCcTags no-ops if its elements aren't in the DOM) and the recipients line above the draft.
+  renderCcTags(vi,'mv');
+  renderCcTags(vi,'mib');
+  const rc1=document.getElementById('mv-recipients');if(rc1&&window._mvIdx===vi)rc1.innerHTML=_recipientsHtml(vessels[vi],vi);
+  const rc2=document.getElementById('mib-recipients');if(rc2&&curIb&&curIb.vi===vi)rc2.innerHTML=_recipientsHtml(vessels[vi],vi);
 }
 
 async function sendFromViewModal(){
@@ -3785,6 +3797,7 @@ async function sendFromViewModal(){
   document.getElementById('mib-v').textContent=v.name;
   document.getElementById('mib-m').textContent='From: '+curIb.from+' · '+curIb.date;
   const _mibRcp=document.getElementById('mib-recipients');if(_mibRcp)_mibRcp.innerHTML=_recipientsHtml(v,_safeVi);
+  renderCcTags(_safeVi,'mib');
   document.getElementById('mib-b').textContent=curIb.body;
 
   // Populate status panel
@@ -4112,8 +4125,8 @@ function openV(idx){
   const _archBtn=document.getElementById('mv-archive-btn');
   if(_archBtn)_archBtn.style.display=(v.status==='completed'&&isAdmin())?'inline-flex':'none';
 
-  // Render CC tags from captain replies
-  renderCcTags(window._mvIdx);
+  // Render CC tags — always shows ops@ + any preserved from captain replies
+  renderCcTags(window._mvIdx,'mv');
 
   document.getElementById('mod-view').style.display='flex';
   // Bind clickable rows after modal is visible
