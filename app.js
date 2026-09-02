@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.23 fix: attachments deduped by filename+size everywhere — same file no longer shows twice when merged across messages/threads");
-window.ORCA_FIX_VERSION="v35.23";
+console.log("ORCA v35.24 fix: Check inbox now tracks ALL known Gmail threads per vessel (gmailThreadIds[]) — never gets stuck on a single attachment-less thread");
+window.ORCA_FIX_VERSION="v35.24";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -3595,62 +3595,87 @@ async function fetchInboxByThreads(){
 
   for(const vessel of threadVessels){
     try{
-      let thread=null;
-      let extraThreads=[]; // additional threads for this vessel (e.g. a fresh thread
-                            // started by sendGmail's 404 self-heal, or one the captain's
-                            // original reply landed in that never got "Re:" in its subject)
-      // Try the stored threadId first (works for original sender's account)
-      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${vessel.gmailThreadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
-      if(r.ok){
-        thread=await r.json();
-      } else {
-        // Thread not in this user's Gmail (e.g. vessel was transferred to a different account,
-        // or the stored threadId is stale/broken). Fall back: search by subject line — works
-        // for CC recipients after transfer, and self-heals the stored threadId going forward.
+      // A vessel can have MULTIPLE legitimate Gmail threads (e.g. sendGmail's 404 self-heal
+      // starting a fresh thread for a follow-up, while the captain's original reply +
+      // attachments sit in an older thread). Previously only a single "primary" threadId
+      // was remembered — once it self-healed to point at a thread that happened to have NO
+      // captain content (e.g. the newest thread is just an outbound follow-up), it would
+      // resolve successfully forever after and the code would never look for siblings again,
+      // permanently hiding the real conversation. Fix: persist an array of ALL known valid
+      // thread ids (`gmailThreadIds`) and always fetch every one of them, not just one.
+      const knownIds=[...new Set([vessel.gmailThreadId,...(vessel.gmailThreadIds||[])].filter(Boolean))];
+      const _knownResults=await Promise.all(knownIds.map(async tid=>{
+        try{
+          const _r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${tid}?format=full`,{headers:{Authorization:'Bearer '+token}});
+          return _r.ok?await _r.json():null;
+        }catch(_){return null;}
+      }));
+      let validThreads=_knownResults.filter(Boolean);
+      const _hasCaptainMsgIn=(t)=>(t.messages||[]).some(m=>{
+        const _from=((m.payload&&m.payload.headers)||[]).find(h=>h.name==='From')?.value||'';
+        return !_from.toLowerCase().includes('orca ai ops');
+      });
+      const _knownHasCaptainMsg=validThreads.some(_hasCaptainMsgIn);
+      // Only search by subject (more expensive) when none of the already-known threads
+      // resolved, or none of them actually contain a captain message yet — this keeps
+      // routine polls cheap (fetching a handful of known thread ids directly) while still
+      // discovering new/sibling threads whenever the known ones aren't enough.
+      if(!validThreads.length||!_knownHasCaptainMsg){
         try{
           const _subj=encodeURIComponent(`subject:"Orca AI Installation Coordination - ${vessel.name}"`);
           const _sr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads?q=${_subj}&maxResults=5`,{headers:{Authorization:'Bearer '+token}});
           if(_sr.ok){
             const _sd=await _sr.json();
             if(_sd.threads&&_sd.threads.length){
-              // Fetch ALL matching threads (not just the newest) — a vessel can legitimately
-              // have more than one thread (e.g. the original coordination thread plus a fresh
-              // one started by sendGmail's self-heal retry), and attachments/replies can live
-              // in any of them. Use the most recent as the "primary" thread for timeline/status
-              // purposes, and self-heal vessel.gmailThreadId to it so future polls skip this
-              // fallback entirely.
               const _threadResults=await Promise.all(_sd.threads.map(async t=>{
                 try{
                   const _tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${t.id}?format=full`,{headers:{Authorization:'Bearer '+token}});
                   return _tr.ok?await _tr.json():null;
                 }catch(_){return null;}
               }));
-              const _validThreads=_threadResults.filter(Boolean);
-              if(_validThreads.length){
-                thread=_validThreads[0];
-                extraThreads=_validThreads.slice(1);
-                const _viHeal=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
-                if(_viHeal>=0&&vessels[_viHeal].gmailThreadId!==thread.id){vessels[_viHeal].gmailThreadId=thread.id;changed=true;}
-              }
+              const _discovered=_threadResults.filter(Boolean);
+              // Merge with whatever known threads already resolved — never lose them.
+              const _byId=new Map();
+              [...validThreads,..._discovered].forEach(t=>_byId.set(t.id,t));
+              validThreads=[..._byId.values()];
             }
           }
-        }catch(_){/* fallback failed — skip vessel */}
+        }catch(_){/* fallback search failed — proceed with whatever validThreads we already have */}
       }
-      // CC drop detection: if we couldn't find the thread via gmailThreadId AND the
-      // subject search also failed, the captain likely replied to the original sender only.
-      // Flag this on the vessel so the UI can warn the current user.
-      if(!thread){
+      if(!validThreads.length){
+        // No thread resolved via known ids OR subject search — likely a genuine CC-drop
+        // (captain replied to the original sender only, invisible in this account).
         const vi2=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
         if(vi2>=0&&vessels[vi2]._ccDropWarning!==true){vessels[vi2]._ccDropWarning=true;changed=true;}
         continue;
       }
-      // Thread found — clear any previous CC drop warning
+      // Persist ALL discovered thread ids for this vessel so future polls always check
+      // every one of them directly (cheap) instead of relying on a single "primary" that
+      // might not contain the real conversation. Pick the newest thread WITH a captain
+      // message as the primary gmailThreadId when possible (falls back to the newest
+      // thread overall if none have captain content yet).
+      const _sortedByDate=[...validThreads].sort((a,b)=>{
+        const ad=Math.max(...(a.messages||[]).map(m=>Number(m.internalDate||0)),0);
+        const bd=Math.max(...(b.messages||[]).map(m=>Number(m.internalDate||0)),0);
+        return bd-ad;
+      });
+      const _withCaptain=_sortedByDate.filter(_hasCaptainMsgIn);
+      const _primary=(_withCaptain[0]||_sortedByDate[0]);
+      const _allIds=validThreads.map(t=>t.id);
+      const _viHeal=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
+      if(_viHeal>=0){
+        if(vessels[_viHeal].gmailThreadId!==_primary.id){vessels[_viHeal].gmailThreadId=_primary.id;changed=true;}
+        const _prevIds=(vessels[_viHeal].gmailThreadIds||[]).slice().sort();
+        const _newIds=_allIds.slice().sort();
+        if(JSON.stringify(_prevIds)!==JSON.stringify(_newIds)){vessels[_viHeal].gmailThreadIds=_allIds;changed=true;}
+      }
+      // Thread(s) found — clear any previous CC drop warning
       const vi3=vessels.findIndex(v=>(v.id||v.name)===(vessel.id||vessel.name));
       if(vi3>=0&&vessels[vi3]._ccDropWarning){vessels[vi3]._ccDropWarning=false;changed=true;}
-      // Merge messages from the primary thread plus any extra threads found above —
-      // ensures attachments/replies are never missed just because they landed in a
-      // different (but still legitimate) thread for this vessel.
-      const messages=[thread,...extraThreads].flatMap(t=>t.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
+      // Merge messages from EVERY known/discovered thread — ensures attachments/replies
+      // are never missed just because they landed in a different (but still legitimate)
+      // thread for this vessel.
+      const messages=validThreads.flatMap(t=>t.messages||[]).sort((a,b)=>Number(a.internalDate||0)-Number(b.internalDate||0));
       // Find by id/name — never by object reference. onAttachTag replaces vessels[idx]
       // with a new object ({...v,...}), so indexOf(oldRef) would return -1 after any tag save,
       // causing ibItems to get vi=-1 and onAttachTag to silently fail forever after.
