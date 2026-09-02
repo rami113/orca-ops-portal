@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.22 fix: gmailThreadId now self-heals to whatever thread Gmail actually uses; Check inbox now merges multiple threads per vessel");
-window.ORCA_FIX_VERSION="v35.22";
+console.log("ORCA v35.23 fix: attachments deduped by filename+size everywhere — same file no longer shows twice when merged across messages/threads");
+window.ORCA_FIX_VERSION="v35.23";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -1406,6 +1406,27 @@ function _extFromMime(mt){
   return map[String(mt||'').toLowerCase()]||'';
 }
 
+// De-duplicate a list of attachments that may include the same physical file more than
+// once — e.g. when merging attachments from multiple Gmail messages/threads (a captain's
+// reply CC'd to several recipients, or the same file re-sent in a follow-up). Do NOT key
+// only by attachmentId: Gmail returns a DIFFERENT attachmentId for the same file on every
+// API call, so relying on it alone lets true duplicates slip through when attachments are
+// re-fetched across separate requests. Key by filename+size instead (stable across
+// fetches and reliably identifies "the same file"), falling back to attachmentId only
+// when filename is missing/generic.
+function _dedupeAttachments(list){
+  const seen=new Set();const out=[];
+  (list||[]).forEach(a=>{
+    if(!a)return;
+    const fn=String(a.filename||'').toLowerCase().trim();
+    const key=fn?(fn+'|'+(a.size||0)):(a.attachmentId||'');
+    if(key&&seen.has(key))return;
+    if(key)seen.add(key);
+    out.push(a);
+  });
+  return out;
+}
+
 // Walk Gmail message payload and return real captain attachments (not embedded logo etc.)
 function extractAttachments(payload, msgId){
   const results=[];
@@ -1642,6 +1663,9 @@ function onAttachTag(sel,attachmentId,vesselIdx){
 
 // Render the attachments panel
 function renderAttachmentsPanel(attachments,bodyText,vesselIdx){
+  // Final safety net — dedupe here too (by filename+size) regardless of how the
+  // attachments array was built upstream, so the same file can never render twice.
+  attachments=_dedupeAttachments(attachments);
   const vi=vesselIdx!==undefined?String(vesselIdx):'';
   // Read tags from ALL three sources: vessel blob, shared atags cache, localStorage.
   // This ensures the dropdown shows the correct saved tag even if async saves are pending.
@@ -1793,7 +1817,7 @@ async function fetchLatestReplyForVessel(vessel){
           if(md&&md.threadId)threadIds.add(md.threadId);
         }catch(e){/* skip this message's thread lookup on failure */}
       }));
-      const allAtts=[];const seenAid=new Set();
+      let allAtts=[];
       await Promise.all([...threadIds].map(async threadId=>{
         try{
           const tr=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`,{headers:{Authorization:'Bearer '+token}});
@@ -1804,12 +1828,13 @@ async function fetchLatestReplyForVessel(vessel){
             const from=hdr.find(h=>h.name==='From')?.value||'';
             const isOpsMsg=from.toLowerCase().includes('orca ai ops');
             if(isOpsMsg||!msg.payload)return; // only aggregate attachments from captain messages
-            extractAttachments(msg.payload,msg.id).forEach(a=>{
-              if(!seenAid.has(a.attachmentId)){seenAid.add(a.attachmentId);allAtts.push(a);}
-            });
+            allAtts.push(...extractAttachments(msg.payload,msg.id));
           });
         }catch(e){/* skip this thread on failure — never regress other threads' attachments */}
       }));
+      // Dedupe by filename+size (NOT attachmentId alone — Gmail returns a different
+      // attachmentId for the same file across separate API calls/threads).
+      allAtts=_dedupeAttachments(allAtts);
       if(allAtts.length)latest.attachments=allAtts;
     }catch(e){console.warn('fetchLatestReplyForVessel: thread aggregation failed, using single-message attachments',e);}
     return latest;
@@ -3703,13 +3728,14 @@ async function fetchInboxByThreads(){
           const atts=extractAttachments(msg.payload,msg.id);
           const displayBody=body.trim()||atts.map(a=>a.filename).join(', ');
           if(!displayBody)continue; // skip quoted-chain-only messages
-          if(!_captainMsgs[vi])_captainMsgs[vi]={latestMsg:null,latestBody:'',latestDate:new Date(0),allAtts:[],allAids:new Set(),firstUnlogged:null};
+          if(!_captainMsgs[vi])_captainMsgs[vi]={latestMsg:null,latestBody:'',latestDate:new Date(0),allAtts:[],firstUnlogged:null};
           const cm=_captainMsgs[vi];
           // Track latest message
           const thisDate=new Date(date||0);
           if(thisDate>cm.latestDate){cm.latestDate=thisDate;cm.latestMsg={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi,isNew:!logged};}
-          // Accumulate attachments deduped by attachmentId
-          atts.forEach(a=>{if(!cm.allAids.has(a.attachmentId)){cm.allAids.add(a.attachmentId);cm.allAtts.push(a);}});
+          // Accumulate raw attachments here — deduped (by filename+size, NOT attachmentId
+          // alone) once all messages/threads for this vessel have been collected, below.
+          cm.allAtts.push(...atts);
           // Track first unlogged for sheetsInboxSave
           if(!logged&&!cm.firstUnlogged)cm.firstUnlogged={msgId:msg.id,from,fe,subj,date,body:displayBody.substring(0,2000),vessel,vi};
         }
@@ -3720,6 +3746,9 @@ async function fetchInboxByThreads(){
         if(!cm.latestMsg)continue;
         const _viInt=parseInt(_vi);
         const _vessel=vessels[_viInt];
+        // Dedupe by filename+size (NOT attachmentId alone — Gmail returns a different
+        // attachmentId for the same file across separate API calls/messages/threads).
+        cm.allAtts=_dedupeAttachments(cm.allAtts);
         // Restore saved tags from vessel.attachmentTags (persisted to Sheet — survives refresh)
         const _savedTags=(_vessel&&_vessel.attachmentTags)||{};
         cm.allAtts.forEach(a=>{
