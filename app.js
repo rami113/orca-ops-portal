@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.24 fix: Check inbox now tracks ALL known Gmail threads per vessel (gmailThreadIds[]) — never gets stuck on a single attachment-less thread");
-window.ORCA_FIX_VERSION="v35.24";
+console.log("ORCA v35.25: added ability to embed pictures inline in follow-up email drafts (View modal, Inbox Analyze, manual Analyze)");
+window.ORCA_FIX_VERSION="v35.25";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -1895,6 +1895,9 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   const _atts=restoreAttachmentTags(atts||(curIb&&curIb.attachments)||[],idx);
   curIb={vi:idx,vessel:v,body:replyText,from:replyFrom,date:replyDate,subj:'Captain reply',attachments:_atts};
   ibAna=result;
+  // Clear any pictures picked for a previously-viewed vessel's draft — this is a
+  // separate entry point into mod-ib from openIbModal, must stay in sync (see AGENTS.md).
+  resetDraftImages('mib');
   document.getElementById('mib-v').textContent=v.name;
   document.getElementById('mib-m').textContent=(replyFrom?'From: '+replyFrom+' · ':'')+( replyDate||'');
   document.getElementById('mib-b').textContent=replyText;
@@ -3002,12 +3005,82 @@ async function sendAndSaveNew(){
 
 // GMAIL
 
-function buildFollowupHtmlEmail(followupText, docsLink){
+// ── Draft images (pictures embedded inline in follow-up emails) ──────────────────
+// Ops can attach reference photos/diagrams directly to a follow-up draft. Stored as
+// base64 data URLs in memory only (never persisted to the Sheet/vessel — these are
+// per-send, not part of the vessel record) and embedded inline in the HTML email body
+// via buildFollowupHtmlEmail(). Keyed by prefix ('mv'|'mib'|'a') so all three follow-up
+// draft surfaces (View modal, Inbox Analyze modal, manual Analyze tab) work independently.
+window._draftImages={mv:[],mib:[],a:[]};
+
+function _fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Max size per image to keep the resulting email within Gmail's ~25MB send limit and
+// avoid slow sends — base64 inflates size by ~33%, so cap the original file at 5MB.
+const DRAFT_IMAGE_MAX_BYTES=5*1024*1024;
+
+async function onDraftImagePick(prefix,inputEl){
+  const files=Array.from(inputEl.files||[]);
+  inputEl.value=''; // allow re-selecting the same file later
+  if(!files.length)return;
+  const oversized=files.filter(f=>f.size>DRAFT_IMAGE_MAX_BYTES);
+  const okFiles=files.filter(f=>f.size<=DRAFT_IMAGE_MAX_BYTES);
+  for(const f of okFiles){
+    try{
+      const dataUrl=await _fileToDataUrl(f);
+      window._draftImages[prefix].push({name:f.name,dataUrl,size:f.size});
+    }catch(e){console.warn('Failed to read image',f.name,e);}
+  }
+  if(oversized.length){
+    await orcaAlert(`${oversized.length} file${oversized.length>1?'s were':' was'} too large (max 5MB per image) and ${oversized.length>1?'were':'was'} skipped:\n${oversized.map(f=>'• '+f.name).join('\n')}`,'⚠️ Image too large');
+  }
+  renderDraftImageStrip(prefix);
+}
+
+function removeDraftImage(prefix,idx){
+  window._draftImages[prefix].splice(idx,1);
+  renderDraftImageStrip(prefix);
+}
+
+function renderDraftImageStrip(prefix){
+  const el=document.getElementById(prefix+'-img-strip');
+  if(!el)return;
+  const imgs=window._draftImages[prefix]||[];
+  if(!imgs.length){el.innerHTML='';return;}
+  el.innerHTML=imgs.map((img,i)=>`
+    <span style="display:inline-flex;align-items:center;gap:6px;background:var(--navy-l);border:1px solid #c5cae9;border-radius:8px;padding:4px 8px 4px 4px;margin:0 6px 6px 0">
+      <img src="${img.dataUrl}" alt="${escapeHtml(img.name)}" style="width:32px;height:32px;object-fit:cover;border-radius:4px"/>
+      <span style="font-size:11px;color:var(--navy);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(img.name)}">${escapeHtml(img.name)}</span>
+      <button type="button" onclick="removeDraftImage('${prefix}',${i})" title="Remove" style="background:none;border:none;color:var(--navy);cursor:pointer;font-size:14px;padding:0;line-height:1;opacity:.6" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity='.6'">×</button>
+    </span>
+  `).join('');
+}
+
+// Clears any picked images for a draft surface and re-renders its (now empty) strip.
+// Must be called whenever a draft modal/tab is (re)opened so images from a PREVIOUSLY
+// viewed vessel never accidentally get sent along with a different vessel's follow-up.
+function resetDraftImages(prefix){
+  window._draftImages[prefix]=[];
+  renderDraftImageStrip(prefix);
+}
+
+function buildFollowupHtmlEmail(followupText, docsLink, images){
   // Dedicated wrapper for follow-up emails. Never uses the initial installation template.
   const bodyText=String(followupText||'').trim();
   const htmlBody=bodyText
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/\n/g,'<br>');
+  // Embed any picked pictures inline, directly below the message text, each on its own row.
+  const imagesHtml=(images&&images.length)
+    ?'<div style="margin-top:20px">'+images.map(img=>`<img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;display:block;margin-bottom:14px;border-radius:6px;border:1px solid #dddddd"/>`).join('')+'</div>'
+    :'';
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#f0f0ed;font-family:Arial,Helvetica,sans-serif">
@@ -3019,6 +3092,7 @@ function buildFollowupHtmlEmail(followupText, docsLink){
 </td></tr>
 <tr><td style="padding:34px 36px;color:#111111;font-size:14px;line-height:1.7">
 ${htmlBody}
+${imagesHtml}
 </td></tr>
 </table>
 </td></tr>
@@ -3966,7 +4040,7 @@ async function sendFromViewModal(){
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
   const _cc1=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
   const _sendTid1=await resolveSendThreadId(v);
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||''),true,_cc1,'',_sendTid1);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||'',window._draftImages.mv),true,_cc1,'',_sendTid1);
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
   if(!ok)return;
   // Save to timeline and vessel — always sync gmailThreadId to whatever Gmail actually
@@ -3981,6 +4055,7 @@ async function sendFromViewModal(){
   saveFollowupMeta(vessels[window._mvIdx],body);
   saveVessels();updateMetrics();renderTable();
   document.getElementById('mod-view').style.display='none';
+  resetDraftImages('mv');
   await orcaAlert('Follow-up sent to '+v.email,'✅ Sent');
 }function openIbModal(i){
   const raw=ibItems[i];
@@ -3995,6 +4070,8 @@ async function sendFromViewModal(){
   curIb.attachments=restoreAttachmentTags(curIb.attachments||[],_safeVi);
   ibAna=null;
   const v=curIb.vessel;
+  // Clear any pictures picked for a previously-viewed vessel's draft
+  resetDraftImages('mib');
 
   // Populate header
   document.getElementById('mib-v').textContent=v.name;
@@ -4124,7 +4201,7 @@ async function sendIbFollowUp(){
   const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
   const _cc2=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
   const _sendTid2=await resolveSendThreadId(v);
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc2,'',_sendTid2);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||'',window._draftImages.mib),true,_cc2,'',_sendTid2);
   if(!ok)return;
   const idx=curIb.vi;
   // Always sync gmailThreadId to whatever Gmail actually used — see note in sendFromViewModal.
@@ -4138,6 +4215,7 @@ async function sendIbFollowUp(){
   vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   saveVessels();updateMetrics();renderTable();
   document.getElementById('mod-ib').style.display='none';
+  resetDraftImages('mib');
   ibItems=ibItems.filter(function(it){return it!==curIb;});
   const _send_badge=document.getElementById('ib-count');
   if(_send_badge){if(ibItems.length){_send_badge.textContent=ibItems.length;_send_badge.style.display='inline';}else _send_badge.style.display='none';}
@@ -4149,6 +4227,8 @@ async function analyzeReply(){
   const idx=document.getElementById('ra-sel').value,reply=document.getElementById('ra-reply').value.trim();
   if(!reply){alert("Please paste the captain's reply.");return;}
   const vessel=idx!==''?vessels[parseInt(idx)]:null,vn=vessel?vessel.name:'Unknown',mis=vessel?(vessel.missingItems||[]).join(', '):'all items',d=vessel?ds(vessel.lastContact):0;
+  // Clear any pictures picked for a previously-analyzed reply's draft
+  resetDraftImages('a');
   document.getElementById('a-load').style.display='flex';document.getElementById('a-out').style.display='none';
   const prompt=`You are Orca AI Installation Coordinator.\nVessel: ${vn}\nDays since last contact: ${d}\nPreviously missing: ${mis}\nReply: """${reply}"""\nRespond ONLY with valid JSON:\n{"received":["items confirmed"],"missing":["items still missing"],"status":"waiting|followup|ready|scheduled|completed","risk":"low|medium|high","progress":0,"nextAction":"short description","flags":[],"followup_email":"complete follow-up. Dear Master... Kind regards, Orca AI. Never promise installation date."}\nUse waiting after initial email/no reply; followup when reply is partial or missing items; ready when all technical information is received; scheduled when an installation date is confirmed; completed when installation is completed. Risk handles blockers/7+ days. Progress 0/25/50/75/100. CRITICAL RULES - READ CAREFULLY:
 - ONLY mark an item as received if the captain EXPLICITLY sent/attached THAT SPECIFIC item
@@ -4205,7 +4285,7 @@ async function saveAndSend(){
   const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
   const _cc3=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
   const _sendTid3=await resolveSendThreadId(v);
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||''),true,_cc3,'',_sendTid3);if(!ok)return;
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||'',window._draftImages.a),true,_cc3,'',_sendTid3);if(!ok)return;
   // Always sync gmailThreadId to whatever Gmail actually used — see note in sendFromViewModal.
   if(ok.threadId&&ok.threadId!==vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
@@ -4216,6 +4296,7 @@ async function saveAndSend(){
   saveFollowupMeta(vessels[idx],followBody);
   vessels[idx].emailsSent=(vessels[idx].emailsSent||0)+1;vessels[idx].lastEmailDate=new Date().toISOString();
   saveVessels();updateMetrics();renderTable();document.getElementById('ra-reply').value='';document.getElementById('a-out').style.display='none';showTab('dashboard');
+  resetDraftImages('a');
 }
 
 // VESSEL DETAIL
@@ -4267,6 +4348,8 @@ function openV(idx){
   cleanTimeline(v);
   v.missingItems=derivedMissing(v);
   window._mvIdx=idx;
+  // Clear any pictures picked for a previously-viewed vessel's draft
+  resetDraftImages('mv');
 
   // Populate modal header
   document.getElementById('mv-name').textContent=v.name;
