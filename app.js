@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.26: draft images can now be placed at the cursor position (contenteditable drafts) instead of always appended at the end");
-window.ORCA_FIX_VERSION="v35.26";
+console.log("ORCA v35.27 fix: dragging a picture to reposition it in the draft no longer turns it into raw base64 text");
+window.ORCA_FIX_VERSION="v35.27";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -3104,6 +3104,12 @@ function _selectDraftImage(img){
 
 // Global handler (bound once per draft element on first use) — Delete/Backspace
 // removes a selected inserted image; clicking elsewhere in the draft deselects it.
+// Also intercepts drag-and-drop of an already-inserted image WITHIN the draft: the
+// browser's default contenteditable drop behavior can insert the image's raw base64
+// data URL as plain TEXT instead of moving the actual <img> element (this happened when
+// dragging a picture to reposition it — the draft ended up with a giant base64 string
+// printed as text instead of the picture staying a picture). We handle drag/drop
+// manually so repositioning an image always keeps it as a real <img> node.
 function _bindDraftEditableEvents(el){
   if(!el||el._draftEventsBound)return;
   el._draftEventsBound=true;
@@ -3116,6 +3122,40 @@ function _bindDraftEditableEvents(el){
     if(e.target.tagName!=='IMG')document.querySelectorAll('.draft-editable img.draft-img-selected').forEach(i=>i.classList.remove('draft-img-selected'));
   });
   el.addEventListener('blur',()=>_saveDraftCaret(el.id.replace(/-followup-draft$|-fu$/,'')));
+  // Dragging an image to reposition it inside the SAME draft
+  el.addEventListener('dragstart',e=>{
+    if(e.target.tagName==='IMG'){
+      el._draggedImg=e.target;
+      e.dataTransfer.setData('text/plain',''); // suppress default text/URL drag payload
+      e.dataTransfer.effectAllowed='move';
+    }
+  });
+  el.addEventListener('dragover',e=>{
+    if(el._draggedImg)e.preventDefault(); // allow drop
+  });
+  el.addEventListener('drop',e=>{
+    if(!el._draggedImg)return; // not one of our own images — let paste/other handling proceed
+    e.preventDefault();
+    const img=el._draggedImg;
+    el._draggedImg=null;
+    // Find the drop position via the browser's caret-from-point API (webkit/blink + firefox)
+    let range=null;
+    if(document.caretRangeFromPoint){
+      range=document.caretRangeFromPoint(e.clientX,e.clientY);
+    } else if(document.caretPositionFromPoint){
+      const pos=document.caretPositionFromPoint(e.clientX,e.clientY);
+      if(pos){range=document.createRange();range.setStart(pos.offsetNode,pos.offset);range.collapse(true);}
+    }
+    if(range&&el.contains(range.startContainer)){
+      img.remove();
+      range.insertNode(img);
+    }
+    // else: drop target unresolvable — leave the image exactly where it was (no-op)
+  });
+  // Always clear the dragged-image reference, even if drop lands outside this element
+  // entirely (e.g. dragged out of the draft box) — prevents a stale reference from
+  // blocking or corrupting the next drag.
+  el.addEventListener('dragend',()=>{el._draggedImg=null;});
 }
 
 // Populates a draft's contenteditable content from a plain-text string (preserving
