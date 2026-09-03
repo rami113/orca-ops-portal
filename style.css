@@ -97,6 +97,10 @@ input:focus,textarea:focus,select:focus{border-color:var(--navy)}
 textarea{resize:vertical;min-height:80px;line-height:1.6}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .email-box{background:var(--gray);border:1px solid var(--border);border-radius:var(--rs);padding:16px;font-size:13px;line-height:1.8;white-space:pre-wrap;max-height:280px;overflow-y:auto}
+.draft-editable{width:100%;min-height:160px;max-height:340px;padding:12px;border:1px solid var(--border);border-radius:var(--rs);font-size:13px;font-family:inherit;line-height:1.7;overflow-y:auto;box-sizing:border-box;color:var(--text);background:var(--white);white-space:pre-wrap;outline:none}
+.draft-editable:focus{border-color:var(--navy)}
+.draft-editable img{max-width:100%;display:block;margin:8px 0;border-radius:6px;cursor:pointer}
+.draft-editable img.draft-img-selected{outline:2px solid var(--navy);outline-offset:2px}
 .cl-list{list-style:none}
 .cl-list li{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:13px;border-bottom:1px solid var(--border)}
 .cl-list li:last-child{border-bottom:none}

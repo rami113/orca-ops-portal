@@ -9,8 +9,8 @@ const REQUIRED_ITEMS=[
   'Proposed Seapod location photos',
   'Docs acknowledgement'
 ];
-console.log("ORCA v35.25: added ability to embed pictures inline in follow-up email drafts (View modal, Inbox Analyze, manual Analyze)");
-window.ORCA_FIX_VERSION="v35.25";
+console.log("ORCA v35.26: draft images can now be placed at the cursor position (contenteditable drafts) instead of always appended at the end");
+window.ORCA_FIX_VERSION="v35.26";
 
 // ── Ops Hub SSO — silent login from hub token ─────────────────────────────────
 // When arriving from the Ops Hub, a token is passed via ?sso_token=
@@ -1630,7 +1630,7 @@ function onAttachTag(sel,attachmentId,vesselIdx){
       const missEl=document.getElementById('mib-miss');
       if(recvEl)recvEl.innerHTML=_rm3.received.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
       if(missEl)missEl.innerHTML=_rm3.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-      const _fuEl=document.getElementById('mib-fu');if(_fuEl)_fuEl.value=_rm3.draft;
+      setDraftText('mib',_rm3.draft);
     }
   } else {
     // Tag cleared — recompute receivedItems from keyword detectedItems + remaining tags (no detectedItems mutation)
@@ -1656,7 +1656,7 @@ function onAttachTag(sel,attachmentId,vesselIdx){
       const missEl2=document.getElementById('mib-miss');
       if(recvEl2)recvEl2.innerHTML=_rm4.received.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
       if(missEl2)missEl2.innerHTML=_rm4.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-      const _fuEl2=document.getElementById('mib-fu');if(_fuEl2)_fuEl2.value=_rm4.draft;
+      setDraftText('mib',_rm4.draft);
     }
   }
 }
@@ -1921,7 +1921,7 @@ function openAnalyzeResultModal(idx,replyText,replyFrom,replyDate,result,atts){
   ibAna=result;
   document.getElementById('mib-recv').innerHTML=result.received.map(x=>`<li><i class="ti ti-circle-check ic-d"></i>${x}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=result.missing.map(x=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${x}</div>`).join('');
-  document.getElementById('mib-fu').value=result.followup_email||'';
+  setDraftText('mib',result.followup_email||'');
   // Render attachments from curIb (set by openCaseAnalyze with all accumulated atts)
   const _apR=document.getElementById('mib-attachments');
   if(_apR)_apR.innerHTML=renderAttachmentsPanel(curIb.attachments||[],replyText||'',idx);
@@ -3005,13 +3005,28 @@ async function sendAndSaveNew(){
 
 // GMAIL
 
-// ── Draft images (pictures embedded inline in follow-up emails) ──────────────────
-// Ops can attach reference photos/diagrams directly to a follow-up draft. Stored as
-// base64 data URLs in memory only (never persisted to the Sheet/vessel — these are
-// per-send, not part of the vessel record) and embedded inline in the HTML email body
-// via buildFollowupHtmlEmail(). Keyed by prefix ('mv'|'mib'|'a') so all three follow-up
-// draft surfaces (View modal, Inbox Analyze modal, manual Analyze tab) work independently.
-window._draftImages={mv:[],mib:[],a:[]};
+// ── Draft images (pictures embedded inline in follow-up emails, at cursor position) ──
+// The three follow-up draft surfaces (View modal `mv-followup-draft`, Inbox Analyze
+// `mib-fu`, manual Analyze `a-fu`) are `contenteditable` divs instead of plain
+// textareas/text divs, so a picked picture becomes part of the draft content itself —
+// ops can click anywhere in the text to place the cursor, insert a picture there, drag
+// it around like normal rich text, or select it and press Delete/Backspace to remove it.
+// Nothing here is ever persisted to the vessel/Sheet — it's just DOM content that gets
+// serialized to HTML at send time and discarded when the draft surface is closed/reopened.
+
+// Remember the last place the caret was inside a draft (before the file picker steals
+// focus) so "Insert picture" places the image exactly where the user clicked, not
+// wherever the cursor happens to end up after the OS file dialog closes.
+window._draftCaretRange={mv:null,mib:null,a:null};
+
+function _saveDraftCaret(prefix){
+  const sel=window.getSelection();
+  if(!sel||!sel.rangeCount)return;
+  const el=document.getElementById(prefix+'-followup-draft')||document.getElementById(prefix+'-fu');
+  if(!el)return;
+  const range=sel.getRangeAt(0);
+  if(el.contains(range.startContainer))window._draftCaretRange[prefix]=range.cloneRange();
+}
 
 function _fileToDataUrl(file){
   return new Promise((resolve,reject)=>{
@@ -3026,61 +3041,158 @@ function _fileToDataUrl(file){
 // avoid slow sends — base64 inflates size by ~33%, so cap the original file at 5MB.
 const DRAFT_IMAGE_MAX_BYTES=5*1024*1024;
 
+// "Insert picture" button — remember the caret position (in case the draft isn't
+// focused right now) then open the hidden file input for this draft surface.
+function pickDraftImage(prefix){
+  _saveDraftCaret(prefix);
+  const input=document.getElementById(prefix+'-img-input');
+  if(input)input.click();
+}
+
 async function onDraftImagePick(prefix,inputEl){
   const files=Array.from(inputEl.files||[]);
   inputEl.value=''; // allow re-selecting the same file later
   if(!files.length)return;
   const oversized=files.filter(f=>f.size>DRAFT_IMAGE_MAX_BYTES);
   const okFiles=files.filter(f=>f.size<=DRAFT_IMAGE_MAX_BYTES);
+  const el=document.getElementById(prefix+'-followup-draft')||document.getElementById(prefix+'-fu');
   for(const f of okFiles){
     try{
       const dataUrl=await _fileToDataUrl(f);
-      window._draftImages[prefix].push({name:f.name,dataUrl,size:f.size});
+      _insertImageAtCaret(prefix,el,dataUrl,f.name);
     }catch(e){console.warn('Failed to read image',f.name,e);}
   }
   if(oversized.length){
     await orcaAlert(`${oversized.length} file${oversized.length>1?'s were':' was'} too large (max 5MB per image) and ${oversized.length>1?'were':'was'} skipped:\n${oversized.map(f=>'• '+f.name).join('\n')}`,'⚠️ Image too large');
   }
-  renderDraftImageStrip(prefix);
 }
 
-function removeDraftImage(prefix,idx){
-  window._draftImages[prefix].splice(idx,1);
-  renderDraftImageStrip(prefix);
-}
-
-function renderDraftImageStrip(prefix){
-  const el=document.getElementById(prefix+'-img-strip');
+// Inserts an <img> at the remembered caret position inside the draft (falls back to
+// the end of the draft if no caret was ever recorded, e.g. draft was never clicked into).
+function _insertImageAtCaret(prefix,el,dataUrl,name){
   if(!el)return;
-  const imgs=window._draftImages[prefix]||[];
-  if(!imgs.length){el.innerHTML='';return;}
-  el.innerHTML=imgs.map((img,i)=>`
-    <span style="display:inline-flex;align-items:center;gap:6px;background:var(--navy-l);border:1px solid #c5cae9;border-radius:8px;padding:4px 8px 4px 4px;margin:0 6px 6px 0">
-      <img src="${img.dataUrl}" alt="${escapeHtml(img.name)}" style="width:32px;height:32px;object-fit:cover;border-radius:4px"/>
-      <span style="font-size:11px;color:var(--navy);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(img.name)}">${escapeHtml(img.name)}</span>
-      <button type="button" onclick="removeDraftImage('${prefix}',${i})" title="Remove" style="background:none;border:none;color:var(--navy);cursor:pointer;font-size:14px;padding:0;line-height:1;opacity:.6" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity='.6'">×</button>
-    </span>
-  `).join('');
+  el.focus();
+  const img=document.createElement('img');
+  img.src=dataUrl;img.alt=name||'';img.setAttribute('data-draft-img','1');
+  img.onclick=function(e){e.stopPropagation();_selectDraftImage(this);};
+  const saved=window._draftCaretRange[prefix];
+  const sel=window.getSelection();
+  let range=null;
+  if(saved&&el.contains(saved.startContainer)){
+    range=saved;
+  } else if(sel&&sel.rangeCount&&el.contains(sel.getRangeAt(0).startContainer)){
+    range=sel.getRangeAt(0);
+  }
+  if(range){
+    range.deleteContents();
+    range.insertNode(img);
+    // Move caret right after the inserted image so typing continues naturally
+    range.setStartAfter(img);range.setEndAfter(img);
+    sel.removeAllRanges();sel.addRange(range);
+  } else {
+    el.appendChild(img);
+  }
+  window._draftCaretRange[prefix]=null;
 }
 
-// Clears any picked images for a draft surface and re-renders its (now empty) strip.
-// Must be called whenever a draft modal/tab is (re)opened so images from a PREVIOUSLY
-// viewed vessel never accidentally get sent along with a different vessel's follow-up.
+// Visual "selected" state for an inserted image so Delete/Backspace removes it even
+// though contenteditable's native image selection isn't consistent across browsers.
+function _selectDraftImage(img){
+  document.querySelectorAll('.draft-editable img.draft-img-selected').forEach(i=>{if(i!==img)i.classList.remove('draft-img-selected');});
+  img.classList.toggle('draft-img-selected');
+}
+
+// Global handler (bound once per draft element on first use) — Delete/Backspace
+// removes a selected inserted image; clicking elsewhere in the draft deselects it.
+function _bindDraftEditableEvents(el){
+  if(!el||el._draftEventsBound)return;
+  el._draftEventsBound=true;
+  el.addEventListener('keydown',e=>{
+    if(e.key!=='Delete'&&e.key!=='Backspace')return;
+    const sel=el.querySelector('img.draft-img-selected');
+    if(sel){e.preventDefault();sel.remove();}
+  });
+  el.addEventListener('click',e=>{
+    if(e.target.tagName!=='IMG')document.querySelectorAll('.draft-editable img.draft-img-selected').forEach(i=>i.classList.remove('draft-img-selected'));
+  });
+  el.addEventListener('blur',()=>_saveDraftCaret(el.id.replace(/-followup-draft$|-fu$/,'')));
+}
+
+// Populates a draft's contenteditable content from a plain-text string (preserving
+// newlines as line breaks) — the normal way to set draft text (analysis results,
+// computed follow-up drafts, etc). Always clears any previously-inserted images since
+// this represents a fresh/recomputed draft, not a user edit.
+function setDraftText(prefix,text){
+  const el=document.getElementById(prefix+'-followup-draft')||document.getElementById(prefix+'-fu');
+  if(!el)return;
+  _bindDraftEditableEvents(el);
+  el.textContent='';
+  String(text||'').split('\n').forEach((line,i)=>{
+    if(i>0)el.appendChild(document.createElement('br'));
+    if(line)el.appendChild(document.createTextNode(line));
+  });
+  window._draftCaretRange[prefix]=null;
+}
+
+// Reads the CURRENT plain-text content of a draft (user edits included), ignoring
+// any inserted images — used wherever code needs the text alone (e.g. saving
+// lastFollowupPreview, or falling back to buildFollowupEmail() when the draft is empty).
+function getDraftText(prefix){
+  const el=document.getElementById(prefix+'-followup-draft')||document.getElementById(prefix+'-fu');
+  if(!el)return '';
+  const clone=el.cloneNode(true);
+  clone.querySelectorAll('img').forEach(img=>img.remove());
+  clone.querySelectorAll('br').forEach(br=>br.replaceWith('\n'));
+  clone.querySelectorAll('div,p').forEach(d=>{if(d.nextSibling)d.after('\n');});
+  return (clone.textContent||'').replace(/\n{3,}/g,'\n\n').trim();
+}
+
+// True if the draft has ANY real content — text OR an inserted picture. Callers must
+// check this (not just getDraftText()) before falling back to a computed/default draft,
+// otherwise a draft containing ONLY a picture (no text) would look "empty" and the
+// picture would be silently discarded in favour of the fallback text.
+function draftHasContent(prefix){
+  const el=document.getElementById(prefix+'-followup-draft')||document.getElementById(prefix+'-fu');
+  if(!el)return false;
+  return !!(getDraftText(prefix)||el.querySelector('img'));
+}
+
+// Serializes a draft's current DOM content (text + inserted images, IN ORDER) into the
+// HTML email body — this is what actually gets sent, so images appear exactly where
+// they were placed in the draft rather than always at the end.
+function draftToEmailHtml(prefix){
+  const el=document.getElementById(prefix+'-followup-draft')||document.getElementById(prefix+'-fu');
+  if(!el)return '';
+  let html='';
+  const walk=(node)=>{
+    if(node.nodeType===Node.TEXT_NODE){
+      html+=escapeHtml(node.nodeValue);
+    } else if(node.nodeType===Node.ELEMENT_NODE){
+      if(node.tagName==='BR'){html+='<br>';}
+      else if(node.tagName==='IMG'){
+        html+=`<img src="${node.getAttribute('src')}" alt="${escapeHtml(node.getAttribute('alt')||'')}" style="max-width:100%;display:block;margin:12px 0;border-radius:6px;border:1px solid #dddddd"/>`;
+      } else {
+        const isBlock=['DIV','P'].includes(node.tagName);
+        node.childNodes.forEach(walk);
+        if(isBlock)html+='<br>';
+      }
+    }
+  };
+  el.childNodes.forEach(walk);
+  return html;
+}
+
+// Clears a draft surface's inserted-image state (caret memory) — actual removal of any
+// images happens via setDraftText() when the draft is repopulated for a new vessel/reply.
+// Kept as a named function for readability at each open-modal call site.
 function resetDraftImages(prefix){
-  window._draftImages[prefix]=[];
-  renderDraftImageStrip(prefix);
+  window._draftCaretRange[prefix]=null;
 }
 
-function buildFollowupHtmlEmail(followupText, docsLink, images){
+function buildFollowupHtmlEmail(followupHtml, docsLink){
   // Dedicated wrapper for follow-up emails. Never uses the initial installation template.
-  const bodyText=String(followupText||'').trim();
-  const htmlBody=bodyText
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/\n/g,'<br>');
-  // Embed any picked pictures inline, directly below the message text, each on its own row.
-  const imagesHtml=(images&&images.length)
-    ?'<div style="margin-top:20px">'+images.map(img=>`<img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;display:block;margin-bottom:14px;border-radius:6px;border:1px solid #dddddd"/>`).join('')+'</div>'
-    :'';
+  // followupHtml is ALREADY escaped/formatted HTML (from draftToEmailHtml) — plain text
+  // callers (e.g. no-draft-open fallbacks) must still pass pre-escaped/<br>-joined HTML.
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#f0f0ed;font-family:Arial,Helvetica,sans-serif">
@@ -3091,8 +3203,7 @@ function buildFollowupHtmlEmail(followupText, docsLink, images){
   <div style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:30px;font-weight:700;letter-spacing:2px;line-height:1">ORCA AI</div>
 </td></tr>
 <tr><td style="padding:34px 36px;color:#111111;font-size:14px;line-height:1.7">
-${htmlBody}
-${imagesHtml}
+${followupHtml}
 </td></tr>
 </table>
 </td></tr>
@@ -4034,13 +4145,14 @@ async function sendFromViewModal(){
     );
     if(!_go)return;
   }
-  const fuEl=document.getElementById('mv-followup-draft');
-  const body=fuEl&&fuEl.value.trim()?fuEl.value.trim():buildFollowupEmail(v,v.missingItems||[]);
+  const _mvHasContent=draftHasContent('mv');
+  const body=_mvHasContent?getDraftText('mv'):buildFollowupEmail(v,v.missingItems||[]);
+  const emailHtml=_mvHasContent?draftToEmailHtml('mv'):body.replace(/\n/g,'<br>');
   const btn=document.querySelector('#mod-view .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Sending...';}
   const _cc1=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
   const _sendTid1=await resolveSendThreadId(v);
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(body,v.docs||'',window._draftImages.mv),true,_cc1,'',_sendTid1);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(emailHtml,v.docs||''),true,_cc1,'',_sendTid1);
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Send this update to the captain';}
   if(!ok)return;
   // Save to timeline and vessel — always sync gmailThreadId to whatever Gmail actually
@@ -4159,7 +4271,7 @@ async function runIbAnalysis(){
   document.getElementById('mib-al').style.display='none';
   document.getElementById('mib-recv').innerHTML=ibAna.received.map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('mib-miss').innerHTML=ibAna.missing.map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
-  document.getElementById('mib-fu').value=ibAna.followup_email||'';
+  setDraftText('mib',ibAna.followup_email||'');
   document.getElementById('mib-res').style.display='block';
 
   // ANALYZE saves vessel status immediately - without sending email
@@ -4196,12 +4308,13 @@ async function sendIbFollowUp(){
     );
     if(!_go)return;
   }
-  // Read edited text from textarea - user may have modified it
-  const fuEl=document.getElementById('mib-fu');
-  const v=curIb.vessel,followBody=(fuEl&&fuEl.value.trim())?fuEl.value.trim():((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
+  // Read edited content from the draft - user may have modified it
+  const _mibHasContent=draftHasContent('mib');
+  const v=curIb.vessel,followBody=_mibHasContent?getDraftText('mib'):((ibAna&&ibAna.followup_email)?ibAna.followup_email:buildFollowupEmail(curIb.vessel,derivedMissing(curIb.vessel)));
+  const emailHtml2=_mibHasContent?draftToEmailHtml('mib'):followBody.replace(/\n/g,'<br>');
   const _cc2=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
   const _sendTid2=await resolveSendThreadId(v);
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||'',window._draftImages.mib),true,_cc2,'',_sendTid2);
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(emailHtml2,v.docs||''),true,_cc2,'',_sendTid2);
   if(!ok)return;
   const idx=curIb.vi;
   // Always sync gmailThreadId to whatever Gmail actually used — see note in sendFromViewModal.
@@ -4248,7 +4361,7 @@ async function analyzeReply(){
   document.getElementById('a-recv').innerHTML=(ana.received||[]).map(i=>`<li><i class="ti ti-circle-check ic-d"></i>${i}</li>`).join('');
   document.getElementById('a-miss').innerHTML=(ana.missing||[]).map(i=>`<div class="miss-item"><i class="ti ti-circle-x"></i>${i}</div>`).join('');
   document.getElementById('a-stat').innerHTML=`<div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Status</div>${sb(ana.status)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Risk</div>${rb(ana.risk)}</div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Progress</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div class="prog" style="width:100px"><div class="prog-f" style="width:${ana.progress}%"></div></div><span style="font-size:13px;font-weight:700">${ana.progress}%</span></div></div><div><div style="font-size:11px;color:var(--faint);margin-bottom:4px">Next action</div><span style="font-size:12px">${ana.nextAction||'—'}</span></div>${(ana.flags&&ana.flags.length)?ana.flags.map(f=>`<div class="flag-item"><i class="ti ti-flag"></i>${f}</div>`).join(''):''}`;
-  document.getElementById('a-fu').textContent=ana.followup_email||'';
+  setDraftText('a',ana.followup_email||'');
   const _aRcp=document.getElementById('a-recipients');
   const _aCcBar=document.getElementById('a-cc-bar');
   if(vessel){
@@ -4282,10 +4395,13 @@ async function saveAnalyzeOnly(){
 }
 async function saveAndSend(){
   if(!ana)return;const idx=ana.vi;if(idx===null||!vessels[idx]){alert('No vessel selected.');return;}
-  const v=vessels[idx],followBody=(ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v));
+  const v=vessels[idx];
+  const _aHasContent=draftHasContent('a');
+  const followBody=_aHasContent?getDraftText('a'):((ana&&ana.followup_email)?ana.followup_email:buildFollowupEmail(v,derivedMissing(v)));
+  const emailHtml3=_aHasContent?draftToEmailHtml('a'):followBody.replace(/\n/g,'<br>');
   const _cc3=[OPS_CC_EMAIL,v.captainCc||''].filter(Boolean).join(',');
   const _sendTid3=await resolveSendThreadId(v);
-  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(followBody,v.docs||'',window._draftImages.a),true,_cc3,'',_sendTid3);if(!ok)return;
+  const ok=await sendGmail(v.email,'Re: Orca AI Installation Coordination - '+v.name,buildFollowupHtmlEmail(emailHtml3,v.docs||''),true,_cc3,'',_sendTid3);if(!ok)return;
   // Always sync gmailThreadId to whatever Gmail actually used — see note in sendFromViewModal.
   if(ok.threadId&&ok.threadId!==vessels[idx].gmailThreadId)vessels[idx].gmailThreadId=ok.threadId;
   const _prevDet4=Array.isArray(v.detectedItems)?v.detectedItems:[];
@@ -4415,8 +4531,7 @@ function openV(idx){
   if(tl)tl.innerHTML=renderTimeline(v);
 
   // Follow-up draft from computeReceivedMissing — always matches Analyze modal
-  const mvFu=document.getElementById('mv-followup-draft');
-  if(mvFu)mvFu.value=_rmV.draft;
+  setDraftText('mv',_rmV.draft);
 
   // Show Archive button only for completed vessels (admin only)
   const _archBtn=document.getElementById('mv-archive-btn');
